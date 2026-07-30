@@ -83,10 +83,8 @@ exports/
 backups/
 *.dump
 
-# Claude / Codex / Gemini caches locales (no los adapters md/json)
+# Claude cache local (no el adapter md/json)
 .claude/cache/
-.codex/cache/
-.gemini/cache/
 
 # oh-my-claudecode (local del dev, no parte del repo)
 .omc/
