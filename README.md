@@ -219,8 +219,6 @@ Diagrama completo:
 ynara/
 ├── AGENTS.md                # Contrato del repo — leer primero (humanos e IAs)
 ├── CLAUDE.md                # Adapter Claude Code         -> AGENTS.md
-├── CODEX.md                 # Adapter OpenAI Codex        -> AGENTS.md
-├── GEMINI.md                # Adapter Gemini Code Assist  -> AGENTS.md
 ├── DESIGN.md                # Sistema visual (vacío hasta aprobación)
 ├── IDENTITY.md              # 4 pilares de marca + voz
 ├── README.md                # Este archivo
@@ -272,12 +270,12 @@ ynara/
 ├── scripts/                 # init, seed, reset-memory, export-user-data
 ├── tests/e2e/               # Playwright (TODO configurar)
 ├── .github/                 # workflows, CODEOWNERS, PR/issue templates
-├── .claude/ .codex/ .gemini/  # adapters por herramienta IA (sin contenido propio)
+├── .claude/                 # adapter de Claude Code (sin contenido propio)
 └── .omc/                    # local del dev (gitignored)
 ```
 
 **Golden rule**: `AGENTS.md` y `docs/` son fuente de verdad.
-`.claude/`, `.codex/`, `.gemini/` son adapters — nunca contenido propio.
+`.claude/` es adapter — nunca contenido propio.
 
 ## Para agentes IA
 
@@ -286,9 +284,8 @@ Copilot, etc.) trabajando en este repo:
 
 1. **Leer [`AGENTS.md`](./AGENTS.md)** — contrato del repo, 10 reglas no
    negociables.
-2. **Leer el adapter de tu herramienta** —
-   [`CLAUDE.md`](./CLAUDE.md), [`CODEX.md`](./CODEX.md),
-   [`GEMINI.md`](./GEMINI.md).
+2. **Si usás Claude Code, leer su adapter** — [`CLAUDE.md`](./CLAUDE.md).
+   Cualquier otra herramienta trabaja directo con `AGENTS.md`.
 3. **Leer el `AGENTS.md` del app que vayas a tocar** —
    [`apps/web/AGENTS.md`](./apps/web/AGENTS.md),
    [`apps/mobile/AGENTS.md`](./apps/mobile/AGENTS.md),

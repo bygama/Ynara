@@ -1,6 +1,6 @@
 # AGENTS.md — Contrato del repo Ynara
 
-> Contrato AI-neutral para trabajar en este repo. Cualquier agente IA (Claude Code, OpenAI Codex, Gemini Code Assist, Cursor, Copilot) **lee este archivo primero**. Los adapters específicos por herramienta viven en [`CLAUDE.md`](./CLAUDE.md), [`CODEX.md`](./CODEX.md), [`GEMINI.md`](./GEMINI.md) y solo contienen punteros + atajos: la fuente canónica es esta.
+> Contrato AI-neutral para trabajar en este repo. Cualquier agente IA (Claude Code, OpenAI Codex, Gemini Code Assist, Cursor, Copilot) **lee este archivo primero**. El adapter de Claude Code vive en [`CLAUDE.md`](./CLAUDE.md) y solo contiene punteros + atajos: la fuente canónica es esta.
 
 ## Quickstart 30s
 
@@ -19,9 +19,9 @@
 
 ## Golden rule
 
-Los archivos `.md` raíz (este, `CLAUDE.md`, `CODEX.md`, `GEMINI.md`, `DESIGN.md`, `IDENTITY.md`, `README.md`, `SECURITY.md`, `CONTRIBUTING.md`) y la carpeta `docs/` son **fuente de verdad**.
+Los archivos `.md` raíz (este, `CLAUDE.md`, `DESIGN.md`, `IDENTITY.md`, `README.md`, `SECURITY.md`, `CONTRIBUTING.md`) y la carpeta `docs/` son **fuente de verdad**.
 
-Las carpetas `.claude/`, `.codex/`, `.gemini/` son **adapters** para los IDEs/CLIs de IA: solo punteros y atajos específicos de cada herramienta. Si hay un conflicto entre adapter y fuente canónica, gana la fuente canónica.
+La carpeta `.claude/` es el **adapter** de Claude Code: solo punteros y atajos específicos de la herramienta. Si hay un conflicto entre adapter y fuente canónica, gana la fuente canónica.
 
 ## Read Order
 
@@ -169,7 +169,7 @@ Para tareas con un solo archivo, va inline. Para tareas con múltiples pasos, ca
 | Path | Por qué te importa |
 | --- | --- |
 | `AGENTS.md` | Este archivo — contrato del repo, leer primero |
-| `CLAUDE.md` / `CODEX.md` / `GEMINI.md` | Adapters por IDE — solo punteros, sin contenido propio |
+| `CLAUDE.md` | Adapter de Claude Code — solo punteros, sin contenido propio |
 | `IDENTITY.md` | 4 pilares de marca + voz: qué es Ynara y qué no es |
 | `DESIGN.md` | Sistema visual — placeholder hasta aprobación del equipo |
 | `CONTRIBUTING.md` | Flujo de trabajo para humanos: branches, PRs, review, tono |
@@ -360,10 +360,9 @@ Valida en un solo comando:
 | Herramienta | Adapter | Carpeta |
 | --- | --- | --- |
 | Claude Code | [`CLAUDE.md`](./CLAUDE.md) | `.claude/` |
-| OpenAI Codex | [`CODEX.md`](./CODEX.md) | `.codex/` |
-| Gemini Code Assist | [`GEMINI.md`](./GEMINI.md) | `.gemini/` |
 
-Cualquier adapter es solo puntero + atajos específicos de su IDE. Si un adapter dice algo distinto a este `AGENTS.md`, **gana este**.
+Cualquier otra herramienta IA lee este `AGENTS.md` directamente. Si un
+adapter dice algo distinto a este `AGENTS.md`, **gana este**.
 
 ## Cuando algo no esté claro
 

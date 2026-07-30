@@ -76,9 +76,4 @@ Inglés técnico para nombres de variables, funciones, ramas y commits
 (el sufijo en inglés del Conventional Commit), pero el cuerpo del
 mensaje en español.
 
-## Adapters hermanos
-
-- `CODEX.md` — adapter para OpenAI Codex.
-- `GEMINI.md` — adapter para Gemini Code Assist.
-
-Todos apuntan a `AGENTS.md` como fuente canónica.
+Este adapter apunta a `AGENTS.md` como fuente canónica.

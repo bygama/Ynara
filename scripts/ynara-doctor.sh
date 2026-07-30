@@ -112,10 +112,10 @@ else
 fi
 
 # ---------------------------------------------------------------------
-# 6. Adapters CLAUDE/CODEX/GEMINI referencian AGENTS.md
+# 6. Adapter CLAUDE.md referencia AGENTS.md
 # ---------------------------------------------------------------------
 header 6 "Adapters apuntan a AGENTS.md"
-for f in CLAUDE.md CODEX.md GEMINI.md; do
+for f in CLAUDE.md; do
   if [ ! -f "$f" ]; then
     bad "$f no existe"
   elif grep -q "AGENTS.md" "$f"; then
