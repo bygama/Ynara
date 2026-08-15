@@ -3,7 +3,7 @@
 > **Estado**: v2 — borrador para revisión
 > **Fecha**: 2026-05-30 (v1 web-only) · 2026-05-30 (v2 web + mobile)
 > **Owner**: @MateoGs013
-> **Reviewers sugeridos**: @BriarDevv (contrato LLM / backend), @querques20 (UX / UI)
+> **Reviewers sugeridos**: @bygama (contrato LLM / backend), @querques20 (UX / UI)
 > **Alcance**: `apps/web` (Next.js) **+** `apps/mobile` (Expo). Mock-first con MSW en ambas. Capa compartida en `packages/shared-schemas` y `packages/shared-types`.
 > **Continúa**: [`archive/FRONTEND-ONBOARDING-PLAN.md`](./archive/FRONTEND-ONBOARDING-PLAN.md) (ejecutado, web).
 
@@ -111,7 +111,7 @@ Este documento es el plan del **segundo slice navegable** del frontend de Ynara:
 
 > **Platform-agnostic.** Esta sección es idéntica para web y mobile: el contrato es del backend, las dos plataformas lo espejan vía la capa compartida (§3).
 
-Fuente de verdad: [`apps/backend/app/llm/schemas.py`](../../apps/backend/app/llm/schemas.py) (Pydantic) + [`apps/backend/docs/ENDPOINTS.md`](../../apps/backend/docs/ENDPOINTS.md) + las respuestas de contrato de @BriarDevv en [`RESPUESTAS-CONTRATO-CHAT.md`](./RESPUESTAS-CONTRATO-CHAT.md) (las preguntas de la §7.1 quedaron **cerradas** ahí). Los Zod de este plan son **mirror manual** — si el backend cambia, se corrige Zod en el mismo PR.
+Fuente de verdad: [`apps/backend/app/llm/schemas.py`](../../apps/backend/app/llm/schemas.py) (Pydantic) + [`apps/backend/docs/ENDPOINTS.md`](../../apps/backend/docs/ENDPOINTS.md) + las respuestas de contrato de @bygama en [`RESPUESTAS-CONTRATO-CHAT.md`](./RESPUESTAS-CONTRATO-CHAT.md) (las preguntas de la §7.1 quedaron **cerradas** ahí). Los Zod de este plan son **mirror manual** — si el backend cambia, se corrige Zod en el mismo PR.
 
 ### 2.1 Endpoints
 
@@ -157,7 +157,7 @@ StreamDoneSchema    = { session_id: string, actions: ActionSchema[], finish_reas
 StreamErrorSchema   = { code: string, message: string }
 ```
 
-> **`actions[]`**: **siempre presente** (`actions: Action[]`, vacío si no hubo). En Zod, `z.array(ActionSchema).default([])` — no opcional — para matchear el default de Pydantic. (BriarDevv ya corrigió el `actions?` engañoso en `ENDPOINTS.md`.)
+> **`actions[]`**: **siempre presente** (`actions: Action[]`, vacío si no hubo). En Zod, `z.array(ActionSchema).default([])` — no opcional — para matchear el default de Pydantic. (bygama ya corrigió el `actions?` engañoso en `ENDPOINTS.md`.)
 >
 > Cada `Action` lleva **`result`** (el resultado ejecutado de la tool, no solo lo pedido): así la UI renderiza *lo que pasó* (chip "evento agendado", card de recordatorio). `result` es el dict que devuelve `ToolRegistry.execute` (hoy stub `{ status: "not_wired" }`; el real cuando se cableen las tools) o `{ error: { code, message } }`. Solo los modos Qwen (productividad, memoria) producen `actions`; Gemma → `[]`.
 
@@ -174,7 +174,7 @@ SessionSchema = { id: string /* UUID */, user_id: string /* UUID */, mode: ModeS
 
 ### 2.4 Streaming — transporte (cerrado)
 
-**Decisión cerrada** (BriarDevv, [`RESPUESTAS-CONTRATO-CHAT.md`](./RESPUESTAS-CONTRATO-CHAT.md)): el streaming va en un **endpoint aparte** `POST /v1/chat/stream`, NO por content-negotiation sobre `/v1/chat`. Razón: semánticas distintas (el no-streaming devuelve un `ChatResponse` con `actions` ya ejecutadas; el stream tiene otro contrato y **sin fallback mid-stream**), y una URL explícita es más clara para el cliente y más fácil de testear.
+**Decisión cerrada** (bygama, [`RESPUESTAS-CONTRATO-CHAT.md`](./RESPUESTAS-CONTRATO-CHAT.md)): el streaming va en un **endpoint aparte** `POST /v1/chat/stream`, NO por content-negotiation sobre `/v1/chat`. Razón: semánticas distintas (el no-streaming devuelve un `ChatResponse` con `actions` ya ejecutadas; el stream tiene otro contrato y **sin fallback mid-stream**), y una URL explícita es más clara para el cliente y más fácil de testear.
 
 El stream emite **eventos SSE con nombre** (el `event:` de SSE como discriminador):
 
@@ -628,19 +628,19 @@ Fases con 1 PR por fase. Tres tracks: **compartido** (S0), **web** (W1–W6, re�
 
 | # | PR | Branch | Track | Tamaño | Reviewer |
 |---|---|---|---|---|---|
-| S0 | `feat(shared): contrato del chat + parser SSE` | `feat/chat-shared` | shared | M | @BriarDevv (contrato) |
-| W1 | `feat(web): MSW + store + cliente de chat` | `feat/chat-web-foundations` | web | M | @BriarDevv |
+| S0 | `feat(shared): contrato del chat + parser SSE` | `feat/chat-shared` | shared | M | @bygama (contrato) |
+| W1 | `feat(web): MSW + store + cliente de chat` | `feat/chat-web-foundations` | web | M | @bygama |
 | W2 | `feat(web): pantalla de conversación` | `feat/chat-web-screen` | web | L | @querques20 (UX) |
-| W3 | `feat(web): streaming de respuestas` | `feat/chat-web-streaming` | web | M | @BriarDevv |
+| W3 | `feat(web): streaming de respuestas` | `feat/chat-web-streaming` | web | M | @bygama |
 | W4 | `feat(web): acciones de tools (Qwen)` | `feat/chat-web-actions` | web | M | @querques20 |
 | W5 | `feat(web): arranque desde home + historial` | `feat/chat-web-home` | web | M | @querques20 |
-| W6 | `test(web): chat — vitest + playwright + axe` | `feat/chat-web-tests` | web | M | @BriarDevv |
-| M0 | `feat(mobile): tokens + providers + cliente + MSW` | `feat/mobile-foundations` | mobile | L | @BriarDevv |
+| W6 | `test(web): chat — vitest + playwright + axe` | `feat/chat-web-tests` | web | M | @bygama |
+| M0 | `feat(mobile): tokens + providers + cliente + MSW` | `feat/mobile-foundations` | mobile | L | @bygama |
 | M1 | `feat(mobile): pantalla de conversación` | `feat/chat-mobile-screen` | mobile | L | @querques20 |
-| M2 | `feat(mobile): streaming de respuestas` | `feat/chat-mobile-streaming` | mobile | M | @BriarDevv |
+| M2 | `feat(mobile): streaming de respuestas` | `feat/chat-mobile-streaming` | mobile | M | @bygama |
 | M3 | `feat(mobile): acciones de tools (Qwen)` | `feat/chat-mobile-actions` | mobile | M | @querques20 |
 | M4 | `feat(mobile): historial de sesiones` | `feat/chat-mobile-sessions` | mobile | M | @querques20 |
-| M5 | `test(mobile): chat — RNTL + a11y` | `feat/chat-mobile-tests` | mobile | M | @BriarDevv |
+| M5 | `test(mobile): chat — RNTL + a11y` | `feat/chat-mobile-tests` | mobile | M | @bygama |
 
 **Cortes naturales**:
 - **Web**: tras W4 el chat web ya es usable de punta a punta con streaming + acciones; W5 (home) y W6 (tests) se pueden diferir si aprieta.
@@ -685,7 +685,7 @@ Fases con 1 PR por fase. Tres tracks: **compartido** (S0), **web** (W1–W6, re�
 
 ## 9. Riesgos y landmines
 
-> El contrato del chat quedó **cerrado** por @BriarDevv en [`RESPUESTAS-CONTRATO-CHAT.md`](./RESPUESTAS-CONTRATO-CHAT.md) (PR #61): streaming en `/v1/chat/stream` con eventos `token`/`done`/`error`, `Action` con `result`, `actions` siempre presente, markdown sí, límite ~4000 chars. Las preguntas de la antigua §7.1 ya no están abiertas (ver §9.1 abajo).
+> El contrato del chat quedó **cerrado** por @bygama en [`RESPUESTAS-CONTRATO-CHAT.md`](./RESPUESTAS-CONTRATO-CHAT.md) (PR #61): streaming en `/v1/chat/stream` con eventos `token`/`done`/`error`, `Action` con `result`, `actions` siempre presente, markdown sí, límite ~4000 chars. Las preguntas de la antigua §7.1 ya no están abiertas (ver §9.1 abajo).
 
 **[mobile, crítico] Streaming SSE en React Native.** El `fetch` global de RN **no** expone `response.body` como `ReadableStream` — devuelve el body entero, lo que rompe el token-a-token. Solución recomendada: **`expo/fetch`** (Expo 53, fetch WinterCG con streaming). Fallback: `react-native-sse` o XHR `onprogress`. **Hacer un spike antes de M2** (parte de M0) y documentar el resultado acá. No asumir que el `useChatStream` del web corre tal cual en mobile.
 
@@ -719,7 +719,7 @@ Fases con 1 PR por fase. Tres tracks: **compartido** (S0), **web** (W1–W6, re�
 
 ### 9.1 Decisiones cerradas (eran preguntas abiertas)
 
-Cerradas por @BriarDevv en [`RESPUESTAS-CONTRATO-CHAT.md`](./RESPUESTAS-CONTRATO-CHAT.md) (PR #61) + decisión del owner:
+Cerradas por @bygama en [`RESPUESTAS-CONTRATO-CHAT.md`](./RESPUESTAS-CONTRATO-CHAT.md) (PR #61) + decisión del owner:
 
 | # | Pregunta | Decisión |
 |---|---|---|
@@ -747,7 +747,7 @@ Cerradas por @BriarDevv en [`RESPUESTAS-CONTRATO-CHAT.md`](./RESPUESTAS-CONTRATO
 - [`apps/web/AGENTS.md`](../../apps/web/AGENTS.md) — reglas duras del frontend web.
 - [`apps/mobile/AGENTS.md`](../../apps/mobile/AGENTS.md) — reglas duras del frontend mobile (SecureStore, NativeWind sobre TW3).
 - [`apps/backend/app/llm/schemas.py`](../../apps/backend/app/llm/schemas.py) — **contrato fuente** (ChatRequest/Response, ChatMessage, ToolCall, CompletionChunk).
-- [`docs/planning/RESPUESTAS-CONTRATO-CHAT.md`](./RESPUESTAS-CONTRATO-CHAT.md) — **respuestas de contrato cerradas** (@BriarDevv, PR #61): streaming, eventos, `Action.result`, markdown, límite.
+- [`docs/planning/RESPUESTAS-CONTRATO-CHAT.md`](./RESPUESTAS-CONTRATO-CHAT.md) — **respuestas de contrato cerradas** (@bygama, PR #61): streaming, eventos, `Action.result`, markdown, límite.
 - [`apps/backend/docs/ENDPOINTS.md`](../../apps/backend/docs/ENDPOINTS.md) — spec de `POST /v1/chat` + `POST /v1/chat/stream` (M9).
 - [`docs/planning/LLM-INFERENCE-INTEGRATION.md`](./LLM-INFERENCE-INTEGRATION.md) — milestones del backend LLM (M8 router, M9 endpoint).
 - [`docs/product/MODES.md`](../product/MODES.md) — definición + tono de los 5 modos.

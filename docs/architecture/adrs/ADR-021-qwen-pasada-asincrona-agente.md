@@ -12,7 +12,7 @@ Propuesto — **parcialmente superseded por [ADR-022](./ADR-022-tools-sincronos-
 > `agent_turn_pass` queda **dormant** (registrada pero sin encolador), reservada para
 > una futura pasada de agente en modos gemma.
 
-<!-- Autonomía dada por @BriarDevv (CODEOWNER) el 2026-06-22 ("hacete vos una hoja
+<!-- Autonomía dada por @bygama (CODEOWNER) el 2026-06-22 ("hacete vos una hoja
      de ruta, lo que hagas que sea la mejor práctica y lo más escalable posible,
      total confianza, no es necesario que me pidas permiso"). Lleva el tool-loop
      OBSERVADO de ADR-019 a EJECUCIÓN REAL asíncrona en el chat de producción. -->

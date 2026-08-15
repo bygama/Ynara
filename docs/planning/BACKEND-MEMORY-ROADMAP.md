@@ -15,7 +15,7 @@
 
 > **Estado**: v2 — agente funcionando hasta M9; serving local = Ollama/GGUF (ADR-014); infra vLLM real (24 GB+) pendiente
 > **Fecha**: 2026-05-21 · **Actualizado**: 2026-05-31
-> **Owner**: @BriarDevv
+> **Owner**: @bygama
 > **Alcance**: `apps/backend` — desde el estado actual hasta tener el agente respondiendo con memoria viva.
 > **Fuentes**: [`AGENTS.md`](../../AGENTS.md), [`docs/architecture/informe-tecnico.pdf`](../architecture/informe-tecnico.pdf), [`docs/architecture/adrs/`](../architecture/adrs/), Trello cards *Arquitectura de memoria contextual* + *Integración con backend LLM*.
 

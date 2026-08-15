@@ -26,7 +26,7 @@
 |---|---|
 | **Alcance** | **Web + mobile.** Las fundaciones (íconos, sistema gráfico, tokens) se crean RN-portables en `packages/ui` y sirven a ambas plataformas. **Realidad importante:** `apps/mobile` hoy es un **esqueleto** (solo `app/index.tsx` + `_layout.tsx`; el resto son `.gitkeep`) — no hay pantallas mobile para rediseñar todavía, así que mobile = construir sobre las fundaciones a medida que sus pantallas existan (ver Capa 4). |
 | **Estructura** | **Por capas**: sistema gráfico → primitives → pantallas. Minimiza retrabajo. |
-| **Logo (`YnaraMark`)** | **Sí, alinearlo a la marca** (diamante + rampa de memoria real). Es cambio de identidad → el PR igual lleva review de @BriarDevv/@querques20 como CODEOWNERS, pero **entra en el rediseño** (no se difiere). |
+| **Logo (`YnaraMark`)** | **Sí, alinearlo a la marca** (diamante + rampa de memoria real). Es cambio de identidad → el PR igual lleva review de @bygama/@querques20 como CODEOWNERS, pero **entra en el rediseño** (no se difiere). |
 | **Verificación visual** | **No por ahora**: se confía en los gates automáticos (biome · tsc · build · vitest · doctor). La verificación visual en navegador queda para una pasada de QA al final, si el usuario la pide. |
 
 ## Principios de ejecución (heredados del flujo actual)
@@ -169,7 +169,7 @@ La pantalla más crítica. Es donde el rediseño se nota más.
 ### F3.1 — Migrar el logo a la identidad de marca
 - Migrar a colores/formas reales de la presentación (diamante, rampa de memoria real
   en vez de `--color-violet-*` legacy).
-- Es cambio de identidad → el PR lleva review de @BriarDevv/@querques20 (CODEOWNERS),
+- Es cambio de identidad → el PR lleva review de @bygama/@querques20 (CODEOWNERS),
   pero **entra en el rediseño** (no se difiere).
 - Al cerrarse: eliminar `--color-violet-*` legacy si ya nadie los usa, y unificar en
   la rampa de memoria.

@@ -13,7 +13,7 @@
 
 <!-- TODO: completar -->
 - On-call principal: @MateoGs013
-- On-call secundario: @BriarDevv
+- On-call secundario: @bygama
 - DBA (memoria): @querques20
 
 ## Comandos rápidos

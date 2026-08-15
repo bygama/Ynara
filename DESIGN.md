@@ -7,7 +7,7 @@ especificación legible que ese CSS debe implementar. Si hay divergencia, se
 corrige el código.
 
 > **Aprobación**: los cambios a este archivo y al sistema visual se aprueban por
-> los **CODEOWNERS** de `DESIGN.md` (`.github/CODEOWNERS`: @MateoGs013, @BriarDevv,
+> los **CODEOWNERS** de `DESIGN.md` (`.github/CODEOWNERS`: @MateoGs013, @bygama,
 > @querques20). Todo cambio entra por **PR** (rama → commits atómicos →
 > `ynara-doctor` exit 0 → review → rebase merge), nunca por push directo a `main`.
 
@@ -630,7 +630,7 @@ o assert de que `bg-azul`/`text-*`/`bg-mode-*` resuelven) — hoy **no existe** 
 PR posterior arranca con el gate rojo y el ruido tapa regresiones nuevas.
 
 **1. `docs(design)` — este bump del `DESIGN.md` a v4.** *(este PR)* Aprobación de
-los **CODEOWNERS** de `DESIGN.md` (@MateoGs013, @BriarDevv, @querques20). El scope
+los **CODEOWNERS** de `DESIGN.md` (@MateoGs013, @bygama, @querques20). El scope
 `design` no es canónico en `COMMITS.md`; usar `docs(conventions)` o blesear `design`.
 
 **2. `feat(web)` — tokens base (paleta + motion).** En `globals.css`: los 9 stops
@@ -758,6 +758,6 @@ render en dev).
 > explícito (regla #1). `main` solo se actualiza por **PR mergeado** (rebase, sin
 > merge commit); nunca push directo, merge local, ni force-push a `main`.
 > `DESIGN.md` y todo `.md` raíz requieren aprobación de los **CODEOWNERS**
-> (@MateoGs013, @BriarDevv, @querques20). Commits **atómicos** (regla #7): tokens, modos+dedup y tema Noche son
+> (@MateoGs013, @bygama, @querques20). Commits **atómicos** (regla #7): tokens, modos+dedup y tema Noche son
 > los más pesados — splitear en commits chicos. v4 **no toca** backend, memoria,
 > `ynara.config.json` ni ninguna regla de `AGENTS.md`.

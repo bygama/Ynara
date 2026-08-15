@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Pregunta general / discusión
-    url: https://github.com/BriarDevv/Ynara/discussions
+    url: https://github.com/bygama/Ynara/discussions
     about: Para preguntas que no son bugs ni features específicas. Usá Discussions.
   - name: Reporte de seguridad (privado)
-    url: https://github.com/BriarDevv/Ynara/security/advisories/new
+    url: https://github.com/bygama/Ynara/security/advisories/new
     about: Vulnerabilidades vía GitHub Private Vulnerability Reporting, no por issues públicos. Ver SECURITY.md.

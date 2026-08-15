@@ -203,7 +203,7 @@ principio "una forma continua que morfea" es la columna vertebral.)
 
 Next.js 16 (App Router, `src/app`) · React 19 · TypeScript · **Tailwind 4** ·
 **three.js ^0.164** · **GSAP + ScrollTrigger + SplitText** · **Lenis** · pnpm · Biome.
-(Matchea el stack del equipo `BriarDevv/Ynara` + suma three.js para el WebGL.)
+(Matchea el stack del equipo `bygama/Ynara` + suma three.js para el WebGL.)
 
 ---
 

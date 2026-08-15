@@ -45,7 +45,7 @@ español. 50K-200K usuarios activos. Tres planos:
 
 ## Equipo
 
-3 personas (@MateoGs013, @BriarDevv, @querques20). Hardware:
+3 personas (@MateoGs013, @bygama, @querques20). Hardware:
 RTX 4080 Super 16GB para inferencia + fine-tuning. Stack
 TypeScript + Python.
 

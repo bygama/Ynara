@@ -42,7 +42,7 @@ Sin datos de usuario saliendo del perímetro, sin lock-in a big tech.
 | ADRs aprobados | 15 (ADR-001 a ADR-015) |
 | Skills reutilizables | 6 |
 | Archivos tracked | ~500 |
-| CODEOWNERS | 3 (@MateoGs013, @BriarDevv, @querques20) |
+| CODEOWNERS | 3 (@MateoGs013, @bygama, @querques20) |
 
 ## Los 5 modos
 
@@ -67,7 +67,7 @@ Configuración canónica en [`ynara.config.json`](./ynara.config.json).
 ### 1. Clonar y verificar entorno
 
 ```bash
-git clone https://github.com/BriarDevv/Ynara.git
+git clone https://github.com/bygama/Ynara.git
 cd Ynara
 bash scripts/init.sh
 ```
@@ -368,7 +368,7 @@ Identidad de marca: [`IDENTITY.md`](./IDENTITY.md).
 
 3 CODEOWNERS del repo:
 [@MateoGs013](https://github.com/MateoGs013),
-[@BriarDevv](https://github.com/BriarDevv),
+[@bygama](https://github.com/bygama),
 [@querques20](https://github.com/querques20).
 Responsabilidades por path en [`.github/CODEOWNERS`](./.github/CODEOWNERS).
 

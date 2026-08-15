@@ -4,7 +4,7 @@
 
 Aceptado
 
-<!-- Aprobado por @BriarDevv (CODEOWNER) el 2026-06-19 ("te doy permiso para todo
+<!-- Aprobado por @bygama (CODEOWNER) el 2026-06-19 ("te doy permiso para todo
      100% de confianza"), habilitando la implementación de la fase 1. Refina
      ADR-013/ADR-014 y materializa la fase 1 del control plane previsto en
      ADR-017 D7. -->

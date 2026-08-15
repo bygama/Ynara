@@ -10,7 +10,7 @@ encaja en una capa existente primero.
 ## Pre-requisitos
 
 - ADR aprobado **con discusión amplia del equipo**.
-- Aprobación explícita de @MateoGs013, @BriarDevv y @querques20
+- Aprobación explícita de @MateoGs013, @bygama y @querques20
   (todos los CODEOWNERS).
 - Plan claro de qué memoria existente no cubre el caso.
 

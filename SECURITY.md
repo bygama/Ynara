@@ -10,7 +10,7 @@ de issues para reportes de seguridad.
 ### Cómo reportar
 
 1. Andá a
-   [github.com/BriarDevv/Ynara/security/advisories](https://github.com/BriarDevv/Ynara/security/advisories/new).
+   [github.com/bygama/Ynara/security/advisories](https://github.com/bygama/Ynara/security/advisories/new).
 2. Click en **"Report a vulnerability"**.
 3. Completá:
    - Descripción de la vulnerabilidad.
@@ -30,7 +30,7 @@ salta a inmediata.
 
 Para bugs no-sensibles, features, o cualquier otro tipo de tema
 público, usar
-[github.com/BriarDevv/Ynara/issues](https://github.com/BriarDevv/Ynara/issues)
+[github.com/bygama/Ynara/issues](https://github.com/bygama/Ynara/issues)
 con el template correspondiente.
 
 ## Principios

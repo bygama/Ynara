@@ -4,7 +4,7 @@
 
 Aceptado
 
-<!-- Aprobado por @BriarDevv (CODEOWNER) el 2026-06-19 ("te doy permiso para todo
+<!-- Aprobado por @bygama (CODEOWNER) el 2026-06-19 ("te doy permiso para todo
      100% de confianza"). Refina ADR-018: incorpora un modo agente OBSERVADO al
      playground como superficie separada. -->
 

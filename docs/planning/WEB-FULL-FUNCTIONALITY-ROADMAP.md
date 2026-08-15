@@ -1,7 +1,7 @@
 # Roadmap: Web a funcionalidad completa (salir de mock-first)
 
 > Estado: vivo · Última actualización: 2026-06-22
-> Dueño del orden: agente (autonomía dada por @BriarDevv — "mejor práctica, lo más
+> Dueño del orden: agente (autonomía dada por @bygama — "mejor práctica, lo más
 > escalable posible"). Cada PR con migración requiere **1 aprobación humana** (regla #3).
 
 ## Objetivo

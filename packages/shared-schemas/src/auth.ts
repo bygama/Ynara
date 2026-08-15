@@ -4,7 +4,7 @@ import { z } from "zod";
  * Shapes provisionales del contrato de auth.
  *
  * SHAPE PROVISIONAL — pendiente de acuerdo con backend (ver issue
- * BriarDevv/Ynara#6). Cuando @BriarDevv cierre el contrato y aparezcan
+ * bygama/Ynara#6). Cuando @bygama cierre el contrato y aparezcan
  * los Pydantic en apps/backend/app/schemas/, mirrorear acá en el mismo
  * PR de Pydantic (regla AI-GUIDELINES "Pydantic gana, Zod sigue").
  */

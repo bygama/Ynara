@@ -4,7 +4,7 @@
 
 Aceptado — refina/supersede parcialmente [ADR-021](./ADR-021-qwen-pasada-asincrona-agente.md)
 
-<!-- Autonomía dada por @BriarDevv (CODEOWNER) el 2026-06-22 ("hacete vos una hoja
+<!-- Autonomía dada por @bygama (CODEOWNER) el 2026-06-22 ("hacete vos una hoja
      de ruta, lo que hagas que sea la mejor práctica y lo más escalable posible,
      total confianza"). Este ADR corrige el BUG de que el chat real recibía los stubs
      `not_wired` y lleva las tools reales (calendar/task) al tool-loop del chat. -->

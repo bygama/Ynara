@@ -72,7 +72,7 @@ Pedidos específicos por reviewer. No relleno — solo si querés foco en
 algo. Si el PR es self-explanatory, omitir esta sección.
 
 - **@MateoGs013**: validar X (sos CODEOWNER de Y).
-- **@BriarDevv**: validar Z (foundations técnicas).
+- **@bygama**: validar Z (foundations técnicas).
 - **@querques20**: validar W (alineación con el prototipo).
 -->
 

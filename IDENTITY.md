@@ -67,5 +67,5 @@ El detalle modo-por-modo vive en `docs/product/TONE-OF-VOICE.md`.
 ## Aprobación
 
 Cualquier cambio a este archivo requiere PR con review del equipo y
-aprobación de @MateoGs013, @BriarDevv y @querques20 (los 3 CODEOWNERS
+aprobación de @MateoGs013, @bygama y @querques20 (los 3 CODEOWNERS
 del proyecto).

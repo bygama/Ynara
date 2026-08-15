@@ -547,5 +547,5 @@ separados sobre el mismo PR.
 
 ## Histórico — referencias de reviews reales
 
-- PR #1: https://github.com/BriarDevv/Ynara/pull/1#issuecomment-4481972122
-- PR #2: https://github.com/BriarDevv/Ynara/pull/2#issuecomment-4482182163
+- PR #1: https://github.com/bygama/Ynara/pull/1#issuecomment-4481972122
+- PR #2: https://github.com/bygama/Ynara/pull/2#issuecomment-4482182163

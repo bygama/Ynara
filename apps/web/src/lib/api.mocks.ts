@@ -18,8 +18,8 @@ import { env } from "./env";
  * Handlers MSW para los endpoints del backend.
  *
  * SHAPES PROVISIONALES — pendiente de acuerdo con backend.
- * Ver issue de contrato: https://github.com/BriarDevv/Ynara/issues/6
- * TODO(@BriarDevv): cuando el contrato se cierre, mirrorear estos
+ * Ver issue de contrato: https://github.com/bygama/Ynara/issues/6
+ * TODO(@bygama): cuando el contrato se cierre, mirrorear estos
  * handlers contra los Pydantic finales en el mismo PR de schemas.
  *
  * Validación: usamos los Zod de `@ynara/shared-schemas` para que el
@@ -38,7 +38,7 @@ export const handlers = [
 
   // ALIAS TEMPORAL del contrato PROVISIONAL camelCase (@ynara/shared-schemas:
   // {token, userId}). La web YA NO los usa (migró a register/token de core);
-  // se dejan hasta retirar shared-schemas/auth. Ver BriarDevv/Ynara#6.
+  // se dejan hasta retirar shared-schemas/auth. Ver bygama/Ynara#6.
   http.post(apiUrl("/v1/auth/signup"), async ({ request }) => {
     const json = await request.json().catch(() => null);
     const parsed = SignupRequestSchema.safeParse(json);

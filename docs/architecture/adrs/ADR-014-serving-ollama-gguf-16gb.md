@@ -2,7 +2,7 @@
 
 > **Refina** [ADR-009](./ADR-009-vllm-serving-topology-tool-parsers.md) (motor de serving) y
 > [ADR-012](./ADR-012-conversational-model-12b-single-process.md) (D2 co-residencia / D3 números),
-> con la medición real bajo vLLM/AWQ de [issue #207](https://github.com/BriarDevv/Ynara/issues/207).
+> con la medición real bajo vLLM/AWQ de [issue #207](https://github.com/bygama/Ynara/issues/207).
 
 ## Estado
 
@@ -53,7 +53,7 @@ solo proceso, GGUF) no paga ese costo** y por eso sí entra el stack completo
 (12B+9B+bge = 14,55 GiB, medido en ADR-012). Lo que sí entra bajo vLLM: Gemma 12B
 sola (~11,6 GiB) o Gemma 12B + bge (~13,6 GiB); el agente no cabe residente.
 
-De paso se validó [#205](https://github.com/BriarDevv/Ynara/issues/205) contra
+De paso se validó [#205](https://github.com/bygama/Ynara/issues/205) contra
 vLLM real: `chat_template_kwargs: {enable_thinking: false}` devolvió `reasoning:
 null` y `content` limpio.
 
@@ -164,7 +164,7 @@ El path vLLM (OpenAI-compat + `chat_template_kwargs` + `reasoning_effort`) queda
   16 GB; D3 confirmado con medición vLLM.
 - **Confirma** [ADR-008](./ADR-008-embedding-model-bge-m3.md): bge-m3 co-reside
   sin problema (1,06 GiB).
-- **Valida** [#205](https://github.com/BriarDevv/Ynara/issues/205): el control de
+- **Valida** [#205](https://github.com/bygama/Ynara/issues/205): el control de
   thinking funciona contra vLLM real (`enable_thinking: false`).
 
 ## Fuentes
@@ -172,6 +172,6 @@ El path vLLM (OpenAI-compat + `chat_template_kwargs` + `reasoning_effort`) queda
 - Medición propia 2026-06-14 en RTX 4080 Super 16 GB: vLLM 0.23.0 (imagen
   `vllm/vllm-openai`), Docker/WSL2, `nvidia-smi`, líneas `Model loading took` y
   `GPU KV cache size` / `Available KV cache memory` de los logs de vLLM.
-- Issue [#207](https://github.com/BriarDevv/Ynara/issues/207) (hilo de medición).
+- Issue [#207](https://github.com/bygama/Ynara/issues/207) (hilo de medición).
 - Checkpoints: `cyankiwi/gemma-4-12B-it-AWQ-INT4`, `cyankiwi/Qwen3.5-9B-AWQ-4bit`,
   `cyankiwi/Qwen3.5-4B-AWQ-4bit`, `BAAI/bge-m3` (HuggingFace, ungated).

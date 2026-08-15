@@ -35,7 +35,7 @@ Estado del backend hoy (para anclar las respuestas):
 
 ---
 
-## Backend (para @BriarDevv / la capa LLM)
+## Backend (para @bygama / la capa LLM)
 
 ### 1. Streaming: ¿SSE sobre `/v1/chat` por content-negotiation, o endpoint aparte?
 

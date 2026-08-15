@@ -2,11 +2,11 @@
 
 > **Estado**: ✅ EJECUTADO — todas las sesiones cerradas. S1–S3 mergeadas
 > previamente; S4 (mood/modos/a11y/outro) + S5 (home vacía) + S6 (tests)
-> mergeadas en [PR #48](https://github.com/BriarDevv/Ynara/pull/48) el
+> mergeadas en [PR #48](https://github.com/bygama/Ynara/pull/48) el
 > 2026-05-30. Documento archivado.
 > **Fecha**: 2026-05-18 (plan) · 2026-05-30 (ejecución)
 > **Owner**: @MateoGs013
-> **Reviewers sugeridos**: @BriarDevv (foundations / infra), @querques20 (UX / UI)
+> **Reviewers sugeridos**: @bygama (foundations / infra), @querques20 (UX / UI)
 > **Alcance**: `apps/web` (incluye primitives web-only en `apps/web/src/components/ui/`). Mobile (Expo) y `packages/ui` (reservado para RN-compatibles) quedan fuera.
 
 ---
@@ -263,9 +263,9 @@ Conocen features y reglas web-específicas.
 >
 > Reglas para no acumular deuda de divergencia Zod ↔ Pydantic:
 >
-> 1. **Antes de mergear la PR de Sesión 3**, abrir issue con @BriarDevv para acordar el contrato (shape de request/response, claims del JWT, scopes). Si ya existe PR en curso de `core/security.py`, referenciarlo.
+> 1. **Antes de mergear la PR de Sesión 3**, abrir issue con @bygama para acordar el contrato (shape de request/response, claims del JWT, scopes). Si ya existe PR en curso de `core/security.py`, referenciarlo.
 > 2. **Schemas Zod en `packages/shared-schemas/`** desde el día 1 (no inline en `apps/web`). Cuando el backend defina Pydantic, los modelos se mirroran manualmente contra los Zod existentes — eso vuelve la divergencia detectable en code review.
-> 3. **MSW handlers comentados** con un `TODO(@BriarDevv)` y link al issue, así no quedan handlers huérfanos cuando el backend reemplace los mocks.
+> 3. **MSW handlers comentados** con un `TODO(@bygama)` y link al issue, así no quedan handlers huérfanos cuando el backend reemplace los mocks.
 
 ### 4.3 Step 2 · Nombre
 
@@ -508,7 +508,7 @@ packages/ui/src/index.ts       ← barrel update
 
 ### 6.3 Deps a agregar (requieren OK humano — regla #1 AGENTS.md)
 
-Las deps se instalan en **dos batches**, cada uno en su sesión correspondiente, para que cada `pnpm add` tenga aprobación explícita y para no inflar `package.json` con deps muertas hasta que se usen (feedback del review de @BriarDevv en PR del plan).
+Las deps se instalan en **dos batches**, cada uno en su sesión correspondiente, para que cada `pnpm add` tenga aprobación explícita y para no inflar `package.json` con deps muertas hasta que se usen (feedback del review de @bygama en PR del plan).
 
 **Batch 1 — Sesión 2** (core de la app):
 
@@ -594,7 +594,7 @@ Por qué: el `apps/web/src/app/globals.css` actual ya escanea `packages/ui/src/*
 **Branch**: `feat/onboarding-1`
 **PR**: `feat(onboarding): auth y nombre`
 
-**Antes de arrancar**: abrir issue con @BriarDevv para acordar el contrato de auth con el backend (ver §4.2 — landmine de `core/security.py`). El PR se mergea con link al issue, no antes.
+**Antes de arrancar**: abrir issue con @bygama para acordar el contrato de auth con el backend (ver §4.2 — landmine de `core/security.py`). El PR se mergea con link al issue, no antes.
 
 1. Schemas Zod de auth (signup + login + sesión) en **`packages/shared-schemas/`** — no inline en `apps/web`. Esto permite mirrorearlos contra Pydantic cuando el backend implemente `core/security.py`.
 2. `features/onboarding/schemas.ts` (importa desde `@ynara/shared-schemas`).
@@ -604,7 +604,7 @@ Por qué: el `apps/web/src/app/globals.css` actual ya escanea `packages/ui/src/*
 6. `components/StepShell.tsx` (GSAP fade+slide).
 7. `components/StepFooter.tsx`.
 8. `app/onboarding/layout.tsx` + `[step]/page.tsx`.
-9. `AuthStep.tsx` completo (tabs + RHF + mock + errores inline). MSW handlers con `TODO(@BriarDevv)` linkeando al issue de contrato.
+9. `AuthStep.tsx` completo (tabs + RHF + mock + errores inline). MSW handlers con `TODO(@bygama)` linkeando al issue de contrato.
 10. `NameStep.tsx` completo.
 
 **Done**: `/onboarding` arranca, auth + nombre funcionan, refresh retoma. Issue de contrato de auth abierto y referenciado en el PR.
@@ -661,11 +661,11 @@ Por qué: el `apps/web/src/app/globals.css` actual ya escanea `packages/ui/src/*
 | # | PR | Branch | Tamaño | Reviewer crítico |
 |---|---|---|---|---|
 | 1 | `chore(design): sistema visual base + DESIGN.md` | `feat/design-system-base` | M | @MateoGs013 (CODEOWNER de DESIGN.md) |
-| 2 | `feat(web): providers, MSW, primitives` | `feat/web-foundations` | M | @BriarDevv |
+| 2 | `feat(web): providers, MSW, primitives` | `feat/web-foundations` | M | @bygama |
 | 3 | `feat(onboarding): auth y nombre` | `feat/onboarding-1` | M | @querques20 (UX) |
 | 4 | `feat(onboarding): mood + modos + a11y + outro` | `feat/onboarding-2` | L | @querques20 |
 | 5 | `feat(home): empty state + recomendaciones` | `feat/home-empty` | M | @querques20 |
-| 6 | `test(web): vitest + playwright + axe` | `feat/web-tests` | M | @BriarDevv |
+| 6 | `test(web): vitest + playwright + axe` | `feat/web-tests` | M | @bygama |
 
 **Por qué partido**: 6 PRs pequeñas tienen turnaround real. 1 PR enorme nadie lo revisa.
 
