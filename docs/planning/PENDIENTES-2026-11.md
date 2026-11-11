@@ -15,6 +15,8 @@
 > de Ynara) y 11 (promesas terminadas), y un «Por dónde empezar» actualizado.
 > El mismo día se sumó la sección 12: auditoría de seis áreas con verificación
 > (55 ítems nuevos, 24 correcciones a ítems existentes y LOGO-01).
+> Después se sumó la sección 13, salida al mercado: VPS con GPU dedicada y deploy
+> completo, cobro con Mercado Pago, legal, calidad de la IA y beta cerrada.
 
 Cómo leerlo:
 
@@ -1347,6 +1349,220 @@ La descripción original queda en su sección; esto es lo que hay que cambiarle.
 
 ---
 
+## 13. Salida al mercado (2026-11-11)
+
+El checklist de las secciones 1 a 12 deja un producto de tesis sólido. Para una beta cerrada
+y para abrirlo a cualquiera faltan cuatro cosas:
+- cobrar de verdad, con **Mercado Pago**;
+- correr en una **VPS con GPU dedicada**, con deploy completo;
+- cumplir con lo legal;
+- medir que la IA funciona bien, primero con usuarios reales en una beta.
+
+Esta sección va después de la defensa. Amplía la sección 1 (bloqueantes) y la hoja de ruta de
+`AUDITORIA-PRODUCTO-MERCADO-2026-11.md` (entre M-01 y M-71), y reemplaza la topología de ADR-027.
+Se aparta de la «arquitectura mínima» de esa auditoría, que dejaba la inferencia en la PC hasta
+los 1.000 usuarios: el ADR de VPS-01 justifica el costo con la estimación de VPS-02, y VPS-12
+la confirma o reabre la decisión.
+
+### 13.1 Infraestructura: VPS con GPU dedicada
+
+- [ ] **VPS-01 · ADR nuevo de topología.**
+  - Reemplaza ADR-027: deja la PC hogareña y pasa a una VPS con GPU dedicada (no
+    compartida).
+  - Decide qué corre en la VPS: backend, workers, Redis, inferencia y la web. La base se
+    decide en VPS-06.
+  - Una GPU alquilada no es «on-prem»: el ADR define cómo se dice ahora y actualiza la
+    regla #4 de `AGENTS.md`, el `README.md` y PROM-02 (archivos de raíz: OK humano).
+  - Actualiza `deploy-topology.md`, `DEPLOY.md` y `SECURITY.md` (DOC-03).
+- [ ] **VPS-02 · Elegir proveedor.** Comparar al menos tres opciones según:
+  - GPU dedicada de 24 GB o más (el modelo actual pide 16 GB como mínimo);
+  - región con baja latencia para Argentina;
+  - costo mensual y por hora;
+  - ancho de banda;
+  - snapshots y backups;
+  - términos de privacidad.
+
+  Dejar la comparación y la elección en el ADR.
+- [ ] **VPS-03 · Aprovisionamiento reproducible.** El servidor se arma desde cero con un
+      script o con infraestructura como código: usuarios, firewall, actualizaciones
+      automáticas de seguridad, drivers de la GPU y runtime de contenedores. Incluye el Celery
+      beat desplegado y monitoreado (INF-02).
+      Junto con VPS-07 cierra M-28; junto con VPS-05, VPS-06 y VPS-09 cierra INF-03.
+- [ ] **VPS-04 · Serving de modelos en la VPS.**
+  - Ollama o vLLM (INF-04). La decisión actualiza ADR-014.
+  - Modelos con versiones y alias fijados, y parámetros de contexto, permanencia y
+    paralelismo versionados.
+  - Degradación cuando falla un servicio auxiliar.
+  - Precarga al arrancar y prueba de humo después de cada deploy.
+  - Cierra M-39, M-40 y M-49.
+- [ ] **VPS-05 · Dominio y TLS.**
+  - Dominio propio para la API y la web, con certificados automáticos.
+  - Ingress propio en lugar del túnel.
+  - Orígenes permitidos con los dominios de producción.
+  - Deploy de la landing en el dominio propio.
+  - Junto con VPS-14 (buzón) cierra M-70.
+- [ ] **VPS-06 · Base de datos.** Decidir entre seguir en Supabase (con recuperación a un
+      punto en el tiempo y pooler) o Postgres con pgvector en la VPS. Si se muda, plan de
+      migración de datos sin pérdida, ensayado antes en staging. Mueve tablas sagradas:
+      tests y aprobación humana (regla #3). La decisión actualiza ADR-005.
+- [ ] **VPS-07 · Deploy completo por CI.**
+  - Merge a `main` → build de imágenes → migraciones → deploy → prueba de humo.
+  - Rollback en un paso.
+  - Sin pasos manuales.
+  - Cierra INF-01, e INF-07 si VPS-01 decide mudar la web.
+- [ ] **VPS-08 · Entorno de staging.** Una copia chica del entorno (puede ser sin GPU, con
+      modelos de prueba) donde se prueba cada deploy y la migración de la base antes de
+      producción.
+- [ ] **VPS-09 · Backups y restauración.** Backups cifrados fuera de la VPS, con retención
+      definida y una restauración completa ensayada y documentada. Custodia y rotación de la
+      clave de cifrado. Cierra M-29 y M-30.
+- [ ] **VPS-10 · Observabilidad y alertas.**
+  - Métricas de API, workers y GPU.
+  - Monitoreo de disponibilidad desde afuera.
+  - Alertas que le lleguen a una persona.
+  - Página de estado pública.
+  - Primero cierra M-52 (que no se envíe contenido del usuario) y recién después suma
+    observabilidad en los clientes.
+  - Cierra M-33 y M-35, y se apoya en AUD-BE-04 y AUD-FE-09.
+- [ ] **VPS-11 · Capacidad medida.**
+  - Gestión de capacidad con respuesta honesta cuando la GPU está ocupada.
+  - Prueba de carga con usuarios simultáneos.
+  - Definir cuántos usuarios aguanta un servidor y cuándo se suma otro.
+  - Cierra M-36 a M-38 (detalle reservado).
+- [ ] **VPS-12 · Costo por usuario.** Planilla con el costo mensual de la VPS, la base, el
+      email, Mercado Pago y el dominio, dividido por usuarios activos. Es la base del precio
+      (COB-01).
+- [ ] **VPS-13 · Runbook de operación.**
+  - Qué hacer si se cae la GPU, la base, el disco o la VPS entera.
+  - Objetivo de tiempo de recuperación (con una sola VPS sigue habiendo un punto único de
+    falla, M-27).
+  - Cómo escalar, quién responde y en cuánto tiempo.
+  - Cierra INF-08.
+- [ ] **VPS-14 · Email transaccional.** Proveedor y dominio verificados para la recuperación
+      de contraseña, la verificación de email, los recibos y los avisos. Cierra M-03 y
+      destraba M-04 y CON-11.
+
+### 13.2 Cobro con Mercado Pago
+
+- [ ] **COB-01 · Planes y precio.**
+  - Especificar el plan gratuito y el Premium en un documento de producto: qué incluye
+    cada uno y qué límites tiene.
+  - El precio final en pesos, con impuestos incluidos, se fija después de VPS-11 y VPS-12.
+  - Reemplaza los valores sueltos de hoy (M-26, PROM-11).
+- [ ] **COB-02 · Integración con Mercado Pago.**
+  - Suscripciones con cobro recurrente usando la API de suscripciones de Mercado Pago.
+  - Credenciales de prueba y de producción separadas, sin entrar nunca al repo.
+  - Junto con COB-03 y COB-08 cierra M-23.
+- [ ] **COB-03 · Webhooks confiables.** Verificar la firma de cada notificación,
+      procesarlas de forma idempotente y reconciliar con la API ante cualquier duda. El
+      estado de la suscripción nunca se decide desde el cliente.
+- [ ] **COB-04 · Plan y estado de suscripción en el modelo de usuario.** Cubre alta,
+      período de prueba si lo hay, pago al día, pago fallido con período de gracia,
+      cancelada y vencida. Lleva migración de Alembic y aprobación humana. Cierra M-24.
+- [ ] **COB-05 · Límites por plan.** Cuotas de uso aplicadas en el backend según el plan,
+      con mensajes claros cuando se alcanzan. Cierra M-25.
+- [ ] **COB-06 · Pantallas de cobro.**
+  - Elegir plan, pagar, ver el estado y el historial, y cambiar el medio de pago.
+  - Reemplaza el paywall de maqueta (CON-10, M-26).
+  - La baja y el arrepentimiento siguen COB-07 y no dependen de estas pantallas.
+- [ ] **COB-07 · Requisitos de consumo en Argentina (Disposición 954/2025).**
+  - Botón de arrepentimiento y «BOTÓN DE BAJA DE SERVICIO», a simple vista desde el
+    primer acceso a la web y a la app, sin pedir registración ni trámites adicionales.
+  - Código de identificación del trámite en 24 horas.
+  - 10 días corridos para arrepentirse.
+  - Precio final informado.
+  - Avisar antes de cada renovación es una buena práctica, a confirmar con LEY-01.
+  - Todo se valida con un abogado (LEY-01). Junto con COB-08 cierra M-17.
+- [ ] **COB-08 · Facturación.** Emitir factura electrónica por cada cobro, con un servicio
+      de facturación integrado o un proceso definido con el contador, y definir la razón
+      social que figura en los términos (M-07).
+- [ ] **COB-09 · Pruebas de punta a punta.**
+  - Con el sandbox de Mercado Pago: alta, renovación, pago rechazado, cancelación,
+    arrepentimiento y reintento del webhook.
+  - Tests automáticos para los estados de COB-04.
+- [ ] **COB-10 · Mobile.** Si las apps de las tiendas venden Premium, las reglas de Apple
+      y Google pueden exigir sus propios sistemas de pago. Decidir antes de publicar:
+      vender solo en la web o integrar las compras dentro de la app.
+- [ ] **COB-11 · Pagos en el admin.** Vista de suscripciones, pagos, bajas y
+      arrepentimientos para poder atenderlos. Cierra M-67.
+
+### 13.3 Legal y privacidad
+
+- [ ] **LEY-01 · Revisión con un abogado.**
+  - Términos, política de privacidad, consentimiento para datos sensibles, requisitos de
+    consumo y licencias de uso comercial de los modelos.
+  - Tratamiento de datos personales según la Ley 25.326, incluido si corresponde inscribir
+    la base ante el organismo de control.
+- [ ] **LEY-02 · Términos y Política de Privacidad publicados.**
+  - En web, landing y mobile.
+  - El registro pide aceptarlos y guarda la versión aceptada.
+  - Cierra M-07 y M-08.
+- [ ] **LEY-03 · Consentimiento expreso para Bienestar.** Antes de guardar contenido
+      emocional, con registro del consentimiento y forma de retirarlo. Cierra M-09.
+- [ ] **LEY-04 · Edad mínima.** Definirla y pedirla en el registro. Cierra M-10.
+- [ ] **LEY-05 · Proveedores que tratan datos.** Lista pública de quién procesa qué
+      (VPS, base, web, email, observabilidad y Mercado Pago) y en qué país, con sus
+      acuerdos de tratamiento de datos, transferencias internacionales e inscripción ante
+      el organismo de control si corresponde. Cierra M-15.
+- [ ] **LEY-06 · Aviso de IA.** Ynara es una IA, no un profesional de la salud: decirlo en
+      el onboarding, en Bienestar y en el chat. Cierra M-11.
+- [ ] **LEY-07 · Derechos del titular.** Borrar la cuenta, borrar todo y exportar todo,
+      funcionando de punta a punta (se apoya en AUD-UX-01, PROM-08 y PROM-09). Cierra M-01,
+      M-12 y M-14.
+
+### 13.4 Seguridad del usuario y calidad de la IA
+
+- [ ] **EVA-01 · Protocolo de crisis en todos los modos.**
+  - Detección en el código y respuesta fija.
+  - Recursos de ayuda por país, verificados con fuente oficial y visibles en la interfaz.
+  - Sin instrucciones contradictorias.
+  - Una prueba que confirme que el bloque de crisis nunca queda fuera del contexto.
+  - Cierra M-18 a M-20. **Bloquea la beta.**
+- [ ] **EVA-02 · Sistema de evaluación.**
+  - Datasets y conjuntos de referencia para memoria, tool-calling y respuestas por modo,
+    con una regresión que corra antes de cambiar un modelo o un prompt.
+  - Cierra M-42 y corre los experimentos de la sección 6 de la auditoría de mercado.
+- [ ] **EVA-03 · Reportar una respuesta.** Canal por mensaje para marcar una respuesta
+      mala o peligrosa, con revisión desde el admin. Cierra M-21.
+- [ ] **EVA-04 · Calidad de la memoria sobre EVA-02.** Medir y arreglar lo que la
+      evaluación muestre de la consolidación y la extracción de memoria. Cierra M-43 a M-47.
+      Toca tablas de memoria: aprobación humana.
+- [ ] **EVA-05 · Confirmación en acciones sobre la memoria.** El asistente pide
+      confirmación antes de borrar o cambiar recuerdos. Cierra M-22.
+
+### 13.5 Beta cerrada
+
+- [ ] **BETA-01 · Plan de beta.**
+  - De 10 a 30 personas durante 3 a 6 semanas, con consentimiento informado.
+  - Métricas definidas antes de empezar: uso diario, retención a 7 y 30 días, recuerdos
+    corregidos, reportes y tiempo de respuesta.
+  - Criterios de salida escritos.
+  - La medición usa analítica con consentimiento (M-71).
+- [ ] **BETA-02 · Correr la beta sobre la VPS.** Con cobro en sandbox o gratis, alertas
+      activas y una persona de guardia. Requiere VPS-07, VPS-10, VPS-11 y todo el paso 4
+      de 13.6.
+- [ ] **BETA-03 · Informe de la beta.** Qué se usó, qué no, qué falló y qué se cambia antes
+      de abrir. Decide si se lanza.
+- [ ] **REV-01 · Revisión de seguridad externa.** Antes de abrir el registro al público,
+      una persona o empresa de afuera intenta romperlo. Los hallazgos van por el canal
+      privado de `SECURITY.md`.
+- [ ] **SOP-01 · Soporte.** Un canal de contacto, respuestas a las preguntas frecuentes y
+      un tiempo de respuesta comprometido. Cierra M-58.
+
+### 13.6 Orden
+
+1. **Después de la defensa:** VPS-01, VPS-02 y COB-01 (planes y límites, todavía sin
+   precio). Son decisiones y destraban todo lo demás.
+2. **VPS-03 a VPS-10 y VPS-14**, con el sistema andando en staging y en producción.
+3. **VPS-11 a VPS-13**: capacidad, costo y runbook. Con eso se fija el precio de COB-01.
+4. **Lo mínimo para invitar personas:** EVA-01, EVA-03, EVA-05, LEY-01 a LEY-07 y BETA-01.
+5. **BETA-02**, con EVA-02 y EVA-04 durante la beta. En paralelo, COB-02 a COB-09 y COB-11
+   en sandbox.
+6. **Antes de abrir:** REV-01, BETA-03, COB-10 y SOP-01. Después, la apertura con
+   cobro real.
+
+---
+
 ## Por dónde empezar (actualizado el 2026-11-11)
 
 **Primero, lo más urgente que encontró la sección 12** (datos y cosas que la
@@ -1388,3 +1604,4 @@ hacerlos antes para no rediseñar dos veces.
    usuario no ve) y CON-03.
 4. **Higiene:** CI-01, CI-02, DOC-01 a DOC-11.
 5. **Después:** el resto de INF, BE y las maquetas de la sección 2.3.
+6. **Después de la defensa:** la sección 13, en el orden de 13.6.
