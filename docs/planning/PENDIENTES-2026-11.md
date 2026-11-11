@@ -1351,17 +1351,18 @@ La descripción original queda en su sección; esto es lo que hay que cambiarle.
 
 ## 13. Salida al mercado (2026-11-11)
 
-El checklist de las secciones 1 a 12 deja un producto de tesis sólido y una beta cerrada
-creíble. Para abrirlo a cualquiera faltan cuatro cosas:
+El checklist de las secciones 1 a 12 deja un producto de tesis sólido. Para una beta cerrada
+y para abrirlo a cualquiera faltan cuatro cosas:
 - cobrar de verdad, con **Mercado Pago**;
 - correr en una **VPS con GPU dedicada**, con deploy completo;
 - cumplir con lo legal;
 - medir que la IA funciona bien, primero con usuarios reales en una beta.
 
-Esta sección va después de la defensa. Amplía las secciones 1.1 a 1.7 y la hoja de ruta de
-`AUDITORIA-PRODUCTO-MERCADO-2026-11.md` (M-03 a M-71), y reemplaza la topología de ADR-027.
+Esta sección va después de la defensa. Amplía la sección 1 (bloqueantes) y la hoja de ruta de
+`AUDITORIA-PRODUCTO-MERCADO-2026-11.md` (entre M-01 y M-71), y reemplaza la topología de ADR-027.
 Se aparta de la «arquitectura mínima» de esa auditoría, que dejaba la inferencia en la PC hasta
-los 1.000 usuarios: el ADR de VPS-01 tiene que justificar el costo con los números de VPS-12.
+los 1.000 usuarios: el ADR de VPS-01 justifica el costo con la estimación de VPS-02, y VPS-12
+la confirma o reabre la decisión.
 
 ### 13.1 Infraestructura: VPS con GPU dedicada
 
@@ -1386,9 +1387,9 @@ los 1.000 usuarios: el ADR de VPS-01 tiene que justificar el costo con los núme
       script o con infraestructura como código: usuarios, firewall, actualizaciones
       automáticas de seguridad, drivers de la GPU y runtime de contenedores. Incluye el Celery
       beat desplegado y monitoreado (INF-02).
-      Cierra M-28; junto con VPS-05 y VPS-09 cierra INF-03.
+      Junto con VPS-07 cierra M-28; junto con VPS-05, VPS-06 y VPS-09 cierra INF-03.
 - [ ] **VPS-04 · Serving de modelos en la VPS.**
-  - Ollama o vLLM (INF-04).
+  - Ollama o vLLM (INF-04). La decisión actualiza ADR-014.
   - Modelos con versiones y alias fijados, y parámetros de contexto, permanencia y
     paralelismo versionados.
   - Degradación cuando falla un servicio auxiliar.
@@ -1398,11 +1399,12 @@ los 1.000 usuarios: el ADR de VPS-01 tiene que justificar el costo con los núme
   - Dominio propio para la API y la web, con certificados automáticos.
   - Ingress propio en lugar del túnel.
   - Orígenes permitidos con los dominios de producción.
-  - Cierra M-70.
+  - Deploy de la landing en el dominio propio.
+  - Junto con VPS-14 (buzón) cierra M-70.
 - [ ] **VPS-06 · Base de datos.** Decidir entre seguir en Supabase (con recuperación a un
       punto en el tiempo y pooler) o Postgres con pgvector en la VPS. Si se muda, plan de
       migración de datos sin pérdida, ensayado antes en staging. Mueve tablas sagradas:
-      tests y aprobación humana (regla #3).
+      tests y aprobación humana (regla #3). La decisión actualiza ADR-005.
 - [ ] **VPS-07 · Deploy completo por CI.**
   - Merge a `main` → build de imágenes → migraciones → deploy → prueba de humo.
   - Rollback en un paso.
@@ -1419,14 +1421,14 @@ los 1.000 usuarios: el ADR de VPS-01 tiene que justificar el costo con los núme
   - Monitoreo de disponibilidad desde afuera.
   - Alertas que le lleguen a una persona.
   - Página de estado pública.
-  - Observabilidad también en los clientes, recién después de M-52 (que no se envíe
-    contenido del usuario).
+  - Primero cierra M-52 (que no se envíe contenido del usuario) y recién después suma
+    observabilidad en los clientes.
   - Cierra M-33 y M-35, y se apoya en AUD-BE-04 y AUD-FE-09.
 - [ ] **VPS-11 · Capacidad medida.**
-  - Control de admisión hacia el modelo y respuesta honesta cuando la GPU está ocupada.
+  - Gestión de capacidad con respuesta honesta cuando la GPU está ocupada.
   - Prueba de carga con usuarios simultáneos.
   - Definir cuántos usuarios aguanta un servidor y cuándo se suma otro.
-  - Cierra M-36 a M-38.
+  - Cierra M-36 a M-38 (detalle reservado).
 - [ ] **VPS-12 · Costo por usuario.** Planilla con el costo mensual de la VPS, la base, el
       email, Mercado Pago y el dominio, dividido por usuarios activos. Es la base del precio
       (COB-01).
@@ -1450,7 +1452,7 @@ los 1.000 usuarios: el ADR de VPS-01 tiene que justificar el costo con los núme
 - [ ] **COB-02 · Integración con Mercado Pago.**
   - Suscripciones con cobro recurrente usando la API de suscripciones de Mercado Pago.
   - Credenciales de prueba y de producción separadas, sin entrar nunca al repo.
-  - Cierra M-23.
+  - Junto con COB-03 y COB-08 cierra M-23.
 - [ ] **COB-03 · Webhooks confiables.** Verificar la firma de cada notificación,
       procesarlas de forma idempotente y reconciliar con la API ante cualquier duda. El
       estado de la suscripción nunca se decide desde el cliente.
@@ -1474,8 +1476,6 @@ los 1.000 usuarios: el ADR de VPS-01 tiene que justificar el costo con los núme
 - [ ] **COB-08 · Facturación.** Emitir factura electrónica por cada cobro, con un servicio
       de facturación integrado o un proceso definido con el contador, y definir la razón
       social que figura en los términos (M-07).
-- [ ] **COB-11 · Pagos en el admin.** Vista de suscripciones, pagos, bajas y
-      arrepentimientos para poder atenderlos. Cierra M-67.
 - [ ] **COB-09 · Pruebas de punta a punta.**
   - Con el sandbox de Mercado Pago: alta, renovación, pago rechazado, cancelación,
     arrepentimiento y reintento del webhook.
@@ -1483,6 +1483,8 @@ los 1.000 usuarios: el ADR de VPS-01 tiene que justificar el costo con los núme
 - [ ] **COB-10 · Mobile.** Si las apps de las tiendas venden Premium, las reglas de Apple
       y Google pueden exigir sus propios sistemas de pago. Decidir antes de publicar:
       vender solo en la web o integrar las compras dentro de la app.
+- [ ] **COB-11 · Pagos en el admin.** Vista de suscripciones, pagos, bajas y
+      arrepentimientos para poder atenderlos. Cierra M-67.
 
 ### 13.3 Legal y privacidad
 
@@ -1498,15 +1500,15 @@ los 1.000 usuarios: el ADR de VPS-01 tiene que justificar el costo con los núme
 - [ ] **LEY-03 · Consentimiento expreso para Bienestar.** Antes de guardar contenido
       emocional, con registro del consentimiento y forma de retirarlo. Cierra M-09.
 - [ ] **LEY-04 · Edad mínima.** Definirla y pedirla en el registro. Cierra M-10.
-- [ ] **LEY-05 · Proveedores que tratan datos.** Lista pública de quién procesa qué (VPS,
-      base, web, email, observabilidad y Mercado Pago) y en qué país, con sus acuerdos de tratamiento de datos,
-      transferencias internacionales e inscripción ante el organismo de control si
-      corresponde. Cierra M-15.
+- [ ] **LEY-05 · Proveedores que tratan datos.** Lista pública de quién procesa qué
+      (VPS, base, web, email, observabilidad y Mercado Pago) y en qué país, con sus
+      acuerdos de tratamiento de datos, transferencias internacionales e inscripción ante
+      el organismo de control si corresponde. Cierra M-15.
 - [ ] **LEY-06 · Aviso de IA.** Ynara es una IA, no un profesional de la salud: decirlo en
       el onboarding, en Bienestar y en el chat. Cierra M-11.
 - [ ] **LEY-07 · Derechos del titular.** Borrar la cuenta, borrar todo y exportar todo,
-      funcionando de punta a punta (se apoya en AUD-UX-01, PROM-08 y PROM-09). Cierra M-12
-      y M-14.
+      funcionando de punta a punta (se apoya en AUD-UX-01, PROM-08 y PROM-09). Cierra M-01,
+      M-12 y M-14.
 
 ### 13.4 Seguridad del usuario y calidad de la IA
 
@@ -1554,7 +1556,8 @@ los 1.000 usuarios: el ADR de VPS-01 tiene que justificar el costo con los núme
 2. **VPS-03 a VPS-10 y VPS-14**, con el sistema andando en staging y en producción.
 3. **VPS-11 a VPS-13**: capacidad, costo y runbook. Con eso se fija el precio de COB-01.
 4. **Lo mínimo para invitar personas:** EVA-01, EVA-03, EVA-05, LEY-01 a LEY-07 y BETA-01.
-5. **BETA-02**, con EVA-02 y EVA-04 durante la beta. En paralelo, COB-02 a COB-11 en sandbox.
+5. **BETA-02**, con EVA-02 y EVA-04 durante la beta. En paralelo, COB-02 a COB-09 y COB-11
+   en sandbox.
 6. **Antes de abrir:** REV-01, BETA-03, COB-10 y SOP-01. Después, la apertura con
    cobro real.
 
