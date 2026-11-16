@@ -82,17 +82,22 @@ else
 fi
 
 # ---------------------------------------------------------------------
-# 4. Sin APIs externas de IA en backend (regla #4)
+# 4. IA externa solo desde llm/clients/providers/ (regla #4b)
 # ---------------------------------------------------------------------
-header 4 "Sin APIs externas de IA en backend (regla #4)"
+# El único lugar del backend que habla con proveedores de IA es
+# apps/backend/app/llm/clients/providers/ (ADR-028). Ahí un import de SDK
+# de IA está permitido; en el resto de apps/backend/app, falla.
+header 4 "IA externa solo desde llm/clients/providers/ (regla #4b)"
+ai_providers_dir="apps/backend/app/llm/clients/providers/"
 ai_apis=$(grep -rn --include='*.py' \
   -E '^(import|from) (openai|anthropic|google\.generativeai|cohere|mistralai)' \
-  apps/backend/app 2>/dev/null || true)
+  apps/backend/app 2>/dev/null \
+  | grep -v "^${ai_providers_dir}" || true)
 if [ -n "$ai_apis" ]; then
-  bad "import de API externa de IA detectado"
+  bad "import de IA externa fuera de ${ai_providers_dir} (regla #4b)"
   echo "$ai_apis" | sed 's/^/        /'
 else
-  ok "ningún import de openai/anthropic/google.generativeai/cohere/mistralai"
+  ok "ningún import de IA externa fuera de ${ai_providers_dir} (regla #4b)"
 fi
 
 # ---------------------------------------------------------------------
