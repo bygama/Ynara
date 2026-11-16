@@ -6,7 +6,9 @@
 
 ## Estado
 
-Aceptado
+Aceptado — **reemplazado por [ADR-028](./ADR-028-inferencia-por-api.md)** (la inferencia se consume por API)
+
+> No hay serving local: ni Ollama en 16 GB ni la ruta vLLM para 24 GB o más.
 
 <!-- Aprobado por Mateo García (operador humano) el 2026-06-14, sobre la
      medición de #207, habilitando el cambio de motor de serving local. -->

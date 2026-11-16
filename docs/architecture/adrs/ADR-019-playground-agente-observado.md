@@ -2,7 +2,10 @@
 
 ## Estado
 
-Aceptado
+Aceptado — **enmendado por [ADR-028](./ADR-028-inferencia-por-api.md)** (serving real por API, alias `agente`)
+
+> El agente observado es el alias `agente` (antes qwen) y el serving real pasa a
+> ser `LLM_BACKEND=api` (antes `vllm`).
 
 <!-- Aprobado por @bygama (CODEOWNER) el 2026-06-19 ("te doy permiso para todo
      100% de confianza"). Refina ADR-018: incorpora un modo agente OBSERVADO al

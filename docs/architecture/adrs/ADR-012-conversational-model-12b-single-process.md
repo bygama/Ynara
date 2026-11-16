@@ -10,7 +10,10 @@
 
 ## Estado
 
-Aceptado
+Aceptado — **reemplazado por [ADR-028](./ADR-028-inferencia-por-api.md)** (la inferencia se consume por API)
+
+> El razonamiento por rol (D4) sigue como intención: el cliente pide esfuerzo de
+> razonamiento solo si el proveedor declara `supports_reasoning_effort`.
 
 <!-- Aprobado por Mateo García (operador humano) el 2026-06-13, habilitando
      el PR de implementación (regla #9 de AGENTS.md), igual que el gate de

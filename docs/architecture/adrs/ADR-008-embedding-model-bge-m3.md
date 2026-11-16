@@ -1,7 +1,11 @@
 # ADR-008: Modelo de embedding — BAAI bge-m3 (1024-dim, on-prem)
 
 ## Estado
-Aceptado
+Aceptado — **ratificado por [ADR-028](./ADR-028-inferencia-por-api.md)**, con el serving enmendado
+
+> Sigue `BAAI/bge-m3` con su salida densa de 1024 dimensiones. Cambia el
+> serving: pasa de on-prem a un proveedor por API, aprobado según la regla #4b
+> de `AGENTS.md`.
 
 ## Fecha
 2026-05-30

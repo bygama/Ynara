@@ -18,32 +18,32 @@ Acá vive el "porqué" detrás de las decisiones técnicas del proyecto.
 | # | Título | Estado |
 |---|--------|--------|
 | 001 | Monorepo vs multirepo | Aceptado |
-| 002 | Gemma + Qwen dual stack | Aceptado |
+| 002 | Gemma + Qwen dual stack | Reemplazado por ADR-028 |
 | 003 | Mem0 vs Letta para memoria | Superseded by ADR-010 |
 | 004 | Postgres + pgvector vs Pinecone | Aceptado |
 | 005 | Supabase en MVP, Postgres self-hosted en V2 | Aceptado |
 | 006 | Pinear next-auth a 5.0.0-beta.31 hasta release estable | Aceptado |
 | 007 | Políticas operacionales de memoria (decay, retention diferenciada, encriptación a nivel campo) | Aceptado |
-| 008 | Modelo de embedding — BAAI bge-m3 (1024-dim, on-prem) | Aceptado |
-| 009 | Topología de serving vLLM y parsers de tool-calling | Aceptado — refinado por ADR-013/ADR-014 |
-| 010 | Arquitectura de memoria v2 — engine in-house sobre storage cifrado propio (supersede ADR-003) | Aceptado |
+| 008 | Modelo de embedding — BAAI bge-m3 (1024-dim, on-prem) | Aceptado — ratificado por ADR-028 (serving por API) |
+| 009 | Topología de serving vLLM y parsers de tool-calling | Reemplazado por ADR-028 |
+| 010 | Arquitectura de memoria v2 — engine in-house sobre storage cifrado propio (supersede ADR-003) | Aceptado — enmendado por ADR-028 (D2, D3, D4 y D6) |
 | 011 | Auth permanece layer-split — criterio de feature-packages vs dominios ordinarios | Aceptado — refinado por ADR-015 |
-| 012 | Modelo conversacional Gemma 4 12B y topología single_process co-residente en 16 GB | Aceptado |
-| 013 | Config de serving LLM explícita (endpoints → served models) | Aceptado — refinado por ADR-014 |
-| 014 | Motor de serving local = Ollama/GGUF en 16 GB (vLLM reservado para 24 GB+) | Aceptado |
+| 012 | Modelo conversacional Gemma 4 12B y topología single_process co-residente en 16 GB | Reemplazado por ADR-028 |
+| 013 | Config de serving LLM explícita (endpoints → served models) | Reemplazado por ADR-028 (el esquema) |
+| 014 | Motor de serving local = Ollama/GGUF en 16 GB (vLLM reservado para 24 GB+) | Reemplazado por ADR-028 |
 | 015 | Librería JWT = PyJWT (sale python-jose); bcrypt directo (sale passlib) | Aceptado |
 | 016 | Código compartido web/mobile vía packages/core (ex-ADR-012) | Aceptado |
-| 017 | App de administración interna (apps/admin): observabilidad y control plane | Aceptado |
-| 018 | Playground de modelos en el panel admin (control plane, fase 1) | Aceptado |
-| 019 | Playground agente observado (tool-loop sin efectos) — refina ADR-018 | Aceptado |
-| 020 | Circuit breaker per-proceso — cota de despliegue 1-2 workers | Aceptado |
-| 021 | Pasada asíncrona del agente qwen (memoria + tools por detrás de gemma) — refina ADR-019 | Propuesto — parcialmente superseded por ADR-022 |
+| 017 | App de administración interna (apps/admin): observabilidad y control plane | Aceptado — enmendado por ADR-028 (soberanía, telemetría de GPU, D7) |
+| 018 | Playground de modelos en el panel admin (control plane, fase 1) | Aceptado — enmendado por ADR-028 (serving real por API) |
+| 019 | Playground agente observado (tool-loop sin efectos) — refina ADR-018 | Aceptado — enmendado por ADR-028 (serving real por API, alias `agente`) |
+| 020 | Circuit breaker per-proceso — cota de despliegue 1-2 workers | Aceptado — enmendado por ADR-028 (premisa de la GPU única) |
+| 021 | Pasada asíncrona del agente qwen (memoria + tools por detrás de gemma) — refina ADR-019 | Propuesto — parcialmente superseded por ADR-022; enmendado por ADR-028 (alias de modelo) |
 | 022 | Tools de agente síncronas en el chat de producción (calendar/task) — supersede parcial de ADR-021 | Aceptado |
 | 023 | Modelo de evento de calendario (recurrencia, timezone, all-day, multi-día) | Aceptado |
 | 024 | Streaming SSE cosmético — atomicidad transaccional del turno por encima del TTFB real (SCAL-01) | Aceptado |
 | 025 | Recall de HNSW a escala — índice global con post-filtro user_id y ef_search sin tunear (MEM-SACRED-02) | Propuesto — diferido |
 | 026 | Contrato de intake del onboarding (señales → operativo vs memoria) | Propuesto |
-| 027 | Web en Vercel + backend/GPU en la PC por Tailscale Funnel, con toggle de IA | Aceptado |
+| 027 | Web en Vercel + backend/GPU en la PC por Tailscale Funnel, con toggle de IA | Reemplazado por ADR-028 |
 | 028 | La inferencia se consume por API (proveedores compatibles con OpenAI, alias `conversacional`/`agente`) | Aceptado |
 
 > Nota de numeración: el ADR-016 era un segundo ADR-012 renumerado. El modelo de

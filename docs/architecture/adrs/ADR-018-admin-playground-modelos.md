@@ -2,7 +2,10 @@
 
 ## Estado
 
-Aceptado
+Aceptado — **enmendado por [ADR-028](./ADR-028-inferencia-por-api.md)** (serving real por API)
+
+> El serving real pasa a ser `LLM_BACKEND=api` (antes `vllm`), y el modelo se
+> nombra por alias (`conversacional` o `agente`) en vez de `served_name`.
 
 <!-- Aprobado por @bygama (CODEOWNER) el 2026-06-19 ("te doy permiso para todo
      100% de confianza"), habilitando la implementación de la fase 1. Refina
