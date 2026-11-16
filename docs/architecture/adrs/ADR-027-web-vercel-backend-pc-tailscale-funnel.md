@@ -4,9 +4,9 @@
 Aceptado — **reemplazado por [ADR-028](./ADR-028-inferencia-por-api.md)** (backend en una VPS sin GPU)
 
 > El backend deja la PC y Tailscale Funnel por una VPS común, y el toggle de IA
-> pierde sentido sin serving propio. Siguen la web en Vercel (D1), el dominio de
-> Vercel en `CORS_ORIGINS` y la degradación honesta de `/v1/chat`, que ahora aplica a
-> la caída de los proveedores.
+> pierde sentido sin serving propio. Siguen la web en Vercel (punto 1), el dominio
+> de Vercel en `CORS_ORIGINS` y la degradación honesta de `/v1/chat`, que ahora
+> aplica a la caída de los proveedores.
 
 ## Fecha
 2026-06-30
