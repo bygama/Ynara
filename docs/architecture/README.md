@@ -43,6 +43,8 @@ Acá vive el "porqué" detrás de las decisiones técnicas del proyecto.
 | 024 | Streaming SSE cosmético — atomicidad transaccional del turno por encima del TTFB real (SCAL-01) | Aceptado |
 | 025 | Recall de HNSW a escala — índice global con post-filtro user_id y ef_search sin tunear (MEM-SACRED-02) | Propuesto — diferido |
 | 026 | Contrato de intake del onboarding (señales → operativo vs memoria) | Propuesto |
+| 027 | Web en Vercel + backend/GPU en la PC por Tailscale Funnel, con toggle de IA | Aceptado |
+| 028 | La inferencia se consume por API (proveedores compatibles con OpenAI, alias `conversacional`/`agente`) | Aceptado |
 
 > Nota de numeración: el ADR-016 era un segundo ADR-012 renumerado. El modelo de
 > evento de calendario —antes un ADR-018 "lógico" duplicado del file
