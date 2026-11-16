@@ -4,14 +4,14 @@
 
 ## Quickstart 30s
 
-**Qué es Ynara**: asistente personal adaptativo on-prem con memoria propia.
+**Qué es Ynara**: asistente personal adaptativo con memoria propia.
 
-**Stack**: Next.js 16 (web) + Expo 53+ (mobile) + FastAPI + Pydantic v2 + SQLAlchemy 2 async (backend) + serving local Ollama/GGUF en 16GB (vLLM reservado para 24GB+ — ADR-014) con dual stack Gemma 4 12B (conversacional) + Qwen 3.5-9B (agente) + memoria in-house (3 stores semantic/episodic/procedural, AES-256-GCM per-user — ADR-010) + Postgres 16 + pgvector.
+**Stack**: Next.js 16 (web) + Expo 53+ (mobile) + FastAPI + Pydantic v2 + SQLAlchemy 2 async (backend) + inferencia por API de proveedores compatibles con OpenAI, con dos alias de modelo, `conversacional` y `agente` (ADR-028) + memoria in-house (3 stores semantic/episodic/procedural, AES-256-GCM per-user — ADR-010) + Postgres 16 + pgvector.
 
 **Reglas más críticas**:
 
 1. OK humano antes de commit / push / install / migraciones.
-2. Datos del usuario nunca fuera del perímetro.
+2. Nunca contenido ni PII en logs; la IA se consume solo desde `apps/backend/app/llm/clients/providers/` (regla #4).
 3. Cliente Supabase prohibido en frontend.
 4. Tablas sagradas: memoria + `audit_log` (1 aprobación humana + tests).
 
@@ -49,7 +49,7 @@ Para tareas con un solo archivo, va inline. Para tareas con múltiples pasos, ca
 3. `apps/backend/app/llm/router.py`
 4. [`skills/add-new-mode/SKILL.md`](./skills/add-new-mode/SKILL.md)
 
-**Agregar una tool al agente Qwen**
+**Agregar una tool al agente**
 
 1. [`apps/backend/docs/TOOLS.md`](./apps/backend/docs/TOOLS.md)
 2. `apps/backend/app/llm/tools/`
@@ -181,8 +181,9 @@ Para tareas con un solo archivo, va inline. Para tareas con múltiples pasos, ca
 | `apps/landing/` | Sitio institucional — experiencia WebGL (three.js) para la tesis; home + `/presentacion` (deck). No es el producto, no consume el backend |
 | `apps/backend/app/api/v1/` | Rutas HTTP, un módulo por dominio |
 | `apps/backend/app/core/` | Settings, security (JWT con PyJWT + bcrypt directo, ADR-015), deps de FastAPI |
-| `apps/backend/app/llm/router.py` | Único punto de entrada al LLM. Decide modelo según modo |
-| `apps/backend/app/llm/tools/` | Tools que solo Qwen llama (catálogo en `docs/TOOLS.md`) |
+| `apps/backend/app/llm/router.py` | Único punto de entrada al LLM. Decide el alias de modelo según modo |
+| `apps/backend/app/llm/clients/providers/` | Único lugar del backend que habla HTTP con proveedores de IA (regla #4b, ADR-028) |
+| `apps/backend/app/llm/tools/` | Tools que solo llama el alias `agente` (catálogo en `docs/TOOLS.md`) |
 | `apps/backend/app/memory/` | Wrappers de las 3 capas. **Tablas sagradas** (regla #3). Incluye `conversation_turns` (tabla **operativa**, no sagrada: buffer append-only cifrado, purgado al consolidar) |
 | `apps/backend/app/services/` | Lógica de negocio — no importa de FastAPI ni de ORM directo |
 | `apps/backend/app/workers/` | Instancia Celery + autodiscovery de workflows |
@@ -196,7 +197,6 @@ Para tareas con un solo archivo, va inline. Para tareas con múltiples pasos, ca
 | `packages/config/` | tsconfig.base estricto + biome + eslint compartidos |
 | `docs/architecture/adrs/` | 15 ADRs inmutables (ADR-001 a ADR-015; ADR-012 numerado dos veces). Cambio arquitectónico nuevo = ADR nuevo |
 | `docs/conventions/AI-GUIDELINES.md` | 15 reglas extendidas + landmines aprendidas |
-| `infra/vllm/` | `start-vllm.sh` para Gemma + Qwen — ruta vLLM para GPU de 24GB+. En la RTX 4080 16GB el serving local es Ollama/GGUF (ADR-014) |
 | `infra/docker/` | docker-compose dev (solo Redis) y prod |
 | `skills/*/SKILL.md` | 6 procedimientos reutilizables para humanos e IAs |
 | `.claude/commands/` | Slash commands locales (ej: `/pr-review`). Adapter Claude Code |
@@ -210,7 +210,12 @@ Para tareas con un solo archivo, va inline. Para tareas con múltiples pasos, ca
 
 3. **Tablas sagradas.** Las tablas de memoria (`semantic_memory`, `episodic_memory`, `procedural_memory`) y el audit trail inmutable (`audit_log`) no se modifican sin tests pasando y **1 aprobación humana explícita** (review formal aprobada en el PR, no solo el OK del operador que abrió el PR). Cubre sus modelos (`app/models/{memory,audit}.py`), schemas (`app/schemas/{memory,audit}.py`), wrappers (`app/memory/`) y las migraciones Alembic que las afecten. La tabla `conversation_turns` **no** es sagrada: es **operativa** (buffer append-only cifrado AES-256-GCM per-user que el worker episódico lee al cerrar sesión y luego purga), aunque viva bajo `app/memory/`. **Severidad: bloqueante.**
 
-4. **Datos de usuario nunca fuera del perímetro.** Prohibido enviar mensajes, memoria, metadata o cualquier dato a APIs externas (OpenAI, Anthropic, Google, Cohere, Mistral). Toda inferencia es on-prem; el motor depende de la VRAM, no del entorno: en 16GB (RTX 4080 Super) el serving local es **Ollama/GGUF** y **vLLM** queda reservado para GPU de 24GB+ (ADR-014). El flag `LLM_BACKEND=vllm` es el nombre **legacy** del cliente OpenAI-compatible (vale para Ollama y para vLLM), no fuerza vLLM. **Severidad: bloqueante.**
+4. **Privacidad de datos y proveedores de IA.** La regla tiene dos partes:
+
+   - **4a. Datos de usuario.** Nunca contenido del usuario (mensajes, memoria, agenda) ni PII en logs, mensajes de error, métricas ni Sentry: se loguean ids opacos, enums y `type(exc).__name__`. Los datos de usuario no van a terceros (APIs externas, analytics, servicios de IA), salvo a los proveedores de IA aprobados en 4b y solo para la inferencia. Minimización: a cada llamada va solo lo que esa llamada necesita.
+   - **4b. Proveedores de IA.** La inferencia (chat, agente, consolidación de memoria y embeddings) se consume por API, con HTTP compatible con OpenAI, y el único lugar del backend que habla con los proveedores es `apps/backend/app/llm/clients/providers/`. Las credenciales son secretos en variables de entorno (regla #2): nunca en el código, en `ynara.config.json` ni en logs. Solo se usan proveedores con DPA y cláusulas modelo de la AAIP firmadas (Ley 25.326) y que no entrenen con los datos; hasta cerrar las compuertas de [ADR-028](./docs/architecture/adrs/ADR-028-inferencia-por-api.md), reciben solo datos sintéticos. Prohibido llamar APIs de IA desde cualquier otro lugar del backend y desde `apps/web`, `apps/mobile`, `apps/admin` o `apps/landing`.
+
+   **Severidad: bloqueante** (las dos partes).
 
 5. **Cliente Supabase prohibido en el frontend.** En fase MVP, Supabase es solo Postgres gestionado. Prohibido `@supabase/supabase-js` en `apps/web/` o `apps/mobile/`. Prohibido Supabase Auth, Storage, Realtime, Edge Functions, RLS como autorización primaria. Todo dato pasa por FastAPI. **Severidad: bloqueante.** Ver [`ADR-005`](./docs/architecture/adrs/ADR-005-supabase-mvp-postgres-selfhosted-v2.md).
 
@@ -228,18 +233,19 @@ Reglas extendidas (15 más + landmines del scaffold): [`docs/conventions/AI-GUID
 
 ## Routing LLM y memoria
 
-| Modo | Modelo | Capas de memoria | Tools |
+| Modo | Alias de modelo | Capas de memoria | Tools |
 | --- | --- | --- | --- |
-| productividad | Qwen 3.5-9B (agente) | semantic + episodic | calendar, reminder, memory |
-| estudio | Gemma 4 12B | episodic + procedural | — |
-| bienestar | Gemma 4 12B | procedural + semantic | — |
-| vida | Gemma 4 12B | procedural | — |
-| memoria | Qwen 3.5-9B (agente) | las 3 capas | memory |
+| productividad | `agente` | semantic + episodic | calendar, reminder, memory |
+| estudio | `conversacional` | episodic + procedural | — |
+| bienestar | `conversacional` | procedural + semantic | — |
+| vida | `conversacional` | procedural | — |
+| memoria | `agente` | las 3 capas | memory |
 
-- **Gemma solo lee memoria.** No escribe, no llama tools.
-- **Qwen lee y escribe.** Llama tools. Toda escritura va asíncrona vía Celery.
+- **`conversacional` solo lee memoria.** No escribe, no llama tools.
+- **`agente` lee, escribe y llama tools.** Toda escritura de memoria va asíncrona vía Celery. La consolidación de memoria también usa `agente`.
+- **El código conoce el alias, no el modelo.** Cada proveedor de `LLM_PROVIDERS` mapea el alias a su `model_id`.
 - **Único punto de entrada**: `apps/backend/app/llm/router.py`. No hay otra ruta válida al LLM.
-- Razonamiento: [`ADR-002`](./docs/architecture/adrs/ADR-002-gemma-qwen-dual-stack.md).
+- Razonamiento: [`ADR-028`](./docs/architecture/adrs/ADR-028-inferencia-por-api.md).
 
 ## Editing conventions — landmines aprendidas
 
@@ -346,7 +352,7 @@ Valida en un solo comando:
 - `.env.example` presentes en root y en cada app.
 - Ningún `.env` real commiteado.
 - Sin `@supabase/supabase-js` en `apps/web` ni `apps/mobile` (regla #5).
-- Sin imports de IA externa en `apps/backend/app` (regla #4).
+- Imports de SDKs de IA (`openai`, `anthropic`, `google.generativeai`, `cohere`, `mistralai`) solo dentro de `apps/backend/app/llm/clients/providers/` (regla #4b): en el resto de `apps/backend/app` falla.
 - `ynara.config.json` parseable.
 - Adapters CLAUDE / CODEX / GEMINI referencian `AGENTS.md`.
 - Alerta si el PR toca tablas sagradas (regla #3).
