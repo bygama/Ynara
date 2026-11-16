@@ -8,7 +8,10 @@
 
 ## Estado
 
-Aceptado
+Aceptado — **reemplazado por [ADR-028](./ADR-028-inferencia-por-api.md)** (la inferencia se consume por API)
+
+> Sin serving propio no hay topología de procesos ni parsers de tool-calling que
+> fijar. El cliente habla HTTP compatible con OpenAI con cada proveedor.
 
 <!-- Aprobado por Mateo García (operador humano) el 2026-05-29, habilitando
      el PR de implementación (regla #9 de AGENTS.md). -->

@@ -7,7 +7,11 @@
 
 ## Estado
 
-Aceptado
+Aceptado — **enmendado por [ADR-028](./ADR-028-inferencia-por-api.md)** (la premisa de la GPU única)
+
+> La cota de 1-2 workers deja de apoyarse en una sola GPU on-prem: se revisa
+> contra la cuota de los proveedores. El breaker per-proceso sigue, uno por
+> proveedor.
 
 <!-- Aprobado por Mateo García (operador humano) el 2026-06-21 como parte de la
      remediación de la auditoría backend (hallazgo H5: split-brain del breaker). -->

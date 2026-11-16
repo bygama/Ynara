@@ -2,7 +2,12 @@
 
 ## Estado
 
-Aceptado
+Aceptado — **enmendado por [ADR-028](./ADR-028-inferencia-por-api.md)** (soberanía, telemetría de GPU y control plane de D7)
+
+> La frontera de soberanía pasa a la regla #4 partida de `AGENTS.md`: el dato del
+> usuario sale solo hacia los proveedores de IA aprobados (4b) y nunca a logs
+> (4a). Salen el badge de perímetro y la telemetría de GPU y VRAM. El control
+> plane de D7 opera sobre proveedores y alias, no sobre serving local.
 
 <!-- Aprobado por @bygama (CODEOWNER) el 2026-06-19 vía PR #312
      ("está 10 puntos"), habilitando la implementación (F0 en adelante). -->

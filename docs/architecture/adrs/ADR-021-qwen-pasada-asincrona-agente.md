@@ -2,7 +2,7 @@
 
 ## Estado
 
-Propuesto — **parcialmente superseded por [ADR-022](./ADR-022-tools-sincronos-en-chat.md)**
+Propuesto — **parcialmente superseded por [ADR-022](./ADR-022-tools-sincronos-en-chat.md)**; **enmendado por [ADR-028](./ADR-028-inferencia-por-api.md)** (alias de modelo)
 
 > ADR-022 mueve la EJECUCIÓN de las tools de agente (`calendar`/`task`) del path
 > ASÍNCRONO descrito acá al tool-loop SÍNCRONO del chat de producción, para la config
@@ -11,6 +11,9 @@ Propuesto — **parcialmente superseded por [ADR-022](./ADR-022-tools-sincronos-
 > (`consolidate_turn`, gateada por `writes_memory`) sigue vigente y async. La task
 > `agent_turn_pass` queda **dormant** (registrada pero sin encolador), reservada para
 > una futura pasada de agente en modos gemma.
+
+> ADR-028 pasa la inferencia a API y nombra los roles por alias: gemma es el alias
+> `conversacional` y qwen, el alias `agente`.
 
 <!-- Autonomía dada por @bygama (CODEOWNER) el 2026-06-22 ("hacete vos una hoja
      de ruta, lo que hagas que sea la mejor práctica y lo más escalable posible,

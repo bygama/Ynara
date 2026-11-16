@@ -3,7 +3,11 @@
 > **Actualización (ADR-012):** en hardware de 16 GB el conversacional pasó de Gemma 4 26B-A4B a Gemma 4 12B. Ver [ADR-012](./ADR-012-conversational-model-12b-single-process.md).
 
 ## Estado
-Aceptado
+Aceptado — **reemplazado por [ADR-028](./ADR-028-inferencia-por-api.md)** (la inferencia se consume por API)
+
+> Sigue vigente la separación de roles, ahora como alias: `conversacional`
+> (antes Gemma) solo lee memoria y no llama tools; `agente` (antes Qwen) lee y
+> escribe memoria y llama tools.
 
 ## Fecha
 2026-05-XX  <!-- TODO: fecha exacta cuando se apruebe en PR -->

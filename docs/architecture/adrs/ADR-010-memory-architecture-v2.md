@@ -1,7 +1,16 @@
 # ADR-010: Arquitectura de memoria v2 — engine in-house sobre storage cifrado propio (supersede ADR-003)
 
 ## Estado
-Aceptado
+Aceptado — **enmendado por [ADR-028](./ADR-028-inferencia-por-api.md)** (D2, D3, D4 y D6)
+
+> - **D2:** el texto del usuario sale hacia el proveedor de IA aprobado (regla
+>   #4b de `AGENTS.md`) para embeddear y consolidar, y el rerank queda
+>   en passthrough (`FakeReranker`).
+> - **D3:** bge-m3 se consume por API; el candidato Qwen3-Embedding on-prem deja
+>   de aplicar.
+> - **D4:** la extracción de hechos la hace el alias `agente`.
+> - **D6:** el threat model suma al proveedor, que procesa el texto en claro de
+>   cada llamada. El cifrado at-rest de la base no cambia.
 
 ## Fecha
 2026-05-30

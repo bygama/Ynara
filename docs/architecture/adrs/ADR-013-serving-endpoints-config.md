@@ -4,7 +4,11 @@
 
 ## Estado
 
-Aceptado
+Aceptado — **reemplazado por [ADR-028](./ADR-028-inferencia-por-api.md)** en el esquema
+
+> `LLM_SERVING` pasa a `LLM_PROVIDERS`: una lista de proveedores con `base_url` y
+> un mapa `{alias: model_id}`. Sigue la idea de este ADR: una lista explícita, en
+> orden de preferencia, en vez de un esquema posicional.
 
 <!-- Aprobado por Mateo García (operador humano) el 2026-06-14 ("hacé lo más
      escalable y la mejor práctica, te doy mi permiso para todo"), habilitando
