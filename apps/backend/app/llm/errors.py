@@ -2,9 +2,12 @@
 
 Tres familias:
 
-- **Transitorios** (reintentables): timeout, instancia caida, sobrecarga.
+- **Transitorios** (reintentables): timeout, instancia caida, sobrecarga o
+  limite de tasa del proveedor (429, con la espera de ``Retry-After``).
 - **Permanentes** (no reintentar): request mal formado, contexto excedido,
-  modelo no servido.
+  modelo no servido y credencial rechazada por el proveedor (401/403). La
+  credencial es del proveedor, no del request: no se reintenta contra el
+  mismo, pero el respaldo de la lista tiene la suya (ver ``ResilientClient``).
 - **Semanticos**: fallas de parseo / ejecucion de tools y de recuperacion
   de memoria.
 
@@ -65,6 +68,23 @@ class LlmOverloadedError(LlmError):
     message = "instancia LLM sobrecargada"
 
 
+class LlmRateLimitError(LlmOverloadedError):
+    """El proveedor limito la tasa de requests (HTTP 429).
+
+    ``retry_after_s`` es la espera que pidio con ``Retry-After``, en segundos (ya
+    convertida si vino como fecha HTTP), o ``None`` si no la mando. El
+    ``ResilientClient`` la respeta si entra en su presupuesto; si no, pasa al
+    siguiente proveedor. Subclase de ``LlmOverloadedError``: quien ya trataba la
+    sobrecarga (p.ej. el 503 del playground) la trata igual.
+    """
+
+    message = "limite de tasa del proveedor LLM"
+
+    def __init__(self, detail: str | None = None, *, retry_after_s: float | None = None) -> None:
+        super().__init__(detail)
+        self.retry_after_s = retry_after_s
+
+
 # ---------- Permanentes (no reintentar) ----------
 
 
@@ -84,6 +104,19 @@ class ModelNotServedError(LlmError):
     """Ninguna instancia del pool sirve el modelo pedido."""
 
     message = "modelo no servido"
+
+
+class LlmAuthError(LlmError):
+    """El proveedor rechazo la credencial (HTTP 401/403).
+
+    Permanente para ESE proveedor: reintentar con la misma credencial da lo mismo.
+    No es un error del request (no hereda de ``LlmBadRequestError``): el
+    ``ResilientClient`` pasa al siguiente proveedor de la lista, que tiene su propia
+    credencial. Regla #4a: el detail es el status, nunca el body (un 401 puede
+    repetir un pedazo de la clave).
+    """
+
+    message = "credencial rechazada por el proveedor LLM"
 
 
 # ---------- Semanticos ----------

@@ -10,10 +10,12 @@ from __future__ import annotations
 import pytest
 
 from app.llm.errors import (
+    LlmAuthError,
     LlmBadRequestError,
     LlmContextOverflowError,
     LlmError,
     LlmOverloadedError,
+    LlmRateLimitError,
     LlmTimeoutError,
     LlmUnavailableError,
     MemoryRetrievalError,
@@ -27,9 +29,11 @@ _ALL_ERRORS = [
     LlmTimeoutError,
     LlmUnavailableError,
     LlmOverloadedError,
+    LlmRateLimitError,
     LlmBadRequestError,
     LlmContextOverflowError,
     ModelNotServedError,
+    LlmAuthError,
     ToolParsingError,
     ToolExecutionError,
     MemoryRetrievalError,
@@ -75,6 +79,26 @@ def test_transient_vs_permanent_disjoint() -> None:
     permanent = LlmBadRequestError()
     assert not isinstance(transient, LlmBadRequestError)
     assert not isinstance(permanent, (LlmTimeoutError, LlmUnavailableError))
+
+
+def test_rate_limit_is_overloaded_with_retry_after() -> None:
+    """El 429 de un proveedor es sobrecarga (mismo trato) y lleva la espera pedida."""
+    err = LlmRateLimitError("HTTP 429", retry_after_s=12.5)
+    assert isinstance(err, LlmOverloadedError)
+    assert err.retry_after_s == 12.5
+    assert str(err) == "limite de tasa del proveedor LLM: HTTP 429"
+    assert LlmRateLimitError().retry_after_s is None
+
+
+def test_auth_error_is_not_a_request_error() -> None:
+    """La credencial rechazada es del proveedor, no del request: no hereda de BadRequest.
+
+    Si heredara, el ``ResilientClient`` la re-lanzaria sin probar el respaldo.
+    """
+    err = LlmAuthError("HTTP 401")
+    assert not isinstance(err, LlmBadRequestError)
+    assert not isinstance(err, (LlmTimeoutError, LlmUnavailableError, LlmOverloadedError))
+    assert str(err) == "credencial rechazada por el proveedor LLM: HTTP 401"
 
 
 class TestDegradedResponse:
