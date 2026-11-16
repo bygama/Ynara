@@ -193,9 +193,9 @@ Para tareas con un solo archivo, va inline. Para tareas con múltiples pasos, ca
 | `packages/shared-types/` | Types TS compartidos web+mobile (mirror manual de Pydantic) |
 | `packages/shared-schemas/` | Zod schemas — validación cliente, mirror de Pydantic |
 | `packages/ui/` | Componentes UI realmente compartibles entre web y mobile |
-| `packages/core/` | Lógica no-visual compartida web+mobile (stores Zustand, hooks TanStack Query, cliente HTTP) — ADR-012 |
+| `packages/core/` | Lógica no-visual compartida web+mobile (stores Zustand, hooks TanStack Query, cliente HTTP) — ADR-016 |
 | `packages/config/` | tsconfig.base estricto + biome + eslint compartidos |
-| `docs/architecture/adrs/` | 15 ADRs inmutables (ADR-001 a ADR-015; ADR-012 numerado dos veces). Cambio arquitectónico nuevo = ADR nuevo |
+| `docs/architecture/adrs/` | 28 ADRs inmutables (ADR-001 a ADR-028; índice y estados en `docs/architecture/README.md`). Cambio arquitectónico nuevo = ADR nuevo |
 | `docs/conventions/AI-GUIDELINES.md` | 15 reglas extendidas + landmines aprendidas |
 | `infra/docker/` | docker-compose dev (solo Redis) y prod |
 | `skills/*/SKILL.md` | 6 procedimientos reutilizables para humanos e IAs |
