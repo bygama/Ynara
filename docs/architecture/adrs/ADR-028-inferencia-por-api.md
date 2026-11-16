@@ -157,8 +157,8 @@ Hasta cerrar las cinco, los proveedores reciben **solo datos sintéticos**:
   configuración, no código.
 - La disponibilidad de la IA deja de depender de una máquina del equipo, y hay
   respaldo entre proveedores.
-- No cambian las tablas de memoria, el cifrado, las tools, la API REST ni los clientes
-  fake de CI.
+- Se conservan el contrato `LLMClient`, el cifrado de la memoria, las tools y los
+  clientes fake de CI, y las tablas de memoria mantienen su schema (D4).
 
 ## Consecuencias negativas
 
@@ -194,6 +194,14 @@ antes de emitirse, así que lo que pesa es la latencia total del turno.
 La disponibilidad, las cuotas (429), los precios, los términos y el retiro de modelos
 quedan en manos de terceros. Un proveedor puede cambiar o retirar el modelo que está
 detrás de un alias.
+
+### Contratos y auditoría
+
+- La API que consumen web y mobile cambia solo en lo que fija D9; la del panel admin
+  pierde lo que dependía del serving propio (D1).
+- `audit_log` guarda el modelo de origen en un enum de Postgres que solo conoce `gemma`
+  y `qwen` (`llm_model_enum`). Registrar el modelo de cada proveedor exige migrar esa
+  tabla sagrada: va en un commit propio y pasa por la regla #3.
 
 ## Mitigaciones
 
