@@ -170,11 +170,25 @@ uno corresponde a una regla del repo.
    `scripts/ynara-doctor.sh`: tablas de memoria + `audit_log`, sus
    modelos, schemas, wrappers y migraciones Alembic (regla #3).
 
-6. **Regla #4 — APIs externas de IA en backend:**
+6. **Regla #4 — IA solo vía `providers/` (4b):**
    ```bash
-   grep -E '^\+\s*(import|from)\s+(openai|anthropic|google\.generativeai|cohere|mistralai)\b' /tmp/pr-<N>.diff
+   awk '
+     /^\+\+\+ b\// { file = substr($0, 7); next }
+     /^\+\+\+ /    { file = ""; next }
+     file ~ /\.py$/ && file !~ /^apps\/backend\/app\/llm\/clients\/providers\// &&
+     /^\+[[:space:]]*(import|from)[[:space:]]+(openai|anthropic|google\.generativeai|cohere|mistralai)([^A-Za-z0-9_]|$)/ {
+       print file ": " substr($0, 2)
+     }
+   ' /tmp/pr-<N>.diff
    ```
-   Cualquier hit = blocker.
+   Cualquier hit = blocker. La única excepción es
+   `apps/backend/app/llm/clients/providers/`, el único lugar que habla
+   con proveedores de IA (regla #4b); es la misma excepción del check 4
+   de `scripts/ynara-doctor.sh`. El `awk` sigue el archivo de cada
+   `+++ b/<path>` del diff, así que la excepción va por ruta y cualquier
+   otro `.py` del monorepo con esos imports falla. La 4a (sin contenido
+   ni PII en logs, errores ni Sentry) no tiene grep confiable: va en la
+   Fase 3.
 
 7. **Regla #5 — Cliente Supabase en frontend:**
    ```bash
@@ -216,7 +230,11 @@ analizar.
    - Respeta los ADRs vigentes (`docs/architecture/adrs/`)?
    - Si introduce algo nuevo (dep mayor, framework, DB), hay
      ADR citado?
-   - Modelos: Gemma solo lee, Qwen lee y escribe (ADR-002).
+   - Modelos por alias: `conversacional` solo lee memoria; `agente`
+     lee, escribe y llama tools (ADR-028). El código no nombra
+     `model_id` de proveedores.
+   - Privacidad (regla #4a): ningún log, mensaje de error ni evento
+     de Sentry nuevo con contenido del usuario o PII.
    - DB: solo Postgres + pgvector (ADR-004).
    - Auth: en FastAPI, no en RLS (ADR-005).
 
@@ -342,7 +360,7 @@ separado, pero no bloquean este merge.
 | #1 OK humano para deps / md root / config | OK / WARN / FAIL |
 | #2 sin secrets | OK / FAIL |
 | #3 tablas sagradas | OK / 1 aprobación humana explícita requerida |
-| #4 sin APIs externas de IA en backend | OK / FAIL |
+| #4 IA solo vía `providers/` (4b) y sin PII en logs (4a) | OK / FAIL |
 | #5 sin `@supabase/supabase-js` en frontend | OK / FAIL |
 | #6 Conventional Commits en español | OK / FAIL |
 | #8 scope obligatorio en commits | OK / FAIL |
@@ -364,7 +382,9 @@ comentar.
 ## Definición de severidades
 
 - **blocker** — rompe regla no negociable. Filtración de
-  secret, dato de usuario a API externa, `@supabase/supabase-js`
+  secret, contenido o PII en logs (regla #4a), dato de usuario
+  hacia un tercero que no sea un proveedor de IA aprobado o IA
+  llamada fuera de `providers/` (regla #4b), `@supabase/supabase-js`
   en frontend, modificación a tabla sagrada sin la aprobación humana
   explícita (regla #3), install de dep sin OK humano, falla del
   doctor. **Bloquea el merge.**
