@@ -28,8 +28,10 @@ reglas extendidas que sirven como guía operativa adicional.
    Remix, agregar Mongo, reemplazar la capa de memoria in-house por
    una librería externa) requiere ADR nuevo aprobado **antes** del PR
    de implementación.
-7. **Modelos con roles fijos.** Gemma solo lee memoria, Qwen lee y
-   escribe (ADR-002). No mezclar.
+7. **Modelos con roles fijos, por alias.** `conversacional` solo lee
+   memoria y no llama tools; `agente` lee y escribe memoria y llama
+   tools (ADR-028). El código nombra el alias, nunca el `model_id` de
+   un proveedor. No mezclar.
 8. **Postgres + pgvector es la única DB.** No introducir Mongo,
    Pinecone, Qdrant, Neo4j, Redis para datos persistentes (Redis solo
    para cache + broker). Requiere ADR (ADR-004).
@@ -69,7 +71,8 @@ Cosas que **no** queremos ver en el repo:
 
 - Mocks de DB en tests de migraciones o de memoria.
 - Imports de `@supabase/supabase-js` en `apps/web/` o `apps/mobile/`.
-- Llamadas a APIs de OpenAI/Anthropic/Google desde el backend.
+- Llamadas a APIs de IA fuera de `apps/backend/app/llm/clients/providers/`
+  (regla #4b), o desde web, mobile, admin o landing.
 - Secrets hardcodeados.
 - Tipos `any` sin justificación.
 - Archivos de 1500 líneas.
@@ -227,8 +230,9 @@ Cuando se corra `pnpm install` y `uv sync` por primera vez:
 ### El doctor script es la primera línea de defensa
 
 `scripts/ynara-doctor.sh` valida en un solo comando todas las
-reglas mecánicas (gitignore, secrets, Supabase frontend, APIs IA
-externas, etc.). **Exit 0 antes de cualquier PR.**
+reglas mecánicas (gitignore, secrets, Supabase frontend, imports de
+IA solo en `llm/clients/providers/`, etc.). **Exit 0 antes de
+cualquier PR.**
 
 Si agregás una regla nueva que sea automatizable, sumá un check al
 doctor en vez de dejarla solo en docs. El doctor es la verdad
