@@ -33,7 +33,6 @@ from app.core.db_guard import _host_of, is_prod_db_host
 from app.core.deps import CurrentAdmin, DbSession, get_embedder, get_llm_client
 from app.core.llm_protocol import EmbeddingClientProtocol, LLMClientProtocol
 from app.enums import AuditOperation, LlmModel, MemoryLayer, Mode, enum_values
-from app.llm.clients.reranker import RERANKER_PASSTHROUGH
 from app.llm.config import load_llm_config
 from app.llm.schemas import ModelHealth
 from app.schemas.admin import (
@@ -302,8 +301,6 @@ async def admin_system(
         models=models,
         modes=enum_values(Mode),
         schema_head=_schema_head(),
-        embedder=settings.embedding_model,
-        reranker=RERANKER_PASSTHROUGH,
         build_version=__version__,
     )
 
