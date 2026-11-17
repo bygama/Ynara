@@ -85,13 +85,13 @@ def _build_consolidation_llm(settings: Settings) -> LLMClient:
     return build_llm_client(settings, load_llm_config())
 
 
-def _build_reranker(settings: Settings) -> Reranker:
+def _build_reranker() -> Reranker:
     """Construye el reranker para la consolidacion.
 
-    Delega en la factory (``build_reranker``): ``FakeReranker`` passthrough hoy;
-    el reranker real (cross-encoder) se gatea en la factory cuando exista.
+    Delega en la factory (``build_reranker``): el ``FakeReranker`` passthrough, el
+    reranker de todos los entornos (ADR-028 D5).
     """
-    return build_reranker(settings)
+    return build_reranker()
 
 
 def _load_retention_config_safe() -> RetentionConfig:
@@ -198,7 +198,7 @@ async def _async_consolidate(
     # --- Dependencias inyectadas o construidas ---
     effective_llm = llm_client or _build_consolidation_llm(cfg)
     effective_embedder = embedder or _build_embedder(cfg)
-    effective_reranker = reranker or _build_reranker(cfg)
+    effective_reranker = reranker or _build_reranker()
 
     uid = UUID(user_id)
     # Parse defensivo del session_id: UUID valido -> FK; basura -> None (sin crash).
@@ -508,7 +508,7 @@ async def _async_consolidate_session(
 
     effective_llm = llm_client or _build_consolidation_llm(cfg)
     effective_embedder = embedder or _build_embedder(cfg)
-    effective_reranker = reranker or _build_reranker(cfg)
+    effective_reranker = reranker or _build_reranker()
     # Retention config-driven (ADR-007 D2): inyectado en tests, o cargado de
     # ``ynara.config.json[memory]`` en prod. Fallback defensivo: si el config es
     # ilegible/invalido NO se tumba el worker (regla del modulo: un fallo de config

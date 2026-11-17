@@ -11,7 +11,8 @@ Centraliza la decision entre los clientes fake y los reales, por settings:
 - ``EMBEDDING_BACKEND=api`` -> ``ApiEmbeddingClient`` contra el proveedor de embeddings
   (ADR-028 D4); ``fake`` (el default) -> ``FakeEmbeddingClient``. En production es
   ``api`` (``Settings._require_embedding_api``).
-- ``reranker_backend`` gatea el reranker.
+- El reranker es siempre el ``FakeReranker`` passthrough, en todos los entornos
+  (ADR-028 D5): no hay variable que lo cambie.
 
 Los fakes quedan DETRAS de la condicion, no hardcodeados en el lifespan: pasar a los
 clientes reales es cambiar settings. La factory no abre conexiones al construir
@@ -36,7 +37,7 @@ from app.llm.clients.parsers import OpenAIToolCallParser
 from app.llm.clients.pool import build_provider_pool
 from app.llm.clients.providers.embeddings import ApiEmbeddingClient
 from app.llm.clients.providers.openai_compat import OpenAICompatClient
-from app.llm.clients.reranker import FakeReranker, Reranker, VllmReranker
+from app.llm.clients.reranker import RERANKER_PASSTHROUGH, FakeReranker, Reranker
 from app.llm.clients.resilient import ResilientClient
 from app.llm.config import LlmRuntimeConfig
 
@@ -175,23 +176,14 @@ def build_embedder(settings: Settings) -> EmbeddingClient:
     )
 
 
-def build_reranker(settings: Settings) -> Reranker:
-    """Construye el reranker segun ``reranker_backend``.
+def build_reranker() -> Reranker:
+    """El reranker de todos los entornos: el ``FakeReranker`` passthrough (ADR-028 D5).
 
-    ``vllm`` -> ``VllmReranker`` real contra ``settings.reranker_base_url`` (API
-    ``/rerank`` de vLLM). Ollama no sirve cross-encoders, asi que en dev se deja
-    en ``fake``. No abre red al construirse (``httpx.AsyncClient`` perezoso).
-
-    ``fake`` (default) -> ``FakeReranker`` passthrough.
+    Deja el orden del ANN tal cual y se reporta como ``RERANKER_PASSTHROUGH``. Un
+    rerank real por API queda como palanca futura, a decidir con una medicion de
+    recall; no depende de settings.
     """
-    if settings.reranker_backend == "vllm":
-        return VllmReranker(
-            base_url=settings.reranker_base_url,
-            http_client=httpx.AsyncClient(),
-            model=settings.reranker_model,
-            default_timeout_s=settings.reranker_timeout_s,
-        )
-    return FakeReranker()
+    return FakeReranker(model=RERANKER_PASSTHROUGH)
 
 
 def build_llm_clients(
@@ -200,11 +192,11 @@ def build_llm_clients(
     """Construye los tres clientes de una (``llm_client``, ``embedder``, ``reranker``).
 
     Helper de conveniencia para el lifespan: una sola llamada arma el trio de
-    singletons. Cada uno se gatea de forma independiente (ver ``build_llm_client``
-    / ``build_embedder`` / ``build_reranker``).
+    singletons. Cada uno se decide por separado (ver ``build_llm_client`` /
+    ``build_embedder`` / ``build_reranker``).
     """
     return (
         build_llm_client(settings, config),
         build_embedder(settings),
-        build_reranker(settings),
+        build_reranker(),
     )

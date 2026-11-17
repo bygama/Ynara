@@ -28,6 +28,7 @@ from app.core.deps import CurrentAdmin, get_llm_client
 from app.core.llm_protocol import LLMClientProtocol
 from app.enums import Mode
 from app.llm.clients.factory import PROVIDER_REQUEST_TIMEOUT_S, _wants_real_llm
+from app.llm.clients.reranker import RERANKER_PASSTHROUGH
 from app.llm.config import ModelConfig, load_llm_config
 from app.llm.errors import (
     LlmBadRequestError,
@@ -194,7 +195,7 @@ async def admin_serving(
         low_perf_available=is_real,
         models=models,
         embedder=settings.embedding_model,
-        reranker=settings.reranker_model,
+        reranker=RERANKER_PASSTHROUGH,
     )
 
 
