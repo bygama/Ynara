@@ -1,8 +1,9 @@
 """Tests del razonamiento inline ``<think>...</think>`` (``providers/_think.py``).
 
 El splitter de streaming tiene que dar lo mismo que el ``content`` entero sin importar
-dónde corte el proveedor los fragmentos (un tag puede llegar partido), y para un
-bloque cerrado al principio tiene que coincidir con ``split_thinking``.
+dónde corte el proveedor los fragmentos (un tag puede llegar partido). Para un bloque
+cerrado, al principio o a mitad del texto, tiene que dar el mismo texto que
+``split_thinking``, y un ``<think>`` a mitad del texto que nunca cierra es texto literal.
 """
 
 from __future__ import annotations
@@ -15,6 +16,9 @@ from app.llm.text_utils import split_thinking
 _CONTENT = "<think>\nEl usuario saluda.\nRespondo corto.\n</think>\n\nHola, ¿cómo andás?"
 _TEXT = "Hola, ¿cómo andás?"
 _REASONING = "El usuario saluda.\nRespondo corto."
+# Un modelo que nombra la etiqueta en la respuesta, sin cerrarla.
+_LITERAL = "Para HTML usá la etiqueta <think> como ejemplo y después seguí escribiendo."
+_MID_BLOCK = "Hola <think>x</think> chau"
 
 
 def _run(fragments: list[str]) -> tuple[str, str]:
@@ -103,6 +107,48 @@ def test_unicode_before_tag_keeps_positions() -> None:
     assert _run(["İ", "<thi", "nk>x</th", "ink>y"]) == ("İy", "x")
 
 
+def test_whitespace_before_leading_block_is_dropped() -> None:
+    assert _run(["\n <thi", "nk>x</think>Hola"]) == ("Hola", "x")
+
+
+# ---------- <think> a mitad del texto ----------
+
+
+def test_literal_think_mid_text_stays_text() -> None:
+    """Un ``<think>`` que nunca cierra no se traga el resto de la respuesta."""
+    assert _run([_LITERAL]) == (_LITERAL, "")
+
+
+@pytest.mark.parametrize("cut", range(1, len(_LITERAL)))
+def test_literal_think_any_split_point(cut: int) -> None:
+    assert _run([_LITERAL[:cut], _LITERAL[cut:]]) == (_LITERAL, "")
+
+
+def test_literal_think_char_by_char() -> None:
+    assert _run(list(_LITERAL)) == (_LITERAL, "")
+
+
+def test_block_mid_text_is_held_until_it_closes() -> None:
+    splitter = ThinkStreamSplitter()
+    assert splitter.feed("Hola <think>pien") == ("Hola ", "")
+    assert not splitter.saw_tag  # todavía puede ser texto literal
+    assert splitter.feed("so</think> chau") == (" chau", "pienso")
+    assert splitter.saw_tag
+
+
+@pytest.mark.parametrize("cut", range(1, len(_MID_BLOCK)))
+def test_block_mid_text_any_split_point(cut: int) -> None:
+    """Sin descartar espacios después del cierre, como ``split_thinking``."""
+    assert _run([_MID_BLOCK[:cut], _MID_BLOCK[cut:]]) == ("Hola  chau", "x")
+
+
+def test_flush_twice_releases_held_text_once() -> None:
+    splitter = ThinkStreamSplitter()
+    assert splitter.feed("a <think>b") == ("a ", "")
+    assert splitter.flush() == ("<think>b", "")
+    assert splitter.flush() == ("", "")
+
+
 # ---------- content entero ----------
 
 
@@ -122,6 +168,14 @@ def test_split_inline_unclosed_block() -> None:
     assert split_inline_thinking("<think>pienso sin terminar") == ("", "pienso sin terminar")
 
 
+def test_split_inline_literal_think_returns_content_verbatim() -> None:
+    assert split_inline_thinking(_LITERAL) == (_LITERAL, None)
+
+
+def test_split_inline_block_mid_text() -> None:
+    assert split_inline_thinking(_MID_BLOCK) == ("Hola  chau", "x")
+
+
 @pytest.mark.parametrize(
     "content",
     [
@@ -130,10 +184,14 @@ def test_split_inline_unclosed_block() -> None:
         "<THINK>razono</THINK> Respuesta.",
         "<think>\n\n</think>\n\nSolo texto",
         "Sin bloque de razonamiento",
+        "  <think>x</think>Hola",
+        _MID_BLOCK,
+        "Respuesta: <think>x</think> fin",
+        _LITERAL,
     ],
 )
 def test_split_inline_matches_split_thinking(content: str) -> None:
-    """Para un bloque cerrado al principio da el mismo texto que ``split_thinking``."""
+    """Para un bloque cerrado, en cualquier lugar, da el mismo texto que ``split_thinking``."""
     text, reasoning = split_inline_thinking(content)
     expected_text, block = split_thinking(content)
     assert text.strip() == expected_text

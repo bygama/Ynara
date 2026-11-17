@@ -2,7 +2,8 @@
 
 Porta los casos de streaming de ``test_vllm_client.py`` y agrega los del proveedor por
 API: nombres de tools partidos entre deltas, razonamiento por canal e inline (con el
-tag partido), lo retenido que sale al cerrar, los status de error con el body leído
+tag partido, y un ``<think>`` literal a mitad del texto), lo retenido que sale al
+cerrar, los status de error con el body leído
 (el contexto excedido también se detecta en streaming), un evento de error a mitad del
 stream y un corte de red con el stream empezado.
 """
@@ -227,6 +228,15 @@ async def test_stream_unclosed_think_is_reasoning() -> None:
     chunks = await _collect(_client(_serving(body)))
     assert (_text(chunks), _reasoning(chunks)) == ("", "pienso sin terminar")
     assert chunks[-1].finish_reason == "length"
+
+
+async def test_stream_literal_think_mid_text_stays_text() -> None:
+    """Un ``<think>`` que no cierra se retiene y sale como texto al terminar."""
+    content = "Para HTML usá la etiqueta <think> como ejemplo y después seguí escribiendo."
+    fragments = [content[:30], content[30:50], content[50:]]  # el tag llega partido
+    body = _sse(*(_delta(content=f) for f in fragments), _delta("stop"))
+    chunks = await _collect(_client(_serving(body)))
+    assert (_text(chunks), _reasoning(chunks)) == (content, "")
 
 
 async def test_stream_partial_tag_is_released_when_stream_ends_without_finish() -> None:
