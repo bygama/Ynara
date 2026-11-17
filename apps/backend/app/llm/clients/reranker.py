@@ -74,7 +74,8 @@ class FakeReranker:
     """Implementa ``Reranker`` como passthrough determinista.
 
     Es el reranker de production, no solo el de los tests: la factory lo arma en
-    todos los entornos con ``model=RERANKER_PASSTHROUGH`` (ADR-028 D5).
+    todos los entornos con ``model=RERANKER_PASSTHROUGH`` y ``record_calls=False``
+    (ADR-028 D5).
 
     Preserva el orden de entrada (el orden del ANN pgvector), asignando
     scores descendentes estables: ``score = 1.0 - index * 1e-3``. No usa
@@ -82,11 +83,13 @@ class FakeReranker:
 
     El atributo ``rerank_calls`` acumula los argumentos de cada llamada para
     que los tests de M7 puedan verificar cuántas veces se invocó el reranker
-    y con qué argumentos.
+    y con qué argumentos. Con ``record_calls=False``, como lo arma la factory,
+    no guarda nada: el reranker de la app no acumula consultas ni documentos.
     """
 
-    def __init__(self, *, model: str = "fake-reranker") -> None:
+    def __init__(self, *, model: str = "fake-reranker", record_calls: bool = True) -> None:
         self._model = model
+        self._record_calls = record_calls
         self._healthy = True
         self.rerank_calls: list[dict[str, object]] = []
 
@@ -99,7 +102,8 @@ class FakeReranker:
         documents: list[str],
         top_n: int | None = None,
     ) -> list[RerankResult]:
-        self.rerank_calls.append({"query": query, "documents": list(documents), "top_n": top_n})
+        if self._record_calls:
+            self.rerank_calls.append({"query": query, "documents": list(documents), "top_n": top_n})
 
         results = [RerankResult(index=i, score=1.0 - i * 1e-3) for i in range(len(documents))]
 
