@@ -49,10 +49,6 @@ dev = [
     "ruff>=0.7.0",
     "httpx>=0.27.0",
 ]
-llm-local = [
-    "vllm>=0.6.0",
-    "unsloth",
-]
 
 [tool.uv]
 package = false
