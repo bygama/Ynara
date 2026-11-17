@@ -28,13 +28,14 @@ stdlib (regla M3: nada de tenacity/circuitbreaker):
    propaga una excepcion de infra al caller (UX: siempre algo coherente).
 
 El breaker de cada candidato abre solo por caidas (timeout, 5xx, red:
-``BREAKER_ERRORS``) o porque el presupuesto global corto su request. Cualquier
-otra respuesta (error del request, rechazo del proveedor, 429, respuesta
-invalida) quiere decir que el proveedor contesto: cuenta como exito y cierra
-la prueba HALF_OPEN si la habia. Un candidato que termina devolviendo un
-resultado siempre cuenta como exito, aunque un intento anterior haya sido una
-caida: el proveedor ya respondio, y una prueba HALF_OPEN que responde en el
-reintento vuelve a ``CLOSED`` (contrato de ``CircuitBreaker``).
+``BREAKER_ERRORS``) o porque el presupuesto global corto un request suyo en
+curso (cortar una espera entre intentos no cuenta). Cualquier otra respuesta
+(error del request, rechazo del proveedor, 429, respuesta invalida) quiere
+decir que el proveedor contesto: cuenta como exito y cierra la prueba
+HALF_OPEN si la habia. Un candidato que termina devolviendo un resultado
+siempre cuenta como exito, aunque un intento anterior haya sido una caida: el
+proveedor ya respondio, y una prueba HALF_OPEN que responde en el reintento
+vuelve a ``CLOSED`` (contrato de ``CircuitBreaker``).
 
 El respaldo es otro cliente del pool: otra instancia de serving o, con
 ADR-028, otro proveedor por API (regla #4b). ``clock`` y ``sleep`` son
@@ -196,9 +197,11 @@ class ResilientClient:
         Toda la cadena de candidatos vive bajo un deadline global
         (``total_budget_s``): si se vence, se corta y se degrada igual que al
         agotar la cadena, evitando que el peor caso sume el timeout de cada
-        intento (P2.5). El candidato que estaba en curso cuenta como caido en
-        su breaker: no respondio a tiempo, y asi una prueba HALF_OPEN no queda
-        colgada.
+        intento (P2.5). Si el corte agarra un request en curso, ese candidato
+        cuenta como caido en su breaker (no respondio a tiempo); si agarra una
+        espera entre intentos, el proveedor ya habia contestado y cuenta como
+        exito, salvo que un intento anterior haya sido una caida. En los dos
+        casos una prueba HALF_OPEN no queda colgada.
 
         ``thinking`` es passthrough puro hacia el cliente subyacente (ADR-012 D4):
         no hay logica nueva, solo se hila por toda la cadena de candidatos.
@@ -298,6 +301,7 @@ class ResilientClient:
         tally.start(breaker)
         last_error: LlmError | None = None
         for attempt in range(self._policy.max_attempts):
+            tally.sending()
             try:
                 result = await client.complete(
                     model=model,
