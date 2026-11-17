@@ -1,10 +1,17 @@
 # Capa de inferencia LLM — Plan de integración
 
+> **Archivado (noviembre 2026).** Este plan describe la capa de inferencia con
+> modelos propios (Ollama/vLLM en una GPU del equipo), que
+> [ADR-028](../../architecture/adrs/ADR-028-inferencia-por-api.md) reemplazó por
+> inferencia por API de proveedores externos. Queda como registro histórico y no se
+> actualiza: la capa vigente está descripta en
+> [`apps/backend/AGENTS.md`](../../../apps/backend/AGENTS.md) (§3).
+
 > **Actualizado por ADR-013/ADR-014 (junio 2026):** el runtime local de
-> serving (16 GB, RTX 4080 Super) es **Ollama/GGUF** ([ADR-014](../architecture/adrs/ADR-014-serving-ollama-gguf-16gb.md)),
+> serving (16 GB, RTX 4080 Super) es **Ollama/GGUF** ([ADR-014](../../architecture/adrs/ADR-014-serving-ollama-gguf-16gb.md)),
 > no vLLM (vLLM queda para 24 GB+). El **contrato de config** de serving es
 > la lista `llm_serving: list[ServingEndpoint]` (env `LLM_SERVING`, JSON
-> `{base_url, models}`, [ADR-013](../architecture/adrs/ADR-013-serving-endpoints-config.md)),
+> `{base_url, models}`, [ADR-013](../../architecture/adrs/ADR-013-serving-endpoints-config.md)),
 > que reemplaza a `llm_primary_base_url`/`llm_secondary_base_url`/`llm_topology`.
 > `LLM_BACKEND=vllm` es el **nombre legacy** del cliente HTTP OpenAI-compatible
 > (sirve igual a Ollama). El cuerpo histórico de este plan no se reescribe; los
@@ -16,12 +23,12 @@
 > (Gemma 4 12B + Qwen 3.5-9B) sobre la RTX 4080 Super, más la
 > conexión escalable a Supabase. La lógica de router + memoria + prompts
 > se cruza con la card hermana *Arquitectura de memoria contextual*.
-> **Fuentes**: [`AGENTS.md`](../../AGENTS.md),
-> [`ADR-002`](../architecture/adrs/ADR-002-gemma-qwen-dual-stack.md),
-> [`ADR-009`](../architecture/adrs/ADR-009-vllm-serving-topology-tool-parsers.md),
-> [`ADR-004`](../architecture/adrs/ADR-004-postgres-pgvector-vs-pinecone.md),
-> [`ADR-005`](../architecture/adrs/ADR-005-supabase-mvp-postgres-selfhosted-v2.md),
-> [`BACKEND-MEMORY-ROADMAP.md`](./BACKEND-MEMORY-ROADMAP.md), card Trello
+> **Fuentes**: [`AGENTS.md`](../../../AGENTS.md),
+> [`ADR-002`](../../architecture/adrs/ADR-002-gemma-qwen-dual-stack.md),
+> [`ADR-009`](../../architecture/adrs/ADR-009-vllm-serving-topology-tool-parsers.md),
+> [`ADR-004`](../../architecture/adrs/ADR-004-postgres-pgvector-vs-pinecone.md),
+> [`ADR-005`](../../architecture/adrs/ADR-005-supabase-mvp-postgres-selfhosted-v2.md),
+> [`BACKEND-MEMORY-ROADMAP.md`](../BACKEND-MEMORY-ROADMAP.md), card Trello
 > *Integración con backend LLM*.
 
 ---
@@ -29,7 +36,7 @@
 ## 0. Correcciones a la card (formalizadas en ADR-009)
 
 Dos "decisiones cerradas" de la card eran técnicamente incorrectas y se
-corrigen en [`ADR-009`](../architecture/adrs/ADR-009-vllm-serving-topology-tool-parsers.md):
+corrigen en [`ADR-009`](../../architecture/adrs/ADR-009-vllm-serving-topology-tool-parsers.md):
 
 1. **vLLM no sirve dos modelos en un proceso** ni entran juntos en
    16 GB (Gemma 4 Q4 ≈ 15,7 GB). → N procesos detrás de un `ClientPool`,
@@ -45,7 +52,7 @@ Cloudflare Tunnel, Linux nativo.
 
 > **Nota (ADR-014, junio 2026):** "vLLM como runtime" quedó **superado para
 > 16 GB**. En la RTX 4080 Super (16 GB) el motor de serving es **Ollama/GGUF**
-> ([ADR-014](../architecture/adrs/ADR-014-serving-ollama-gguf-16gb.md)); vLLM
+> ([ADR-014](../../architecture/adrs/ADR-014-serving-ollama-gguf-16gb.md)); vLLM
 > sólo aplica a 24 GB+. El cliente del backend es HTTP OpenAI-compatible, así
 > que sirve a ambos motores sin cambios (`LLM_BACKEND=vllm` es nombre legacy
 > del cliente, no implica vLLM).
@@ -97,7 +104,7 @@ app/llm/
 - `core/config.py` settings: **elimina** `gemma_endpoint`/`qwen_endpoint`;
   **agrega** la lista `llm_serving: list[ServingEndpoint]` (env `LLM_SERVING`,
   JSON `[{base_url, models}]` — cada entrada = un endpoint de serving y los
-  served_names que anuncia; [ADR-013](../architecture/adrs/ADR-013-serving-endpoints-config.md)).
+  served_names que anuncia; [ADR-013](../../architecture/adrs/ADR-013-serving-endpoints-config.md)).
   > **Corrección (ADR-013, junio 2026):** la propuesta original de este plan
   > (`llm_primary_base_url` + `llm_secondary_base_url` + enum `llm_topology` con
   > `split_process`/`single_process`/`swap_lru`) **nunca se implementó así**.

@@ -1,16 +1,23 @@
 # Bitácora de sesión — Capa de inferencia LLM (2026-05-30)
 
+> **Archivado (noviembre 2026).** Bitácora de la capa de inferencia con modelos
+> propios (Ollama/vLLM en una GPU del equipo), que
+> [ADR-028](../../architecture/adrs/ADR-028-inferencia-por-api.md) reemplazó por
+> inferencia por API de proveedores externos. Queda como registro histórico y no se
+> actualiza: la capa vigente está descripta en
+> [`apps/backend/AGENTS.md`](../../../apps/backend/AGENTS.md) (§3).
+
 > **Actualización (junio 2026):** la mayor parte de los pendientes que esta
 > bitácora marca como abiertos ya están **mergeados**. `core/security.py` =
-> auth real con **PyJWT + bcrypt** ([ADR-015](../architecture/adrs/ADR-015-auth-deps-pyjwt-bcrypt.md));
+> auth real con **PyJWT + bcrypt** ([ADR-015](../../architecture/adrs/ADR-015-auth-deps-pyjwt-bcrypt.md));
 > el **router (M8) + tool loop** y los **endpoints** `/v1/chat`·`/v1/sessions`·`/v1/memory`
 > están en `main`; **M4 observabilidad + Sentry PII scrubbing** hecho (#66); el
 > **fix del transaction pooler** de `core/deps.py` ya estaba implementado y quedó
 > blindado por tests de regresión (#210). El **serving local 16 GB** es
-> **Ollama/GGUF** ([ADR-014](../architecture/adrs/ADR-014-serving-ollama-gguf-16gb.md)),
+> **Ollama/GGUF** ([ADR-014](../../architecture/adrs/ADR-014-serving-ollama-gguf-16gb.md)),
 > no vLLM (24 GB+): donde la tabla de §1 dice "vLLM" como runtime vigente, léase
 > Ollama; `LLM_TOPOLOGY` fue retirado por la lista `LLM_SERVING`
-> ([ADR-013](../architecture/adrs/ADR-013-serving-endpoints-config.md)). Esta es
+> ([ADR-013](../../architecture/adrs/ADR-013-serving-endpoints-config.md)). Esta es
 > la bitácora point-in-time de la sesión original — **el cuerpo no se reescribe**.
 
 > **Actualización post-sesión (2026-05-31):** `core/security.py` (auth JWT) fue implementado; `/v1/chat` (sync + SSE streaming), `/v1/sessions` y `/v1/memory` completo están mergeados. Este doc es la bitácora point-in-time de la sesión original — el cuerpo no se reescribe.
@@ -221,4 +228,4 @@ cosmético con aprobación humana).
 
 > Documento de handoff de una sesión puntual. No reemplaza al plan
 > operativo ([`LLM-INFERENCE-INTEGRATION.md`](./LLM-INFERENCE-INTEGRATION.md))
-> ni al roadmap de memoria ([`BACKEND-MEMORY-ROADMAP.md`](./BACKEND-MEMORY-ROADMAP.md)).
+> ni al roadmap de memoria ([`BACKEND-MEMORY-ROADMAP.md`](../BACKEND-MEMORY-ROADMAP.md)).

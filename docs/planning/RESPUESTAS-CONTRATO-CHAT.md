@@ -179,4 +179,4 @@ Fundamento (no es arbitrario):
 | 4 | Endpoints `POST /v1/chat` (JSON) + `POST /v1/chat/stream` (SSE eventos `token`/`done`/`error`) | `app/api/v1/chat.py` (nuevo) | M9 |
 | 5 | Confirmar markdown sí/no + límite de chars | owner | antes de M9 |
 
-Ver [`LLM-INFERENCE-INTEGRATION.md`](./LLM-INFERENCE-INTEGRATION.md) (M8 router + tool loop, M9 endpoint) y [`apps/backend/docs/ENDPOINTS.md`](../../apps/backend/docs/ENDPOINTS.md).
+Ver [`archive/LLM-INFERENCE-INTEGRATION.md`](./archive/LLM-INFERENCE-INTEGRATION.md) (M8 router + tool loop, M9 endpoint) y [`apps/backend/docs/ENDPOINTS.md`](../../apps/backend/docs/ENDPOINTS.md).

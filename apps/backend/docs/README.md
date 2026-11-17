@@ -20,7 +20,7 @@ Estos catálogos son el **qué**; el **cómo** vive en otro lado:
   - ADR-002 (dual stack Gemma/Qwen), ADR-005 (Supabase MVP), ADR-007 (memory decay/retention/encryption), ADR-008 (embedding bge-m3), ADR-010 (memory architecture v2 in-house, supersede ADR-003/Mem0), ADR-011 (auth layering).
   - **Inferencia**: ADR-028 (inferencia por API: proveedores, alias de modelo y respaldo), que reemplaza el serving local de ADR-009, ADR-013 y ADR-014.
   - ADR-015 (auth deps: PyJWT + bcrypt directo).
-- Plan de la capa de inferencia: [`LLM-INFERENCE-INTEGRATION.md`](../../../docs/planning/LLM-INFERENCE-INTEGRATION.md).
+- Plan histórico de la capa de inferencia, archivado con ADR-028: [`LLM-INFERENCE-INTEGRATION.md`](../../../docs/planning/archive/LLM-INFERENCE-INTEGRATION.md).
 
 ## Regla
 
