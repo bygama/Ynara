@@ -1,6 +1,6 @@
 """System prompt del modo Estudio.
 
-Modelo Gemma 4 12B (conversacional): solo lee memoria, no escribe, no llama
+Alias ``conversacional`` (ADR-028 D3): solo lee memoria, no escribe, no llama
 tools. Tono encouragement. Capas de memoria: episodic + procedural. Ver
 ``ynara.config.json[modes][estudio]`` y MODES.md.
 

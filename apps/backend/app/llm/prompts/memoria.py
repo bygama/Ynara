@@ -1,6 +1,6 @@
 """System prompt del modo Memoria.
 
-Modelo Qwen 3.5-9B (agente): lee y escribe memoria, llama la tool de memoria.
+Alias ``agente`` (ADR-028 D3): lee y escribe memoria, llama la tool de memoria.
 Tono neutro-eficaz. Capas de memoria: episodic + semantic + procedural. Ver
 ``ynara.config.json[modes][memoria]`` y MODES.md.
 """

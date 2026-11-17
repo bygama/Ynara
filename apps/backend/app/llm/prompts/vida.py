@@ -1,13 +1,13 @@
 """System prompt del modo Vida.
 
-Modelo Gemma 4 12B (conversacional): solo lee memoria, no escribe. Tono
+Alias ``conversacional`` (ADR-028 D3): solo lee memoria, no escribe. Tono
 casual-rioplatense. Capa de memoria: procedural. Ver
 ``ynara.config.json[modes][vida]`` y MODES.md.
 
 Regla #14 de AI-GUIDELINES: modo conversacional, nunca clinico ni moralizante.
-Nota: ``ynara.config.json[modes][vida]`` tiene ``tools_enabled=[]`` y por ADR-002
-Gemma no llama tools; MODES.md lo aclara como solo lectura. El prompt no habilita
-ejecucion de tools.
+Nota: ``ynara.config.json[modes][vida]`` tiene ``tools_enabled=[]`` y el alias
+``conversacional`` no llama tools (ADR-028 D3); MODES.md lo aclara como solo
+lectura. El prompt no habilita ejecucion de tools.
 """
 
 from __future__ import annotations
