@@ -2,9 +2,9 @@
 
 Expone la lista de modos declarados en ``ynara.config.json[modes]`` (id +
 metadata semántica: ``model``, ``memory_layers``, ``tools_enabled``, ``tone``).
-Es la fuente **server-driven** que consume el Mode Switcher del front (build-plan
-track backend #1): hasta ahora el front leía el mismo bloque en build time
-(``apps/web/src/lib/modes.ts``); este endpoint deja cambiar los modos sin rebuild.
+Es la fuente **server-driven** pensada para el Mode Switcher del front (build-plan
+track backend #1): deja cambiar los modos sin rebuild. Hoy ningún cliente la llama:
+el front lee el mismo bloque en build time (``apps/web/src/lib/modes.ts``).
 
 Decisiones:
 
@@ -38,6 +38,10 @@ class ModeOut(BaseModel):
     ``id`` es la clave del modo, validada contra el enum ``Mode`` (si la config
     declarara un modo desconocido, ``Mode(id)`` levantaría — fail-fast, pero la
     coherencia config↔enum ya se valida en otro lado). El resto espeja el JSON 1:1.
+
+    ``model`` es el alias de modelo del modo (``conversacional`` | ``agente``,
+    ADR-028 D9), nunca el id de modelo del proveedor. Queda ``str`` a propósito: el
+    mismo tipo que tenía con el modelo concreto, sin enumerar valores en el contrato.
     """
 
     model_config = ConfigDict(frozen=True)
