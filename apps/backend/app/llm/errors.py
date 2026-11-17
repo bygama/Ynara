@@ -2,8 +2,10 @@
 
 Tres familias:
 
-- **Transitorios** (reintentables): timeout, instancia caida, sobrecarga o
-  limite de tasa del proveedor (429, con la espera de ``Retry-After``).
+- **Transitorios** (reintentables, raiz ``LlmTransientError``): timeout, instancia
+  caida, sobrecarga o limite de tasa del proveedor (429, con la espera de
+  ``Retry-After``). Reintentar mas tarde puede andar: el ``ResilientClient`` los
+  reintenta y la consolidacion de memoria reintenta la task entera.
 - **Permanentes** (no reintentar): request mal formado, contexto excedido,
   modelo no servido, credencial rechazada por el proveedor (401/403) y request
   que ese proveedor no acepta (un 4xx sin mapeo propio, como un 404 por un id
@@ -53,19 +55,33 @@ class LlmError(Exception):
 # ---------- Transitorios (reintentables) ----------
 
 
-class LlmTimeoutError(LlmError):
+class LlmTransientError(LlmError):
+    """Falla transitoria del proveedor: reintentar mas tarde puede andar.
+
+    Raiz de la familia: timeout, caida, sobrecarga y 429 heredan de aca, asi quien
+    quiere reintentar pregunta por UNA clase (``isinstance`` o ``autoretry_for``). El
+    ``ResilientClient`` sin degradar (``degrade=False``) la levanta tal cual cuando se
+    agota la cadena por algo que no es un rechazo del proveedor (respuesta caida, 429,
+    breaker abierto, presupuesto vencido): la consolidacion de memoria la usa para
+    reintentar el turno en vez de perderlo.
+    """
+
+    message = "falla transitoria del proveedor LLM"
+
+
+class LlmTimeoutError(LlmTransientError):
     """La instancia no respondio dentro del timeout."""
 
     message = "timeout de inferencia LLM"
 
 
-class LlmUnavailableError(LlmError):
+class LlmUnavailableError(LlmTransientError):
     """No se pudo conectar a la instancia o devolvio 503."""
 
     message = "instancia LLM no disponible"
 
 
-class LlmOverloadedError(LlmError):
+class LlmOverloadedError(LlmTransientError):
     """La instancia rechazo por sobrecarga (HTTP 429)."""
 
     message = "instancia LLM sobrecargada"
