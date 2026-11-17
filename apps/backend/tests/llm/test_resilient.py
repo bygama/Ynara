@@ -468,6 +468,78 @@ async def test_health_unhealthy_if_all_down() -> None:
     assert health.model_name == _MODEL
 
 
+# ---------- salud por proveedor ----------
+
+
+class _NamedClient:
+    """Cliente con ``name`` de proveedor y salud fija, como un ``OpenAICompatClient``."""
+
+    def __init__(self, name: str, *, healthy: bool) -> None:
+        self.name = name
+        self._healthy = healthy
+
+    async def health(self) -> ModelHealth:
+        return ModelHealth(model_name=self.name, healthy=self._healthy)
+
+
+class _BarrierClient:
+    """Cliente cuyo health() espera a que arranquen todos los probes del pool."""
+
+    def __init__(self, name: str, started: list[str], all_started: asyncio.Event) -> None:
+        self.name = name
+        self._started = started
+        self._all_started = all_started
+
+    async def health(self) -> ModelHealth:
+        self._started.append(self.name)
+        if len(self._started) == 2:
+            self._all_started.set()
+        await self._all_started.wait()
+        return ModelHealth(model_name=self.name, healthy=True)
+
+
+def _labels(healths: list[ModelHealth]) -> list[tuple[str, bool]]:
+    return [(h.model_name, h.healthy) for h in healths]
+
+
+async def test_provider_health_reports_every_client_in_pool_order() -> None:
+    """Sondea a todos (no corta en el primer sano) y respeta el orden del pool."""
+    clients = [_NamedClient("principal", healthy=True), _NamedClient("respaldo", healthy=False)]
+    pool = ClientPool(clients, FirstHealthy())  # type: ignore[arg-type]
+    healths = await ResilientClient(pool).provider_health()
+    assert _labels(healths) == [("principal", True), ("respaldo", False)]
+
+
+async def test_provider_health_marks_client_that_raises_as_unhealthy() -> None:
+    """Un health() que revienta da no-sano para ese cliente y no tumba al resto."""
+    clients = [_HealthExploding(), _NamedClient("respaldo", healthy=True)]
+    pool = ClientPool(clients, FirstHealthy())  # type: ignore[arg-type]
+    healths = await ResilientClient(pool).provider_health()
+    assert _labels(healths) == [("_HealthExploding", False), ("respaldo", True)]
+
+
+async def test_provider_health_labels_unnamed_client_by_class() -> None:
+    """Sin ``name``, el rótulo es la clase del cliente (el mismo de los logs)."""
+    down = _fake()
+    down.set_health(False)
+    healths = await _resilient([_fake(), down]).provider_health()
+    assert _labels(healths) == [("FakeLlmClient", True), ("FakeLlmClient", False)]
+
+
+async def test_provider_health_probes_clients_concurrently() -> None:
+    """Los probes corren a la vez: en serie, el primero esperaría para siempre."""
+    started: list[str] = []
+    all_started = asyncio.Event()
+    clients = [_BarrierClient(name, started, all_started) for name in ("principal", "respaldo")]
+    pool = ClientPool(clients, FirstHealthy())  # type: ignore[arg-type]
+    healths = await asyncio.wait_for(ResilientClient(pool).provider_health(), timeout=1.0)
+    assert _labels(healths) == [("principal", True), ("respaldo", True)]
+
+
+async def test_provider_health_with_empty_pool_is_empty() -> None:
+    assert await ResilientClient(ClientPool([], FirstHealthy())).provider_health() == []
+
+
 # ---------- streaming ----------
 
 

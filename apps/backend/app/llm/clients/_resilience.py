@@ -30,6 +30,7 @@ from app.llm.errors import (
     LlmUnavailableError,
     ModelNotServedError,
 )
+from app.llm.schemas import ModelHealth
 
 # Errores del REQUEST: se re-lanzan sin reintentar ni pasar al respaldo (bug del
 # request, no del proveedor: el respaldo fallaria igual). Incluye el contexto
@@ -221,3 +222,13 @@ def client_label(client: LLMClient) -> str:
     """Nombre para los logs: el del proveedor si lo tiene, si no la clase del cliente."""
     name = getattr(client, "name", None)
     return name if isinstance(name, str) and name else type(client).__name__
+
+
+async def probe_health(client: LLMClient) -> ModelHealth:
+    """``health()`` de un cliente rotulado con su nombre; no-sano si levanta."""
+    label = client_label(client)
+    try:
+        health = await client.health()
+    except Exception:
+        return ModelHealth(model_name=label, healthy=False)
+    return ModelHealth(model_name=label, healthy=health.healthy)
