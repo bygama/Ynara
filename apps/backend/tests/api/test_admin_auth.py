@@ -6,8 +6,10 @@ Cubren el invariante CLAVE de la superficie admin: solo un ``User`` con ``is_adm
 
 Setup espejado de ``tests/api/test_sessions.py`` (``httpx.AsyncClient`` +
 ``ASGITransport(app=app)``, override de ``get_db`` con el ``db_session`` del fixture,
-JWT vía ``create_access_token``). Los 6 GET son read-only: NO commitean, así que el
-rollback del fixture ``db_session`` limpia lo sembrado.
+JWT vía ``create_access_token``). ``/system`` además lee los clientes de IA de
+``app.state``, que sin el lifespan no existen: van los Fakes por override. Los 6 GET
+son read-only: NO commitean, así que el rollback del fixture ``db_session`` limpia lo
+sembrado.
 
 Cobertura:
 1. Sin token -> 401 (los 6 endpoints, vía ``get_current_user``).
@@ -26,8 +28,10 @@ import pytest
 from httpx import ASGITransport
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_db
+from app.core.deps import get_db, get_embedder, get_llm_client
 from app.core.security import create_access_token
+from app.llm.clients.embedding import FakeEmbeddingClient
+from app.llm.clients.fakes import FakeLlmClient
 from app.main import app
 from app.models.user import User
 
@@ -59,12 +63,16 @@ def _bearer(user_id: uuid.UUID) -> dict[str, str]:
 
 
 async def _client(db_session: AsyncSession) -> httpx.AsyncClient:
-    """Overridea ``get_db`` con el ``db_session`` del fixture y devuelve el cliente ASGI."""
+    """Overridea ``get_db`` (y los clientes de IA) y devuelve el cliente ASGI."""
 
     async def _override_db() -> AsyncIterator[AsyncSession]:
         yield db_session
 
     app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[get_llm_client] = lambda: FakeLlmClient(
+        models=frozenset({"conversacional", "agente"})
+    )
+    app.dependency_overrides[get_embedder] = lambda: FakeEmbeddingClient()
     transport = ASGITransport(app=app)
     return httpx.AsyncClient(transport=transport, base_url="http://test")
 

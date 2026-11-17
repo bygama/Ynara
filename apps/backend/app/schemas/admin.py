@@ -287,9 +287,69 @@ class SystemRuntime(YnaraBaseModel):
     build_version: str
 
 
+# Modo de un cliente de IA (``LLM_BACKEND`` / ``EMBEDDING_BACKEND``, ADR-028): ``fake``
+# es el determinista sin red de dev y CI; ``api``, el proveedor real.
+AiBackend = Literal["fake", "api"]
+# Estado de un proveedor de IA: ``ok`` (respondió el health), ``down`` (no respondió)
+# o ``unconfigured`` (con el backend ``fake`` no se sondea: el proveedor no está en uso).
+AiStatus = Literal["ok", "down", "unconfigured"]
+
+
+class SystemModelRoute(YnaraBaseModel):
+    """Un alias de Ynara y el id del modelo que lo sirve en el proveedor."""
+
+    alias: str
+    model_id: str
+
+
+class SystemLlmProvider(YnaraBaseModel):
+    """Un proveedor de ``LLM_PROVIDERS`` (sin su credencial).
+
+    ``host`` es solo el host de la URL base: sin esquema, puerto, path ni usuario. La
+    credencial (``LLM_API_KEY_<NAME>``) nunca sale del backend (regla #2).
+    """
+
+    name: str
+    host: str
+    models: list[SystemModelRoute]
+    status: AiStatus
+
+
+class SystemLlm(YnaraBaseModel):
+    """Cliente LLM: su modo y los proveedores en el orden de ``LLM_PROVIDERS``.
+
+    El primero es el principal y el resto, el respaldo en ese orden.
+    """
+
+    backend: AiBackend
+    providers: list[SystemLlmProvider]
+
+
+class SystemEmbeddings(YnaraBaseModel):
+    """Cliente de embeddings: modo, host, modelo, dimensión del vector y estado.
+
+    ``host`` sale de ``EMBEDDING_BASE_URL`` con el mismo recorte que el de un proveedor
+    LLM; ``None`` si no hay URL (el fake no la necesita). Nunca lleva la credencial.
+    """
+
+    backend: AiBackend
+    host: str | None
+    model: str
+    dim: int
+    status: AiStatus
+
+
+class SystemAi(YnaraBaseModel):
+    """Proveedores de IA del runtime (ADR-028): el LLM y los embeddings."""
+
+    llm: SystemLlm
+    embeddings: SystemEmbeddings
+
+
 class AdminSystemOut(YnaraBaseModel):
     """Respuesta de ``GET /v1/admin/system``."""
 
     guard: SystemGuard
     services: SystemServices
     runtime: SystemRuntime
+    ai: SystemAi
