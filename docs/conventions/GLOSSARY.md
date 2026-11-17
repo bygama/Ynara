@@ -33,13 +33,15 @@ con un PR.
   memoria.
 - **Qwen** — Qwen 3.5 9B. Modelo agente. Lee y escribe memoria,
   llama tools.
-- **bge-m3** — modelo de embeddings, 1024 dimensiones.
+- **bge-m3** — modelo de embeddings, 1024 dimensiones. Lo sirve un
+  proveedor por API (`EMBEDDING_MODEL`, default `BAAI/bge-m3`; ADR-028
+  D4) a través de `ApiEmbeddingClient`.
 - **Reranker** — reordena los candidatos del ANN (el top-K que devuelve
   pgvector) por relevancia antes del recall final. Contrato `Reranker`
-  (Protocol) en `apps/backend/app/llm/clients/reranker.py`, con
-  `FakeReranker` passthrough determinista para dev/test y `VllmReranker`
-  real contra la API `/rerank` de vLLM (cross-encoder). Ollama no sirve
-  cross-encoders, así que en dev se usa el Fake.
+  (Protocol) en `apps/backend/app/llm/clients/reranker.py`. Hoy es un
+  passthrough en todos los entornos, production incluida: el
+  `FakeReranker` deja el orden del ANN (ADR-028 D5). Un rerank real por
+  API queda como palanca futura.
 - **vLLM** — motor de serving reservado para GPU de 24 GB+ (ADR-014).
   `LLM_BACKEND=vllm` es el nombre legacy del cliente HTTP, no implica que
   vLLM sea el motor local. En dev se usan Fakes
