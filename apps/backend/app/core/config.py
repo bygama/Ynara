@@ -168,7 +168,7 @@ class Settings(BaseSettings):
     embedding_base_url: str = Field("http://localhost:8003/v1", alias="EMBEDDING_BASE_URL")
     embedding_backend: Literal["fake", "vllm"] = Field("fake", alias="EMBEDDING_BACKEND")
     # Timeout por request del embedder (segundos), solo aplica con backend 'vllm'.
-    # El chat LLM toma el suyo de ynara.config.json[llm.serving].request_timeout_s.
+    # El chat LLM toma el suyo de PROVIDER_REQUEST_TIMEOUT_S (app/llm/clients/factory.py).
     embedding_timeout_s: float = Field(30.0, gt=0, alias="EMBEDDING_TIMEOUT_S")
 
     # Reranker (cross-encoder). `reranker_backend` elige el Fake passthrough
