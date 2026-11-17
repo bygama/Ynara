@@ -68,7 +68,7 @@ Thumbs.db
 # Alembic ad-hoc
 apps/backend/alembic/versions/__pycache__/
 
-# vLLM / modelos / checkpoints (NUNCA commitear pesos)
+# Pesos de modelos / checkpoints (NUNCA commitear pesos)
 *.bin
 *.safetensors
 *.gguf
