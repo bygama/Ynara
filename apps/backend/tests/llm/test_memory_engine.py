@@ -155,13 +155,13 @@ def test_fake_memory_engine_satisfies_protocol() -> None:
 
 
 async def test_qwen_engine_valid_json_add_semantic() -> None:
-    fake_llm = FakeLlmClient(models=frozenset({"qwen"}))
+    fake_llm = FakeLlmClient(models=frozenset({"agente"}))
     fake_llm.queue_result(
         _make_result(
             _json_ops([{"op": "ADD", "layer": "semantic", "content": "El usuario es medico."}])
         )
     )
-    engine = QwenMemoryEngine(llm_client=fake_llm, model="qwen")
+    engine = QwenMemoryEngine(llm_client=fake_llm, model="agente")
     ops = await engine.consolidate(
         user_msg="soy medico", model_response="interesante!", mode="vida"
     )
@@ -173,21 +173,21 @@ async def test_qwen_engine_valid_json_add_semantic() -> None:
 
 async def test_qwen_engine_consolidate_forces_thinking_off() -> None:
     """consolidate manda thinking=False (#235): la extraccion quiere JSON puro."""
-    fake_llm = FakeLlmClient(models=frozenset({"qwen"}))
+    fake_llm = FakeLlmClient(models=frozenset({"agente"}))
     fake_llm.queue_result(_make_result(_json_ops([{"op": "NOOP", "layer": "semantic"}])))
-    engine = QwenMemoryEngine(llm_client=fake_llm, model="qwen")
+    engine = QwenMemoryEngine(llm_client=fake_llm, model="agente")
     await engine.consolidate(user_msg="hola", model_response="hola!", mode="vida")
     assert fake_llm.complete_calls[0]["thinking"] is False
 
 
 async def test_qwen_engine_consolidate_tolerates_think_block() -> None:
     """Un bloque <think>...</think> antes del JSON no rompe la extraccion (#235)."""
-    fake_llm = FakeLlmClient(models=frozenset({"qwen"}))
+    fake_llm = FakeLlmClient(models=frozenset({"agente"}))
     raw = "<think>el usuario dijo que es medico</think>\n" + _json_ops(
         [{"op": "ADD", "layer": "semantic", "content": "El usuario es medico."}]
     )
     fake_llm.queue_result(_make_result(raw))
-    engine = QwenMemoryEngine(llm_client=fake_llm, model="qwen")
+    engine = QwenMemoryEngine(llm_client=fake_llm, model="agente")
     ops = await engine.consolidate(user_msg="soy medico", model_response="ok", mode="vida")
     assert len(ops) == 1
     assert ops[0].op == "ADD"
@@ -196,17 +196,17 @@ async def test_qwen_engine_consolidate_tolerates_think_block() -> None:
 
 async def test_qwen_engine_consolidate_tolerates_markdown_fence() -> None:
     """El JSON envuelto en un fence ```json ... ``` se parsea igual (#235)."""
-    fake_llm = FakeLlmClient(models=frozenset({"qwen"}))
+    fake_llm = FakeLlmClient(models=frozenset({"agente"}))
     raw = "```json\n" + _json_ops([{"op": "NOOP", "layer": "semantic"}]) + "\n```"
     fake_llm.queue_result(_make_result(raw))
-    engine = QwenMemoryEngine(llm_client=fake_llm, model="qwen")
+    engine = QwenMemoryEngine(llm_client=fake_llm, model="agente")
     ops = await engine.consolidate(user_msg="hola", model_response="hola!", mode="vida")
     assert len(ops) == 1
     assert ops[0].op == "NOOP"
 
 
 async def test_qwen_engine_valid_json_add_procedural() -> None:
-    fake_llm = FakeLlmClient(models=frozenset({"qwen"}))
+    fake_llm = FakeLlmClient(models=frozenset({"agente"}))
     fake_llm.queue_result(
         _make_result(
             _json_ops(
@@ -221,7 +221,7 @@ async def test_qwen_engine_valid_json_add_procedural() -> None:
             )
         )
     )
-    engine = QwenMemoryEngine(llm_client=fake_llm, model="qwen")
+    engine = QwenMemoryEngine(llm_client=fake_llm, model="agente")
     ops = await engine.consolidate(
         user_msg="prefiero tono informal", model_response="dale!", mode="vida"
     )
@@ -233,14 +233,14 @@ async def test_qwen_engine_valid_json_add_procedural() -> None:
 
 
 async def test_qwen_engine_multiple_ops() -> None:
-    fake_llm = FakeLlmClient(models=frozenset({"qwen"}))
+    fake_llm = FakeLlmClient(models=frozenset({"agente"}))
     raw_ops = [
         {"op": "ADD", "layer": "semantic", "content": "El usuario vive en Buenos Aires."},
         {"op": "ADD", "layer": "procedural", "key": "ciudad", "value": {"ciudad": "Buenos Aires"}},
         {"op": "NOOP", "layer": "semantic"},
     ]
     fake_llm.queue_result(_make_result(_json_ops(raw_ops)))
-    engine = QwenMemoryEngine(llm_client=fake_llm, model="qwen")
+    engine = QwenMemoryEngine(llm_client=fake_llm, model="agente")
     ops = await engine.consolidate(
         user_msg="vivo en Buenos Aires", model_response="genial", mode="vida"
     )
@@ -250,11 +250,11 @@ async def test_qwen_engine_multiple_ops() -> None:
 
 async def test_qwen_engine_delete_semantic_with_target_id() -> None:
     target = str(uuid4())
-    fake_llm = FakeLlmClient(models=frozenset({"qwen"}))
+    fake_llm = FakeLlmClient(models=frozenset({"agente"}))
     fake_llm.queue_result(
         _make_result(_json_ops([{"op": "DELETE", "layer": "semantic", "target_id": target}]))
     )
-    engine = QwenMemoryEngine(llm_client=fake_llm, model="qwen")
+    engine = QwenMemoryEngine(llm_client=fake_llm, model="agente")
     ops = await engine.consolidate(
         user_msg="eso ya no aplica", model_response="ok, lo elimino", mode="vida"
     )
@@ -264,7 +264,7 @@ async def test_qwen_engine_delete_semantic_with_target_id() -> None:
 
 
 async def test_qwen_engine_update_procedural() -> None:
-    fake_llm = FakeLlmClient(models=frozenset({"qwen"}))
+    fake_llm = FakeLlmClient(models=frozenset({"agente"}))
     fake_llm.queue_result(
         _make_result(
             _json_ops(
@@ -279,7 +279,7 @@ async def test_qwen_engine_update_procedural() -> None:
             )
         )
     )
-    engine = QwenMemoryEngine(llm_client=fake_llm, model="qwen")
+    engine = QwenMemoryEngine(llm_client=fake_llm, model="agente")
     ops = await engine.consolidate(
         user_msg="ahora prefiero mexicano", model_response="anotado", mode="vida"
     )
@@ -294,43 +294,43 @@ async def test_qwen_engine_update_procedural() -> None:
 
 
 async def test_qwen_engine_invalid_json_returns_empty() -> None:
-    fake_llm = FakeLlmClient(models=frozenset({"qwen"}))
+    fake_llm = FakeLlmClient(models=frozenset({"agente"}))
     fake_llm.queue_result(_make_result("esto no es json {{{"))
-    engine = QwenMemoryEngine(llm_client=fake_llm, model="qwen")
+    engine = QwenMemoryEngine(llm_client=fake_llm, model="agente")
     ops = await engine.consolidate(user_msg="hola", model_response="hola!", mode="vida")
     assert ops == []
 
 
 async def test_qwen_engine_free_text_returns_empty() -> None:
-    fake_llm = FakeLlmClient(models=frozenset({"qwen"}))
+    fake_llm = FakeLlmClient(models=frozenset({"agente"}))
     fake_llm.queue_result(
         _make_result(
             "No encontre ningun hecho relevante en esta conversacion. El usuario solo saludo."
         )
     )
-    engine = QwenMemoryEngine(llm_client=fake_llm, model="qwen")
+    engine = QwenMemoryEngine(llm_client=fake_llm, model="agente")
     ops = await engine.consolidate(user_msg="hola", model_response="hola!", mode="vida")
     assert ops == []
 
 
 async def test_qwen_engine_non_list_json_returns_empty() -> None:
     """JSON valido pero no es lista -> []."""
-    fake_llm = FakeLlmClient(models=frozenset({"qwen"}))
+    fake_llm = FakeLlmClient(models=frozenset({"agente"}))
     fake_llm.queue_result(_make_result('{"op": "ADD", "layer": "semantic", "content": "x"}'))
-    engine = QwenMemoryEngine(llm_client=fake_llm, model="qwen")
+    engine = QwenMemoryEngine(llm_client=fake_llm, model="agente")
     ops = await engine.consolidate(user_msg="x", model_response="y", mode="vida")
     assert ops == []
 
 
 async def test_qwen_engine_invalid_op_value_skipped() -> None:
     """Op con 'op' invalido se skipea; las validas se devuelven."""
-    fake_llm = FakeLlmClient(models=frozenset({"qwen"}))
+    fake_llm = FakeLlmClient(models=frozenset({"agente"}))
     raw_ops = [
         {"op": "INVALID_OP", "layer": "semantic", "content": "x"},
         {"op": "ADD", "layer": "semantic", "content": "hecho valido"},
     ]
     fake_llm.queue_result(_make_result(_json_ops(raw_ops)))
-    engine = QwenMemoryEngine(llm_client=fake_llm, model="qwen")
+    engine = QwenMemoryEngine(llm_client=fake_llm, model="agente")
     ops = await engine.consolidate(user_msg="x", model_response="y", mode="vida")
     assert len(ops) == 1
     assert ops[0].content == "hecho valido"
@@ -338,13 +338,13 @@ async def test_qwen_engine_invalid_op_value_skipped() -> None:
 
 async def test_qwen_engine_invalid_layer_skipped() -> None:
     """Op con layer 'episodic' se skipea (Ola 2 solo semantic+procedural)."""
-    fake_llm = FakeLlmClient(models=frozenset({"qwen"}))
+    fake_llm = FakeLlmClient(models=frozenset({"agente"}))
     raw_ops = [
         {"op": "ADD", "layer": "episodic", "content": "evento"},
         {"op": "ADD", "layer": "semantic", "content": "hecho valido"},
     ]
     fake_llm.queue_result(_make_result(_json_ops(raw_ops)))
-    engine = QwenMemoryEngine(llm_client=fake_llm, model="qwen")
+    engine = QwenMemoryEngine(llm_client=fake_llm, model="agente")
     ops = await engine.consolidate(user_msg="x", model_response="y", mode="vida")
     assert len(ops) == 1
     assert ops[0].layer == "semantic"
@@ -352,30 +352,30 @@ async def test_qwen_engine_invalid_layer_skipped() -> None:
 
 async def test_qwen_engine_llm_failure_returns_empty() -> None:
     """Si el LLM levanta una excepcion, consolidate devuelve [] sin propagar."""
-    fake_llm = FakeLlmClient(models=frozenset({"qwen"}))
+    fake_llm = FakeLlmClient(models=frozenset({"agente"}))
     fake_llm.queue_error(RuntimeError("timeout del proveedor"))
-    engine = QwenMemoryEngine(llm_client=fake_llm, model="qwen")
+    engine = QwenMemoryEngine(llm_client=fake_llm, model="agente")
     ops = await engine.consolidate(user_msg="x", model_response="y", mode="vida")
     assert ops == []
 
 
 async def test_qwen_engine_calls_llm_once() -> None:
     """consolidate hace exactamente 1 llamada al LLM por turno."""
-    fake_llm = FakeLlmClient(models=frozenset({"qwen"}))
+    fake_llm = FakeLlmClient(models=frozenset({"agente"}))
     fake_llm.queue_result(_make_result("[]"))
-    engine = QwenMemoryEngine(llm_client=fake_llm, model="qwen")
+    engine = QwenMemoryEngine(llm_client=fake_llm, model="agente")
     await engine.consolidate(user_msg="x", model_response="y", mode="vida")
     assert len(fake_llm.complete_calls) == 1
 
 
 async def test_qwen_engine_uses_low_temperature() -> None:
     """consolidate usa temperature baja para extraccion estructurada."""
-    fake_llm = FakeLlmClient(models=frozenset({"qwen"}))
+    fake_llm = FakeLlmClient(models=frozenset({"agente"}))
     fake_llm.queue_result(_make_result("[]"))
-    engine = QwenMemoryEngine(llm_client=fake_llm, model="qwen")
+    engine = QwenMemoryEngine(llm_client=fake_llm, model="agente")
     await engine.consolidate(user_msg="x", model_response="y", mode="vida")
     # FakeLlmClient no registra temperature, pero verifica que se llamó al modelo correcto.
-    assert fake_llm.complete_calls[0]["model"] == "qwen"
+    assert fake_llm.complete_calls[0]["model"] == "agente"
 
 
 # ---------------------------------------------------------------------------
