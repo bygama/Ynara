@@ -53,6 +53,6 @@ y se actualizan los manifests correspondientes (`package.json`,
 `pyproject.toml`, `ynara.config.json`).
 
 Los cambios de **decisión arquitectónica** (cambiar Mem0 por otro
-engine, cambiar vLLM por otro server, etc.) **no** se reflejan
+engine, pasar de modelos propios a proveedores por API, etc.) **no** se reflejan
 editando el informe: se hacen vía ADR nuevo en
 `docs/architecture/adrs/`, que supersede al ADR previo.
