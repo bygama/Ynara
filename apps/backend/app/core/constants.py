@@ -16,6 +16,16 @@ from __future__ import annotations
 # solo lugar (con su gate sagrado, regla #3, por el impacto en la tabla).
 EMBEDDING_DIM = 1024
 
+# Embeddings por API (ADR-028 D4). Son los defaults que comparten ``Settings``
+# (``EMBEDDING_MODEL`` y ``EMBEDDING_BATCH_SIZE``) y el ``ApiEmbeddingClient``:
+# - ``DEFAULT_EMBEDDING_MODEL``: bge-m3 (ADR-008), que da vectores de ``EMBEDDING_DIM``.
+#   Si el proveedor elegido lo publica con otro id, se configura por entorno.
+# - ``DEFAULT_EMBEDDING_BATCH_SIZE``: máximo de textos por request. Es conservador,
+#   porque hay proveedores que aceptan pocos textos por request; una lista más larga se
+#   parte en varios requests.
+DEFAULT_EMBEDDING_MODEL = "BAAI/bge-m3"
+DEFAULT_EMBEDDING_BATCH_SIZE = 32
+
 # Alias lógicos de modelo (ADR-028 D3). El código no conoce modelos concretos: pide un
 # alias y el cliente del proveedor activo lo traduce al id de su modelo (el mapa
 # ``models`` de cada entrada de ``LLM_PROVIDERS``).
