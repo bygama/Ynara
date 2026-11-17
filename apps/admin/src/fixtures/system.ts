@@ -6,7 +6,7 @@ import { FIXTURE_NOW, minutesBack } from "./seed";
  *
  * guard active=true / isProdInDev=false (estado sano: dev apunta a la DB de dev),
  * Postgres up 3.2ms, Redis up 0.8ms, runtime con los alias agente/conversacional, 5 modos,
- * schema head Alembic, embedder/reranker cargados, buildVersion.
+ * schema head Alembic, el embedder y el reranker en uso, buildVersion.
  *
  * No lleva `range`: es runtime/config, una sola foto.
  */
@@ -36,8 +36,8 @@ export function systemFixture(now: Date = FIXTURE_NOW): AdminSystemOutT {
       models: ["agente", "conversacional"],
       modes: ["productividad", "estudio", "bienestar", "vida", "memoria"],
       schema_head: "20260615_0200",
-      embedder: "bge-m3 (1024d)",
-      reranker: "bge-reranker-v2-m3",
+      embedder: "BAAI/bge-m3",
+      reranker: "passthrough",
       build_version: "admin@0.1.0",
     },
   };

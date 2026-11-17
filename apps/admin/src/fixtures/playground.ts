@@ -49,7 +49,7 @@ const AGENTE: ServingModelOutT = ServingModelOut.parse({
 
 /**
  * `GET /v1/admin/serving` — estado feliz: backend api real y sano, los 2 alias
- * del catálogo healthy, embedder/reranker cargados. Sin secretos.
+ * del catálogo healthy, el embedder y el reranker en uso. Sin secretos.
  */
 export function servingFixture(): ServingOutT {
   const data: ServingOutT = {
@@ -59,8 +59,8 @@ export function servingFixture(): ServingOutT {
     request_timeout_s: 20,
     low_perf_available: true,
     models: [CONVERSACIONAL, AGENTE],
-    embedder: "bge-m3",
-    reranker: "bge-reranker-v2-m3",
+    embedder: "BAAI/bge-m3",
+    reranker: "passthrough",
   };
   return ServingOut.parse(data);
 }
