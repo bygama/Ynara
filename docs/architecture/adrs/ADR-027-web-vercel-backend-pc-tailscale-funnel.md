@@ -21,7 +21,7 @@ Ollama corriendo en una VPS LATAM con la 4080, detrás de Cloudflare Tunnel**. E
 una VPS. Una VPS con GPU de 16 GB+ es cara y redundante teniendo la placa en la
 máquina. El plan real de puesta a producción (ver notas de prod-readiness) ya es
 *"cómputo → la PC, dato → Supabase"*, accesible por **Tailscale**
-([`docs/operations/TAILSCALE-SHARING.md`](../../operations/TAILSCALE-SHARING.md)).
+(`docs/operations/TAILSCALE-SHARING.md`, guía que se borró con ADR-028).
 
 Lo que se quiere ahora:
 
