@@ -78,6 +78,10 @@ Copiar `.env.example` a `.env` (gitignored). Críticas:
 | `LLM_BACKEND` | `fake` (default, `FakeLlmClient` sin red) o `api` (proveedores de `LLM_PROVIDERS`). Production exige `api`. |
 | `LLM_PROVIDERS` | Lista JSON de proveedores en orden de prioridad: `name`, `base_url`, `models` (`{alias: model_id}` con `conversacional` y `agente`) y `supports_reasoning_effort` (ADR-028). |
 | `LLM_API_KEY_<NAME>` | Credencial de cada proveedor (`<NAME>` es su `name` en mayúsculas). Secreto: solo en el entorno, nunca en el JSON, la config ni los logs. |
+| `EMBEDDING_BACKEND` | `fake` (default, `FakeEmbeddingClient` sin red) o `api` (el proveedor de `EMBEDDING_BASE_URL`). Production exige `api`. |
+| `EMBEDDING_BASE_URL` | URL base de la API del proveedor de embeddings, con el `/v1` (https). |
+| `EMBEDDING_API_KEY` | Credencial del proveedor de embeddings. Secreto, igual que las `LLM_API_KEY_<NAME>`. |
+| `EMBEDDING_MODEL` | Id del modelo en el proveedor (default `BAAI/bge-m3`); tiene que dar vectores de 1024 dimensiones (ADR-028 D4). |
 | `TEST_DATABASE_URL` | Solo tests de integración — DB **dedicada**, nunca prod. |
 | `MEMORY_ENCRYPTION_MASTER_KEY` | Cifrado de memoria (implementado, ADR-007 D3). |
 

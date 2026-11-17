@@ -22,7 +22,7 @@
 
 - **FastAPI + Pydantic v2 strict + SQLAlchemy 2 async + Alembic + Celery + uv.** Python ≥ 3.12.
 - **DB**: Postgres + pgvector. MVP en Supabase vía **session pooler** (puerto 5432, IPv4; la conexión directa es IPv6-only). V2 self-hosted (ADR-005).
-- **LLM**: inferencia por API (ADR-028) con dos alias de modelo — `conversacional` (estudio, bienestar y vida; solo lee memoria, sin tools) y `agente` (productividad, memoria y la consolidación; lee y escribe memoria, llama tools). Los proveedores van en `LLM_PROVIDERS`, en orden de prioridad y con respaldo, y cada uno traduce el alias a su id de modelo. Ver ADR-002 (roles) y ADR-028 (inferencia por API).
+- **LLM**: inferencia por API (ADR-028) con dos alias de modelo — `conversacional` (estudio, bienestar y vida; solo lee memoria, sin tools) y `agente` (productividad, memoria y la consolidación; lee y escribe memoria, llama tools). Los proveedores van en `LLM_PROVIDERS`, en orden de prioridad y con respaldo, y cada uno traduce el alias a su id de modelo. Ver ADR-028 (inferencia por API), que reemplaza ADR-002 y mantiene sus roles como alias.
 
 **Construido y mergeado** (capa LLM M0–M8 completa):
 
