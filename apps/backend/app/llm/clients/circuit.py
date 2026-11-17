@@ -14,7 +14,8 @@ Maquina de estados clasica:
   ``CLOSED``; si falla, vuelve a ``OPEN`` (reinicia el temporizador).
 
 El breaker no sabe de ``async``: ``allow()`` / ``record_*`` son sincronos
-y el ``ResilientClient`` los orquesta. En ``HALF_OPEN`` admite UNA sola
+y el ``ResilientClient`` los orquesta (``would_allow()`` pregunta lo mismo que
+``allow()`` sin consumir la prueba). En ``HALF_OPEN`` admite UNA sola
 prueba a la vez (flag ``_probe_in_flight``): como ``allow()`` es sincrono,
 entre coroutines de asyncio que comparten el breaker no hay carrera (nada se
 intercala en medio del metodo). NO es thread-safe (sin lock): el modelo de
@@ -76,14 +77,24 @@ class CircuitBreaker:
         En ``OPEN`` chequea si ya paso ``recovery_timeout_s``: si si, pasa a
         ``HALF_OPEN`` y permite una unica prueba; si no, sigue bloqueando.
         """
+        if not self.would_allow():
+            return False
+        if self._state is CircuitState.OPEN:
+            self._state = CircuitState.HALF_OPEN
+            self._probe_in_flight = True
+        return True
+
+    def would_allow(self) -> bool:
+        """Lo que responderia ``allow()`` ahora, sin side effects.
+
+        No pasa de ``OPEN`` a ``HALF_OPEN`` ni consume la prueba: sirve para
+        preguntar si un candidato podria atender sin reservarle la prueba (el
+        ``ResilientClient`` lo usa para saber si hay un respaldo disponible).
+        """
         if self._state is CircuitState.CLOSED:
             return True
         if self._state is CircuitState.OPEN:
-            if self._clock() - self._opened_at >= self._recovery_timeout_s:
-                self._state = CircuitState.HALF_OPEN
-                self._probe_in_flight = True
-                return True
-            return False
+            return self._clock() - self._opened_at >= self._recovery_timeout_s
         # HALF_OPEN: solo UNA prueba a la vez. Si ya hay una en curso (caso
         # concurrente), se bloquea hasta que cierre via record_success/failure.
         return not self._probe_in_flight
