@@ -122,7 +122,9 @@ def _build_provider_client(
     )
 
 
-def build_llm_client(settings: Settings, config: LlmRuntimeConfig) -> LLMClient:
+def build_llm_client(
+    settings: Settings, config: LlmRuntimeConfig, *, degrade: bool = True
+) -> LLMClient:
     """Construye el cliente LLM segun ``LLM_BACKEND``: el de los proveedores o el fake.
 
     ``api``: un ``OpenAICompatClient`` por proveedor, en el orden de ``LLM_PROVIDERS``
@@ -130,8 +132,13 @@ def build_llm_client(settings: Settings, config: LlmRuntimeConfig) -> LLMClient:
     ``ResilientClient``. ``Settings`` ya valido que haya proveedores y que cada uno
     tenga su credencial.
 
+    ``degrade`` pasa al ``ResilientClient``: ``True`` (el default: el chat y el
+    playground) devuelve una respuesta degradada si se agota la cadena; ``False`` (los
+    workers de consolidacion, que pueden reintentar mas tarde) levanta el error para
+    distinguir una falla transitoria de un rechazo permanente.
+
     ``fake`` (default dev/test): ``FakeLlmClient`` que sirve los alias de la config.
-    No abre red.
+    No abre red y no tiene cadena que agotar, asi que ignora ``degrade``.
     """
     if not _wants_real_llm(settings):
         return FakeLlmClient(models=frozenset(config.models))
@@ -148,6 +155,7 @@ def build_llm_client(settings: Settings, config: LlmRuntimeConfig) -> LLMClient:
         base_backoff_s=PROVIDER_BASE_BACKOFF_S,
         max_backoff_s=PROVIDER_MAX_BACKOFF_S,
         total_budget_s=PROVIDER_TOTAL_BUDGET_S,
+        degrade=degrade,
     )
 
 

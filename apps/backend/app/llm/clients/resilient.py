@@ -26,6 +26,10 @@ stdlib (regla M3: nada de tenacity/circuitbreaker):
 3. Si todos los candidatos se agotan (o ninguno tiene el breaker cerrado), o
    se vence el presupuesto global, devuelve ``degraded_response()``. NUNCA
    propaga una excepcion de infra al caller (UX: siempre algo coherente).
+   Salvo con ``degrade=False``, que es para quien puede reintentar mas tarde
+   (la consolidacion de memoria, en un worker): ahi levanta el error, para
+   no confundir una falla transitoria con un rechazo permanente (ver
+   ``complete``).
 
 El breaker de cada candidato abre solo por caidas (timeout, 5xx, red:
 ``BREAKER_ERRORS``) o porque el presupuesto global corto un request suyo en
@@ -56,6 +60,7 @@ from app.llm.clients._resilience import (
     BREAKER_ERRORS,
     DEFAULT_MAX_WAIT_WITH_FALLBACK_S,
     DEFAULT_REQUEST_MARGIN_S,
+    PROVIDER_ERRORS,
     REQUEST_ERRORS,
     BreakerTally,
     RetryPolicy,
@@ -65,6 +70,7 @@ from app.llm.clients.circuit import CircuitBreaker
 from app.llm.clients.pool import ClientPool
 from app.llm.errors import (
     LlmError,
+    LlmTransientError,
     ModelNotServedError,
     degraded_response,
 )
@@ -95,6 +101,31 @@ _DEFAULT_DEGRADED_TEXT = "Estoy con un problema tecnico, proba en un ratito."
 _DEFAULT_TOTAL_BUDGET_S: float = 90.0
 
 
+class _ChainOutcome:
+    """Como termino cada candidato de un ``complete()`` que se quedo sin resultado.
+
+    Lo usa el modo sin degradar para elegir el error. Si TODOS los candidatos del modelo
+    se probaron y cada uno termino en un rechazo del proveedor (``PROVIDER_ERRORS``: la
+    credencial o un 4xx propio), reintentar mas tarde da lo mismo: el error es
+    permanente. Si alguno se salteo por su breaker o termino en otra cosa (timeout,
+    caida, 429, respuesta invalida), mas tarde puede andar: es transitorio. Vive por
+    llamada, como el ``BreakerTally``.
+    """
+
+    def __init__(self) -> None:
+        self.skipped = False
+        self.errors: list[LlmError] = []
+
+    def error(self, model: str) -> LlmError:
+        """El error a levantar cuando la cadena se agota sin resultado."""
+        if not self.errors and not self.skipped:
+            # Ningun cliente del pool sirve el modelo: es de configuracion, no transitorio.
+            return ModelNotServedError(model)
+        if not self.skipped and all(isinstance(exc, PROVIDER_ERRORS) for exc in self.errors):
+            return self.errors[-1]
+        return LlmTransientError("candidatos agotados")
+
+
 class ResilientClient:
     """Envuelve un ``ClientPool`` con retry, breaker y respaldo."""
 
@@ -109,6 +140,7 @@ class ResilientClient:
         rate_limit_max_wait_with_fallback_s: float = DEFAULT_MAX_WAIT_WITH_FALLBACK_S,
         rate_limit_request_margin_s: float = DEFAULT_REQUEST_MARGIN_S,
         degraded_text: str = _DEFAULT_DEGRADED_TEXT,
+        degrade: bool = True,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         breaker_factory: Callable[[], CircuitBreaker] = CircuitBreaker,
@@ -129,6 +161,12 @@ class ResilientClient:
         ``Retry-After`` mas largo que se espera si hay un respaldo disponible, y
         ``rate_limit_request_margin_s`` lo que tiene que quedar del presupuesto
         despues de esperar, para el request (ver ``RetryPolicy``).
+
+        ``degrade`` decide que pasa cuando la cadena se agota sin resultado. ``True``
+        (el default: el chat y el playground) devuelve ``degraded_response()``.
+        ``False`` levanta el error, para quien puede reintentar mas tarde (la
+        consolidacion de memoria en el worker): una respuesta degradada no distingue un
+        429 de una credencial rechazada, y solo el primero vale la pena reintentar.
         """
         self._policy = RetryPolicy(
             max_attempts=max_attempts,
@@ -140,6 +178,7 @@ class ResilientClient:
         self._pool = pool
         self._total_budget_s = total_budget_s
         self._degraded_text = degraded_text
+        self._degrade = degrade
         self._clock = clock
         self._sleep = sleep
         self._breakers: dict[int, CircuitBreaker] = {
@@ -202,13 +241,21 @@ class ResilientClient:
 
         ``thinking`` es passthrough puro hacia el cliente subyacente (ADR-012 D4):
         no hay logica nueva, solo se hila por toda la cadena de candidatos.
+
+        Con ``degrade=False``, en vez de degradar levanta: el rechazo del proveedor si
+        TODOS los candidatos del modelo lo rechazaron (``LlmAuthError`` o
+        ``LlmProviderRejectedError``: reintentar da lo mismo), ``ModelNotServedError``
+        si ninguno sirve el modelo, y ``LlmTransientError`` en cualquier otro caso
+        (caidas, 429, breaker abierto, presupuesto vencido: mas tarde puede andar).
         """
         tally = BreakerTally()
+        outcome = _ChainOutcome()
         deadline = self._clock() + self._total_budget_s
         try:
             async with asyncio.timeout(self._total_budget_s):
                 result = await self._run_candidates(
                     tally,
+                    outcome,
                     deadline,
                     model=model,
                     messages=messages,
@@ -219,18 +266,25 @@ class ResilientClient:
                     timeout_s=timeout_s,
                 )
         except TimeoutError:
-            # Budget global agotado: misma ruta degradada que agotar la cadena.
+            # Budget global agotado: misma ruta que agotar la cadena.
             tally.resolve(cut=True)
+            if not self._degrade:
+                logger.warning("llm: presupuesto agotado, sin respuesta")
+                raise LlmTransientError("presupuesto agotado") from None
             logger.warning("llm: presupuesto agotado, respuesta degradada")
             return degraded_response(text=self._degraded_text, model_name=model)
         if result is not None:
             return result
+        if not self._degrade:
+            logger.warning("llm: sin candidatos disponibles, sin respuesta")
+            raise outcome.error(model)
         logger.warning("llm: sin candidatos disponibles, respuesta degradada")
         return degraded_response(text=self._degraded_text, model_name=model)
 
     async def _run_candidates(
         self,
         tally: BreakerTally,
+        outcome: _ChainOutcome,
         deadline: float,
         *,
         model: str,
@@ -244,17 +298,20 @@ class ResilientClient:
         """Recorre los candidatos (principal -> respaldo).
 
         Devuelve el primer resultado exitoso, o ``None`` si todos se agotan /
-        tienen el breaker abierto (el caller degrada).
+        tienen el breaker abierto (el caller degrada o levanta). ``outcome`` anota
+        como termino cada candidato que no dio resultado.
         """
         candidates = self._pool.candidates(model)
         for index, client in enumerate(candidates):
             breaker = self._breakers[id(client)]
             if not breaker.allow():
+                outcome.skipped = True
                 continue
             result = await self._try_candidate(
                 client,
                 breaker,
                 tally,
+                outcome,
                 deadline,
                 candidates[index + 1 :],
                 model=model,
@@ -274,6 +331,7 @@ class ResilientClient:
         client: LLMClient,
         breaker: CircuitBreaker,
         tally: BreakerTally,
+        outcome: _ChainOutcome,
         deadline: float,
         fallbacks: Sequence[LLMClient],
         *,
@@ -293,7 +351,8 @@ class ResilientClient:
         los ``LlmError`` se reintentan con backoff. ``fallbacks`` son los
         candidatos que siguen: si alguno puede atender, un 429 no se espera
         salvo que sea corto (ver ``RetryPolicy``). El breaker se resuelve
-        siempre (ver ``BreakerTally``).
+        siempre (ver ``BreakerTally``). Si se agota, anota en ``outcome`` el ultimo
+        error del candidato (el modo sin degradar elige con eso que levantar).
         """
         tally.start(breaker)
         last_error: LlmError | None = None
@@ -330,6 +389,8 @@ class ResilientClient:
                 tally.succeed()
                 return result
         tally.resolve()
+        if last_error is not None:
+            outcome.errors.append(last_error)
         logger.warning(
             "llm: candidato %s descartado (%s)",
             _client_label(client),

@@ -13,6 +13,7 @@ import json
 import logging
 from collections.abc import Iterator
 
+import httpx
 import pytest
 
 from app.core.config import Settings
@@ -34,6 +35,8 @@ from app.llm.clients.providers.openai_compat import OpenAICompatClient
 from app.llm.clients.reranker import RERANKER_PASSTHROUGH, FakeReranker
 from app.llm.clients.resilient import ResilientClient
 from app.llm.config import LlmRuntimeConfig, ModeConfig, ModelConfig
+from app.llm.errors import LlmAuthError
+from app.llm.schemas import ChatMessage
 
 # Proveedores de prueba (ADR-028): el principal acepta reasoning_effort, el respaldo no.
 _PROVIDERS = [
@@ -200,6 +203,53 @@ def test_llm_client_api_uses_the_resilience_policy() -> None:
     assert isinstance(client, ResilientClient)
     assert client._policy.max_attempts == PROVIDER_MAX_ATTEMPTS
     assert client._total_budget_s == PROVIDER_TOTAL_BUDGET_S
+
+
+def _mock_provider_http(monkeypatch: pytest.MonkeyPatch, status: int) -> None:
+    """Los ``httpx.AsyncClient`` que arma la factory responden ``status`` sin abrir red."""
+    real_async_client = httpx.AsyncClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, json={"error": {"message": "rechazado"}})
+
+    monkeypatch.setattr(
+        "app.llm.clients.factory.httpx.AsyncClient",
+        lambda: real_async_client(transport=httpx.MockTransport(handler)),
+    )
+
+
+async def test_llm_client_api_degrades_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """El chat usa el default: si todos los proveedores rechazan, respuesta degradada."""
+    _mock_provider_http(monkeypatch, 401)
+    client = build_llm_client(_settings(llm_backend="api"), _config())
+    try:
+        result = await client.complete(
+            model="agente", messages=[ChatMessage(role="user", content="hola")]
+        )
+    finally:
+        await client.aclose()
+    assert result.finish_reason == "degraded"
+
+
+async def test_llm_client_api_without_degrade_raises_the_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Los workers piden ``degrade=False``: el rechazo de la credencial se levanta."""
+    _mock_provider_http(monkeypatch, 401)
+    client = build_llm_client(_settings(llm_backend="api"), _config(), degrade=False)
+    try:
+        with pytest.raises(LlmAuthError):
+            await client.complete(
+                model="agente", messages=[ChatMessage(role="user", content="hola")]
+            )
+    finally:
+        await client.aclose()
+
+
+def test_llm_client_fake_ignores_degrade() -> None:
+    """El fake no tiene cadena que agotar: ``degrade`` no cambia el cliente."""
+    client = build_llm_client(_settings(), _config(), degrade=False)
+    assert isinstance(client, FakeLlmClient)
 
 
 def test_llm_client_is_resilient_in_production() -> None:
