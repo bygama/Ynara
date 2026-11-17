@@ -2,11 +2,11 @@
 
 GAP que cierra (verificación E2E): el modelo NO tenía la fecha/hora actual en su
 contexto, así que NO podía resolver fechas relativas ("mañana", "el lunes", "en 2
-horas") al agendar. En la prueba en vivo, "agendame gym mañana 18hs" hizo que qwen
-pidiera la fecha en vez de agendar. Este módulo arma una línea en español que el
-router (chat) y la pasada del agente agregan al system prompt, después de la parte
-fija (lo variable va al final para la cache de prefijos del proveedor), para que el
-modelo ancle las fechas relativas contra el "ahora" real.
+horas") al agendar. En la prueba en vivo, "agendame gym mañana 18hs" hizo que el
+modelo del agente pidiera la fecha en vez de agendar. Este módulo arma una línea en
+español que el router (chat) y la pasada del agente agregan al system prompt,
+después de la parte fija (lo variable va al final para la cache de prefijos del
+proveedor), para que el modelo ancle las fechas relativas contra el "ahora" real.
 
 DISEÑO (puro y testeable):
 - ``build_now_preamble(now)`` recibe el ``datetime`` por parámetro: es DETERMINISTA
@@ -118,8 +118,9 @@ def build_now_preamble(now: datetime, *, tz_label: str | None = None) -> str:
     month = _MONTHS_ES[now.month]
     offset = _format_utc_offset(now)
     label = f"hora de {tz_label}" if tz_label else "hora local"
-    # Nudge de huso (gotcha MEDIDO en E2E: qwen a veces emite la hora local con sufijo
-    # 'Z' (UTC), corriendo el evento). Se instruye expresar las fechas accionadas con el
+    # Nudge de huso (gotcha MEDIDO en E2E con el modelo local de antes de ADR-028: el
+    # modelo a veces emite la hora local con sufijo 'Z' (UTC), corriendo el evento; el
+    # nudge no depende del modelo). Se instruye expresar las fechas accionadas con el
     # offset REAL del usuario (derivado de ``now``) para que el store guarde el instante
     # absoluto correcto sin importar si el modelo adjunta o no la zona.
     return (

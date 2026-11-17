@@ -1,21 +1,22 @@
-"""Pasada ASÍNCRONA del agente qwen sobre el turno conversado (Fase E, ADR-021;
-MULTI-TOOL desde Fase D1).
+"""Pasada ASÍNCRONA del agente (alias ``agente``) sobre el turno conversado (Fase E,
+ADR-021; MULTI-TOOL desde Fase D1).
 
 ⚠️ DORMANT (ADR-022): bajo la config de modos actual NADIE encola esta task. El
 tool-loop SÍNCRONO del chat de producción (``ChatService.run_turn`` →
 ``app/llm/context.py`` con ``build_chat_tool_registry``) ahora ejecuta las tools de
 agente (``calendar``/``task``) al instante, atómicas con el commit del turno, así que
-``ChatService`` ya NO encola ``agent_turn_pass`` (seguir haciéndolo dispararía qwen DOS
-veces por turno). La task se MANTIENE registrada (``app/workflows/__init__.py`` +
-``tests/workers/test_task_registration.py``) y funcional: queda reservada para una
-futura pasada de agente en modos gemma (donde el modelo conversacional NO razona tool
-calls inline y conviene una pasada qwen por detrás). NO borrarla.
+``ChatService`` ya NO encola ``agent_turn_pass`` (seguir haciéndolo dispararía el
+agente DOS veces por turno). La task se MANTIENE registrada
+(``app/workflows/__init__.py`` + ``tests/workers/test_task_registration.py``) y
+funcional: queda reservada para una futura pasada de agente en los modos del alias
+``conversacional`` (donde el modelo conversacional NO llama tools inline y conviene
+una pasada del agente por detrás). NO borrarla.
 
-"qwen por detrás de gemma": el usuario conversa con el modelo conversacional
-(respuesta rápida en streaming); ESTA task corre por detrás, async, y a partir de
-lo conversado **acciona las tools del agente** que el modo habilita: hoy **agenda
-eventos** (``calendar``) y **crea tareas/pendientes** (``task``); en fases futuras,
-más namespaces. Espejo EXACTO de ``consolidate_turn``
+"agente por detrás del conversacional": el usuario conversa con el modelo
+conversacional (respuesta rápida en streaming); ESTA task corre por detrás, async, y
+a partir de lo conversado **acciona las tools del agente** que el modo habilita: hoy
+**agenda eventos** (``calendar``) y **crea tareas/pendientes** (``task``); en fases
+futuras, más namespaces. Espejo EXACTO de ``consolidate_turn``
 (``app/workflows/consolidation.py``):
 
 1. Gate config-driven: solo acciona si el modo habilita ALGUNA tool de agente
@@ -24,7 +25,7 @@ más namespaces. Espejo EXACTO de ``consolidate_turn``
    un eventual enqueue y el run no debe accionar en un modo que ya no habilita esas
    tools). NOTA (ADR-022): bajo la config de modos actual NADIE encola esta task —
    ``ChatService`` ya NO lo hace (las tools corren síncronas en el chat). El gate sigue
-   acá para cuando se reactive (modos gemma).
+   acá para cuando se reactive (modos del alias conversacional).
 2. Pensada para correr FUERA del path de respuesta (worker Celery, async). HOY está
    dormant (sin encolador). Si se reactiva, el efecto (escribir ``calendar_events`` /
    ``tasks``) ocurriría acá, en el worker, async.
@@ -41,8 +42,9 @@ más namespaces. Espejo EXACTO de ``consolidate_turn``
    re-correr el mismo turno → la misma tool call → no crea la acción dos veces. Sumado
    al at-most-once del broker (``task_acks_late=False``), un pendiente/evento
    conversado se acciona una sola vez. ``MAX_TOOL_ITERATIONS`` (5) acota el loop.
-6. Ningún dato de usuario a logs (regla #4): el turno queda on-prem en
-   Redis/worker; solo se loguea el conteo de acciones y el tipo de excepción.
+6. Ningún dato de usuario a logs (regla #4a): el turno pasa por Redis/worker y
+   viaja al proveedor de IA solo para la inferencia; solo se loguea el conteo de
+   acciones y el tipo de excepción.
 
 DISEÑO MULTI-TOOL (Opción A, escalable): en vez de hardcodear UN registry de
 calendar, ``_AGENT_TOOL_BUILDERS`` mapea ``namespace -> builder(session, user_id) ->
@@ -88,9 +90,9 @@ logger = logging.getLogger(__name__)
 __all__ = ["_AGENT_TOOL_BUILDERS", "_build_agent_registry", "agent_turn_pass"]
 
 # Cuerpo ESTÁTICO del system prompt de la pasada del agente. NO es el prompt
-# conversacional del modo (ese lo usa gemma para hablar): este instruye a qwen a
-# OBSERVAR lo conversado y ACCIONAR las tools si corresponde, sin charlar. No depende
-# del usuario. El system REAL que llega al modelo se arma por-run en
+# conversacional del modo (ese lo usa el modelo conversacional para hablar): este
+# instruye al agente a OBSERVAR lo conversado y ACCIONAR las tools si corresponde, sin
+# charlar. No depende del usuario. El system REAL que llega al modelo se arma por-run en
 # ``_build_agent_pass_system`` agregando después el preámbulo de fecha/hora actual (para
 # resolver "mañana", "el lunes", etc.); por eso esto es el cuerpo, no el system final.
 # S105: NO es un secreto — es el system prompt del agente (el nombre contiene
@@ -126,9 +128,10 @@ def _build_agent_llm(settings: Settings) -> LLMClient:
 
 
 def _build_turn_message(user_msg: str, model_response: str) -> str:
-    """Arma el ``user`` message del loop: el turno conversado, para que qwen lo lea.
+    """Arma el ``user`` message del loop: el turno conversado, para que el agente lo lea.
 
-    NO se loguea (es contenido del usuario, regla #4): solo viaja al LLM on-prem.
+    NO se loguea (es contenido del usuario, regla #4a): solo viaja al proveedor de IA,
+    para la inferencia.
     """
     return f"Usuario: {user_msg}\nAsistente: {model_response}"
 
@@ -296,8 +299,8 @@ def agent_turn_pass(
             calendar no lo necesita como FK (los eventos se atan al ``user_id``); se
             propaga para trazabilidad y para fases futuras (reminders ligados a la
             sesión). NO se loguea su contenido (es un identificador, no PII).
-        user_msg: Mensaje del usuario (on-prem, NO se loguea).
-        model_response: Respuesta del modelo (on-prem, NO se loguea).
+        user_msg: Mensaje del usuario (NO se loguea, regla #4a).
+        model_response: Respuesta del modelo (NO se loguea, regla #4a).
         mode: Modo activo de la sesión (gatea calendar via ``tools_enabled``).
     """
     try:
