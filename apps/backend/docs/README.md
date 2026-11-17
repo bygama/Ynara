@@ -7,7 +7,7 @@ correspondiente.
 
 - [`MODELS.md`](./MODELS.md) — modelos SQLAlchemy del proyecto.
 - [`ENDPOINTS.md`](./ENDPOINTS.md) — endpoints HTTP.
-- [`TOOLS.md`](./TOOLS.md) — tools que Qwen puede llamar.
+- [`TOOLS.md`](./TOOLS.md) — tools que puede llamar el alias `agente`.
 - [`MIGRATIONS.md`](./MIGRATIONS.md) — política de migraciones
   Alembic.
 
