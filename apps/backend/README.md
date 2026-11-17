@@ -19,8 +19,11 @@ proveedores aprobados y solo para la inferencia (regla #4).
   `LLM_PROVIDERS`, en orden de prioridad, detrás de un `ResilientClient` con respaldo
   (ADR-028). El código pide un alias (`conversacional` o `agente`) y cada proveedor lo
   traduce a su id de modelo. Default `LLM_BACKEND=fake` (`FakeLlmClient` determinista,
-  sin red); production no arranca con el fake. `EMBEDDING_BACKEND` / `RERANKER_BACKEND`
-  siguen con `fake` por default y `vllm` para prender su cliente real.
+  sin red); production no arranca con el fake. `EMBEDDING_BACKEND=api` arma el
+  `ApiEmbeddingClient` contra el proveedor de embeddings (`EMBEDDING_BASE_URL`,
+  `EMBEDDING_API_KEY`, `EMBEDDING_MODEL`, default `BAAI/bge-m3`); el default es `fake`
+  y production no arranca con él. El reranker es un passthrough en todos los entornos
+  (ADR-028 D5).
 
 ## Estructura
 
