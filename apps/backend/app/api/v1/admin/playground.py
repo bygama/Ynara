@@ -53,11 +53,14 @@ from app.schemas.admin_api import (
 
 router = APIRouter()
 
-# Preset "bajo rendimiento" (F1 ADR-018): topes per-request que materializan el
-# modo de bajo rendimiento (menos VRAM-time/latencia). Pisan los params del body.
+# Preset "bajo rendimiento" (F1 ADR-018): topes per-request que acotan el costo y la
+# latencia del turno. Pisan los params del body. El timeout del preset nunca pasa el
+# timeout por request de la política (``PROVIDER_REQUEST_TIMEOUT_S``): el
+# ``ResilientClient`` lo aplica a cada intento, y uno más largo agotaría el presupuesto
+# total con los reintentos del principal antes de probar el respaldo.
 _LOW_PERF_MAX_TOKENS = 256
 _LOW_PERF_TEMPERATURE = 0.2
-_LOW_PERF_TIMEOUT_S = 30.0
+_LOW_PERF_TIMEOUT_S = min(10.0, PROVIDER_REQUEST_TIMEOUT_S)
 
 # System prompt neutro por default cuando el operador no manda ``system_prompt`` ni
 # ``mode`` (el playground es un probe del modelo crudo, sin la voz de producto).
