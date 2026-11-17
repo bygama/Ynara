@@ -4,8 +4,9 @@ GAP que cierra (verificación E2E): el modelo NO tenía la fecha/hora actual en 
 contexto, así que NO podía resolver fechas relativas ("mañana", "el lunes", "en 2
 horas") al agendar. En la prueba en vivo, "agendame gym mañana 18hs" hizo que qwen
 pidiera la fecha en vez de agendar. Este módulo arma una línea en español que el
-router (chat) y la pasada del agente anteponen al system prompt para que el modelo
-ancle las fechas relativas contra el "ahora" real.
+router (chat) y la pasada del agente agregan al system prompt, después de la parte
+fija (lo variable va al final para la cache de prefijos del proveedor), para que el
+modelo ancle las fechas relativas contra el "ahora" real.
 
 DISEÑO (puro y testeable):
 - ``build_now_preamble(now)`` recibe el ``datetime`` por parámetro: es DETERMINISTA
@@ -18,8 +19,9 @@ DISEÑO (puro y testeable):
   agent pass); el helper puro queda intacto para los tests.
 
 El string NO se cachea (cambia cada minuto) y se construye por-run: el router lo
-concatena en un STRING NUEVO (no muta el prompt cacheado) y la pasada del agente lo
-arma por corrida (no como constante estática).
+concatena en un STRING NUEVO después del prompt del modo (no muta el prompt cacheado)
+y la pasada del agente lo arma por corrida después de su cuerpo fijo (no como
+constante estática).
 """
 
 from __future__ import annotations
