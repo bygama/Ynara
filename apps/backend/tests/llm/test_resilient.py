@@ -558,18 +558,21 @@ async def test_stream_failure_records_breaker_failure() -> None:
     """Un stream que falla con error real marca el fallo en el breaker.
 
     Antes ``_stream`` no tocaba el breaker: un stream que reventaba no contaba
-    para abrirlo. Con threshold=1, un unico stream fallido debe abrirlo y hacer
-    que el ``complete`` siguiente saltee al candidato y caiga al secundario.
+    para abrirlo. Con threshold=1, un unico stream fallido debe abrirlo (el stream
+    pasa al secundario, porque fallo antes del primer chunk) y hacer que el
+    ``complete`` siguiente saltee al candidato y caiga al secundario.
     """
+    from app.llm.schemas import CompletionChunk
+
     primary = _fake()
     secondary = _fake()
     factory = lambda: CircuitBreaker(failure_threshold=1, recovery_timeout_s=999.0)  # noqa: E731
     resilient = _resilient([primary, secondary], max_attempts=1, breaker_factory=factory)
 
     primary.queue_stream_error(LlmTimeoutError())
-    with pytest.raises(LlmError):
-        async for _ in resilient.stream(model=_MODEL, messages=_messages()):
-            pass
+    secondary.queue_chunks([CompletionChunk(delta_text="secundario")])
+    chunks = [c async for c in resilient.stream(model=_MODEL, messages=_messages())]
+    assert "".join(c.delta_text for c in chunks) == "secundario"
     assert resilient._breakers[id(primary)].state is CircuitState.OPEN
 
     secondary.queue_result(_result("secundario"))

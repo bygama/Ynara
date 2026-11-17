@@ -50,7 +50,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Sequence
 
 from app.llm.clients._resilience import (
     BREAKER_ERRORS,
@@ -359,21 +359,23 @@ class ResilientClient:
         thinking: bool | None = None,
         timeout_s: float | None = None,
     ) -> AsyncIterator[CompletionChunk]:
-        """Streamea desde un candidato sano.
+        """Streamea desde el primer candidato que responda.
 
-        Limitacion de M3: NO hay respaldo mid-stream ni retry una vez que el
-        stream arranco. Se elige un candidato con el breaker cerrado y se
-        delega; si el primer chunk falla, la excepcion se propaga (el router
-        decide como degradar el streaming). El respaldo solo aplica al modo
-        no-streaming (``complete``): por ejemplo, con la credencial del
-        principal rechazada, ``stream`` falla y ``complete`` pasa al respaldo.
+        Recorre los candidatos como ``complete`` (principal -> respaldo), pero sin
+        reintentar el mismo ni esperar un ``Retry-After``: si uno falla ANTES del
+        primer chunk (caida, credencial rechazada, 4xx propio, 429), pasa al
+        siguiente; si fallan todos, propaga el error del ultimo (el caller decide
+        como degradar el streaming). Un error del request se propaga sin probar
+        el respaldo, que fallaria igual. Una vez emitido el primer chunk no hay
+        respaldo ni retry: un corte a mitad del stream se propaga. Si ningun
+        candidato tiene el breaker en condiciones, prueba igual el primero
+        (best-effort: el streaming no degrada).
 
-        El resultado del stream SI alimenta el breaker del candidato elegido, con
-        el mismo criterio que ``complete`` (solo una caida lo abre; cualquier otra
-        respuesta cuenta como exito): cierra la prueba HALF_OPEN que
-        ``_pick_for_stream`` pudo haber consumido, para que un candidato sano no
-        quede demoteado en ``complete`` tras un stream durante su ventana de
-        recovery.
+        Cada candidato que se prueba alimenta su breaker con el mismo criterio
+        que ``complete`` (solo una caida lo abre; cualquier otra respuesta cuenta
+        como exito), asi se cierra la prueba HALF_OPEN que ``allow()`` pudo haber
+        abierto. ``allow()`` se pide recien al llegar a cada candidato, para no
+        consumir la prueba de uno que no se usa.
 
         ``thinking`` es passthrough puro hacia el cliente elegido (ADR-012 D4).
         """
@@ -398,57 +400,70 @@ class ResilientClient:
         thinking: bool | None,
         timeout_s: float | None,
     ) -> AsyncIterator[CompletionChunk]:
-        client = self._pick_for_stream(model)
-        # El breaker del candidato elegido SIEMPRE se resuelve: ``_pick_for_stream``
-        # puede haber consumido una prueba HALF_OPEN (``allow()`` pasa de OPEN a
-        # HALF_OPEN y marca ``_probe_in_flight``), y sin cerrarla este candidato
-        # quedaria salteado en ``complete()`` hasta reiniciar el proceso. Mismo
-        # criterio que ``_try_candidate``: una caida (``BREAKER_ERRORS``) o un error
-        # que no es ``LlmError`` lo (re)abre; cualquier otro ``LlmError`` (request
-        # invalido, credencial, 429) es una respuesta del proveedor y cuenta como
-        # exito, asi un request invalido no abre el breaker de un proveedor sano.
-        # Cancelacion / corte del consumidor (``CancelledError`` / ``GeneratorExit``,
-        # ambos ``BaseException``) NO son fallo del proveedor: ``except Exception`` no
-        # los atrapa, se propagan sin tocar el breaker.
-        breaker = self._breakers[id(client)]
-        try:
-            async for chunk in client.stream(
-                model=model,
-                messages=messages,
-                tools=tools,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                thinking=thinking,
-                timeout_s=timeout_s,
-            ):
-                yield chunk
-        except LlmError as exc:
-            if isinstance(exc, BREAKER_ERRORS):
-                breaker.record_failure()
-            else:
-                breaker.record_success()
-            raise
-        except Exception:
-            breaker.record_failure()
-            raise
-        else:
-            breaker.record_success()
-
-    def _pick_for_stream(self, model: str) -> LLMClient:
-        """Primer candidato con el breaker cerrado.
-
-        Si TODOS los breakers estan abiertos, cae al primer candidato igual
-        (best-effort): streaming no degrada en M3 (ver ``stream``), asi que es
-        preferible intentar el stream antes que no devolver nada. Mientras haya
-        alguno cerrado, se prefiere ese para no martillar una instancia caida.
-        """
         candidates = self._pool.candidates(model)
         if not candidates:
             raise ModelNotServedError(model)
+        last_error: LlmError | None = None
+        # El breaker de cada candidato que se prueba SIEMPRE se resuelve una vez:
+        # ``allow()`` puede haber abierto una prueba HALF_OPEN, y sin cerrarla el
+        # candidato quedaria salteado en ``complete()`` hasta reiniciar el proceso.
+        # Una caida (``BREAKER_ERRORS``) o un error que no es ``LlmError`` lo
+        # (re)abre; cualquier otro ``LlmError`` es una respuesta del proveedor y
+        # cuenta como exito. Cancelacion / corte del consumidor (``CancelledError``
+        # / ``GeneratorExit``, ambos ``BaseException``) NO son fallo del proveedor:
+        # ``except Exception`` no los atrapa, se propagan sin tocar el breaker.
+        for client in self._stream_candidates(candidates):
+            breaker = self._breakers[id(client)]
+            emitted = False
+            try:
+                async for chunk in client.stream(
+                    model=model,
+                    messages=messages,
+                    tools=tools,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    thinking=thinking,
+                    timeout_s=timeout_s,
+                ):
+                    emitted = True
+                    yield chunk
+            except LlmError as exc:
+                if isinstance(exc, BREAKER_ERRORS):
+                    breaker.record_failure()
+                else:
+                    breaker.record_success()
+                if emitted or isinstance(exc, REQUEST_ERRORS):
+                    raise
+                last_error = exc
+                logger.warning(
+                    "llm: candidato %s descartado (%s)",
+                    _client_label(client),
+                    type(exc).__name__,
+                )
+            except Exception:
+                breaker.record_failure()
+                raise
+            else:
+                breaker.record_success()
+                return
+        if last_error is not None:
+            raise last_error
+
+    def _stream_candidates(self, candidates: list[LLMClient]) -> Iterator[LLMClient]:
+        """Candidatos de ``stream`` en orden, pidiendo ``allow()`` al llegar a cada uno.
+
+        Si ninguno lo permite, da el primero igual (best-effort): el streaming no
+        degrada, asi que es preferible intentar antes que no devolver nada.
+        Mientras haya alguno disponible, se prefiere ese para no martillar una
+        instancia caida.
+        """
+        allowed_any = False
         for client in candidates:
             if self._breakers[id(client)].allow():
-                return client
-        return candidates[0]
+                allowed_any = True
+                yield client
+        if not allowed_any:
+            yield candidates[0]
 
 
 def _client_label(client: LLMClient) -> str:
