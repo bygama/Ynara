@@ -235,14 +235,17 @@ class TestAsyncAgentPassUnit:
         assert fake_store.create_calls[0].title == "Dentista"
 
     async def test_system_prompt_includes_datetime_preamble(self) -> None:
-        """El system de la pasada antepone el preámbulo de fecha/hora actual (gap E2E).
+        """El system de la pasada suma el preámbulo de fecha/hora actual (gap E2E).
 
         Sin esto el agente no podía resolver "mañana"/"el lunes" y pedía la fecha en
         vez de agendar. Se parchea ``current_now`` a una fecha fija y se inspecciona el
-        ``system`` que el FakeLlmClient recibió en ``complete_calls``.
+        ``system`` que el FakeLlmClient recibió en ``complete_calls``. El cuerpo fijo va
+        primero y el preámbulo al final (cache de prefijos del proveedor).
         """
         from datetime import datetime
         from zoneinfo import ZoneInfo
+
+        from app.workflows.agent_pass import _AGENT_PASS_SYSTEM_BODY
 
         client = _make_llm_with_create_event(title="Gym")
         session = MagicMock(spec=AsyncSession)
@@ -263,18 +266,17 @@ class TestAsyncAgentPassUnit:
                 session=session,
             )
 
-        # El primer complete recibió el system con el preámbulo de fecha al inicio.
+        # El primer complete recibió el system con el cuerpo fijo primero y el preámbulo
+        # de fecha justo después.
         system_msg = client.complete_calls[0]["messages"][0]
         assert system_msg.role == "system"
-        assert system_msg.content.startswith("Fecha y hora actual: ")
+        assert system_msg.content.startswith(f"{_AGENT_PASS_SYSTEM_BODY}\n\nFecha y hora actual: ")
         # 2026-07-22 cae miércoles (el día se deriva con weekday(), no se hardcodea).
         assert (
             "miércoles 22 de julio de 2026, 18:30 (hora local, offset UTC-03:00)"
             in system_msg.content
         )
         assert "resolver fechas relativas" in system_msg.content
-        # El cuerpo estático sigue presente (no se perdió al anteponer el preámbulo).
-        assert "ACCIONAR" in system_msg.content
 
     async def test_no_tool_call_means_zero_actions(self) -> None:
         """Si el modelo no llama ninguna tool (nada para agendar), 0 acciones."""

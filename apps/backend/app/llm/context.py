@@ -109,7 +109,7 @@ def trim_history_to_budget(
     El router arma ``messages = [system, *history, user_actual]``. El historial reciente
     es lo que le da continuidad a la conversación (sin esto el modelo trata cada turno
     como una persona nueva), pero NO puede desbordar ``context_tokens``. Se reserva el
-    espacio del system final (que ya incluye preámbulo de fecha + bloque de memoria), el
+    espacio del system final (prompt del modo + preámbulo de fecha + bloque de memoria), el
     mensaje actual del usuario y la ``COMPLETION_RESERVE_TOKENS`` para la generación; lo
     que queda es el presupuesto del historial.
 
@@ -132,7 +132,7 @@ def trim_history_to_budget(
     Args:
         history: Turnos previos como ``ChatMessage`` (user/assistant), en orden cronológico.
         context_tokens: Presupuesto de contexto del modelo del modo, en tokens.
-        system_prompt: System final (preámbulo + prompt del modo + bloque de memoria).
+        system_prompt: System final (prompt del modo + preámbulo + bloque de memoria).
         current_user: Texto del mensaje actual del usuario (entra después del historial).
 
     Returns:
