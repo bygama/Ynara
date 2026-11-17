@@ -8,7 +8,10 @@ Centraliza la decision entre los clientes fake y los reales, por settings:
   orden de prioridad, reunidos en un pool y envueltos en un ``ResilientClient`` (retry,
   breaker por proveedor y respaldo, ADR-028 D2). En production es el unico valor que
   arranca (``Settings._require_llm_api``).
-- ``embedding_backend`` / ``reranker_backend`` gatean el embedder y el reranker.
+- ``EMBEDDING_BACKEND=api`` -> ``ApiEmbeddingClient`` contra el proveedor de embeddings
+  (ADR-028 D4); ``fake`` (el default) -> ``FakeEmbeddingClient``. En production es
+  ``api`` (``Settings._require_embedding_api``).
+- ``reranker_backend`` gatea el reranker.
 
 Los fakes quedan DETRAS de la condicion, no hardcodeados en el lifespan: pasar a los
 clientes reales es cambiar settings. La factory no abre conexiones al construir
@@ -27,14 +30,11 @@ import httpx
 
 from app.core.config import LlmProvider, Settings
 from app.llm.clients.base import LLMClient
-from app.llm.clients.embedding import (
-    EmbeddingClient,
-    FakeEmbeddingClient,
-    VllmEmbeddingClient,
-)
+from app.llm.clients.embedding import EmbeddingClient, FakeEmbeddingClient
 from app.llm.clients.fakes import FakeLlmClient
 from app.llm.clients.parsers import OpenAIToolCallParser
 from app.llm.clients.pool import build_provider_pool
+from app.llm.clients.providers.embeddings import ApiEmbeddingClient
 from app.llm.clients.providers.openai_compat import OpenAICompatClient
 from app.llm.clients.reranker import FakeReranker, Reranker, VllmReranker
 from app.llm.clients.resilient import ResilientClient
@@ -87,6 +87,15 @@ def check_resilience_budget(
         )
 
 
+def _quiet_httpx_request_logs() -> None:
+    """Deja el logger de httpx en WARNING: en INFO loguea cada request con la URL.
+
+    La factory lo llama al armar un cliente que habla con un proveedor (chat o
+    embeddings), asi la URL del proveedor no queda en los logs del proceso.
+    """
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
 def _wants_real_llm(settings: Settings) -> bool:
     """``True`` si el LLM es el de los proveedores por API (``LLM_BACKEND=api``).
 
@@ -127,9 +136,7 @@ def build_llm_client(settings: Settings, config: LlmRuntimeConfig) -> LLMClient:
         return FakeLlmClient(models=frozenset(config.models))
 
     check_resilience_budget()
-    # httpx loguea cada request en INFO con la URL del proveedor: el proceso que habla
-    # con los proveedores lo deja en WARNING.
-    logging.getLogger("httpx").setLevel(logging.WARNING)
+    _quiet_httpx_request_logs()
     parser = OpenAIToolCallParser()
     clients: list[LLMClient] = [
         _build_provider_client(provider, settings, parser) for provider in settings.llm_providers
@@ -144,23 +151,28 @@ def build_llm_client(settings: Settings, config: LlmRuntimeConfig) -> LLMClient:
 
 
 def build_embedder(settings: Settings) -> EmbeddingClient:
-    """Construye el cliente de embeddings segun ``embedding_backend``.
+    """Construye el cliente de embeddings segun ``EMBEDDING_BACKEND``.
 
-    ``vllm`` -> ``VllmEmbeddingClient`` real contra ``settings.embedding_base_url``
-    (``POST /v1/embeddings``, bge-m3; sirve igual a un vLLM real o a Ollama). No
-    abre red al construirse (``httpx.AsyncClient`` perezoso), asi que es seguro
-    instanciarlo en el arranque aunque el server no este levantado todavia.
+    ``api`` -> ``ApiEmbeddingClient`` contra ``EMBEDDING_BASE_URL``, con la credencial
+    ``EMBEDDING_API_KEY``, el modelo ``EMBEDDING_MODEL``, lotes de hasta
+    ``EMBEDDING_BATCH_SIZE`` textos y el timeout ``EMBEDDING_TIMEOUT_S`` (ADR-028 D4).
+    ``Settings`` ya valido que esten la URL, la credencial y el modelo. No abre red al
+    construirse (``httpx.AsyncClient`` perezoso), asi que es seguro instanciarlo en el
+    arranque.
 
-    ``fake`` (default operativo, sin GPU) -> ``FakeEmbeddingClient``.
+    ``fake`` (default dev/test) -> ``FakeEmbeddingClient`` determinista, sin red.
     """
-    if settings.embedding_backend == "vllm":
-        return VllmEmbeddingClient(
-            base_url=settings.embedding_base_url,
-            http_client=httpx.AsyncClient(),
-            model=settings.embedding_model,
-            default_timeout_s=settings.embedding_timeout_s,
-        )
-    return FakeEmbeddingClient(model=settings.embedding_model)
+    if settings.embedding_backend != "api":
+        return FakeEmbeddingClient(model=settings.embedding_model)
+    _quiet_httpx_request_logs()
+    return ApiEmbeddingClient(
+        base_url=settings.embedding_base_url,
+        api_key=settings.embedding_api_key,
+        http_client=httpx.AsyncClient(),
+        model=settings.embedding_model,
+        batch_size=settings.embedding_batch_size,
+        default_timeout_s=settings.embedding_timeout_s,
+    )
 
 
 def build_reranker(settings: Settings) -> Reranker:

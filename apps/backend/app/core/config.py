@@ -21,7 +21,9 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
+from app.core.constants import DEFAULT_EMBEDDING_BATCH_SIZE, DEFAULT_EMBEDDING_MODEL
 from app.core.llm_providers import LLM_API_KEY_PREFIX, LlmProvider, _LlmApiKeysSource
+from app.core.urls import validated_base_url
 
 __all__ = ["LLM_API_KEY_PREFIX", "LlmProvider", "Settings", "get_settings"]
 
@@ -67,14 +69,27 @@ class Settings(BaseSettings):
     # ``ynara.config.json`` ni en logs (regla #4b).
     llm_api_keys: dict[str, SecretStr] = Field(default_factory=dict)
 
-    # Embeddings (ADR-008: bge-m3 1024-dim on-prem). `embedding_backend` elige
-    # entre el Fake determinista (default, sin GPU) y el cliente vLLM real
-    # (cuando el servidor de embeddings esté levantado, ADR-009).
-    embedding_model: str = Field("bge-m3", alias="EMBEDDING_MODEL")
-    embedding_base_url: str = Field("http://localhost:8003/v1", alias="EMBEDDING_BASE_URL")
-    embedding_backend: Literal["fake", "vllm"] = Field("fake", alias="EMBEDDING_BACKEND")
-    # Timeout por request del embedder (segundos), solo aplica con backend 'vllm'.
-    # El chat LLM toma el suyo de PROVIDER_REQUEST_TIMEOUT_S (app/llm/clients/factory.py).
+    # Embeddings por API (ADR-028 D4): bge-m3 de ``EMBEDDING_DIM`` (1024) dimensiones,
+    # servido por un proveedor compatible con OpenAI. ``embedding_backend`` elige el
+    # cliente: ``fake`` (el default, determinista y sin red: dev y CI) o ``api``
+    # (``ApiEmbeddingClient`` contra ``EMBEDDING_BASE_URL``). En production tiene que ser
+    # ``api`` (``_require_embedding_api``).
+    embedding_backend: Literal["fake", "api"] = Field("fake", alias="EMBEDDING_BACKEND")
+    # URL base de la API del proveedor, con el ``/v1`` (``https``; ver
+    # ``validated_base_url``). Vacía es sin proveedor.
+    embedding_base_url: str = Field("", alias="EMBEDDING_BASE_URL")
+    # Credencial del proveedor de embeddings. Secreta: nunca va en ``ynara.config.json``
+    # ni en logs (regla #4b). Vacía es sin credencial.
+    embedding_api_key: SecretStr = Field(SecretStr(""), alias="EMBEDDING_API_KEY")
+    # Id del modelo en el proveedor: tiene que dar vectores de ``EMBEDDING_DIM``.
+    embedding_model: str = Field(DEFAULT_EMBEDDING_MODEL, alias="EMBEDDING_MODEL")
+    # Máximo de textos por request: una lista más larga se parte en varios requests.
+    # Hasta 2048, el máximo de la API de Embeddings de OpenAI.
+    embedding_batch_size: int = Field(
+        DEFAULT_EMBEDDING_BATCH_SIZE, gt=0, le=2048, alias="EMBEDDING_BATCH_SIZE"
+    )
+    # Timeout por request del embedder (segundos), con backend ``api``. El chat toma el
+    # suyo de PROVIDER_REQUEST_TIMEOUT_S (app/llm/clients/factory.py).
     embedding_timeout_s: float = Field(30.0, gt=0, alias="EMBEDDING_TIMEOUT_S")
 
     # Reranker (cross-encoder). `reranker_backend` elige el Fake passthrough
@@ -272,6 +287,30 @@ class Settings(BaseSettings):
                 "LLM_PROVIDERS no es JSON válido: va una lista de proveedores"
             ) from None
 
+    @field_validator("embedding_base_url")
+    @classmethod
+    def _validate_embedding_base_url(cls, value: str) -> str:
+        """``EMBEDDING_BASE_URL`` vacía queda vacía; si no, tiene que ser una URL base válida.
+
+        Se valida aunque el backend sea ``fake``, como las de ``LLM_PROVIDERS``: una URL
+        mal escrita frena el arranque en vez de aparecer recién al pasar a ``api``.
+        """
+        if not value.strip():
+            return ""
+        return validated_base_url(value)
+
+    @field_validator("embedding_api_key")
+    @classmethod
+    def _strip_embedding_api_key(cls, value: SecretStr) -> SecretStr:
+        """Sin espacios alrededor, como las ``LLM_API_KEY_<NAME>``; vacía cuenta como faltante."""
+        return SecretStr(value.get_secret_value().strip())
+
+    @field_validator("embedding_model")
+    @classmethod
+    def _strip_embedding_model(cls, value: str) -> str:
+        """El id viaja tal cual al proveedor: sin espacios alrededor; vacío es faltante."""
+        return value.strip()
+
     @field_validator("llm_providers")
     @classmethod
     def _reject_repeated_providers(cls, providers: list[LlmProvider]) -> list[LlmProvider]:
@@ -455,6 +494,38 @@ class Settings(BaseSettings):
         ]
         if missing:
             raise ValueError(f"falta la credencial del proveedor: {', '.join(missing)}")
+        return self
+
+    @model_validator(mode="after")
+    def _require_embedding_api(self) -> Settings:
+        """Fail-fast de los embeddings por API (ADR-028 D7).
+
+        En production el embedder tiene que ser ``api``: con ``fake`` la memoria de un
+        usuario real se guardaría con vectores que no representan al texto, y la búsqueda
+        por similitud no encontraría nada. Con ``api``, en cualquier entorno, hacen falta
+        la URL base, la credencial y el modelo. El error nombra las variables que faltan,
+        nunca un valor (por eso acá solo se miran booleanos).
+        """
+        if self.environment == "production" and self.embedding_backend != "api":
+            raise ValueError(
+                "EMBEDDING_BACKEND tiene que ser 'api' en production: el embedder fake no "
+                "sirve para la memoria de usuarios reales (ADR-028)"
+            )
+        if self.embedding_backend != "api":
+            return self
+        missing = [
+            name
+            for name, present in (
+                ("EMBEDDING_BASE_URL", bool(self.embedding_base_url)),
+                ("EMBEDDING_API_KEY", bool(self.embedding_api_key.get_secret_value())),
+                ("EMBEDDING_MODEL", bool(self.embedding_model)),
+            )
+            if not present
+        ]
+        if missing:
+            raise ValueError(
+                f"falta la configuración del proveedor de embeddings: {', '.join(missing)}"
+            )
         return self
 
 

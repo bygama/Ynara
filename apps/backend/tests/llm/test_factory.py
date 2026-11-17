@@ -16,7 +16,8 @@ from collections.abc import Iterator
 import pytest
 
 from app.core.config import Settings
-from app.llm.clients.embedding import FakeEmbeddingClient, VllmEmbeddingClient
+from app.core.constants import DEFAULT_EMBEDDING_BATCH_SIZE
+from app.llm.clients.embedding import FakeEmbeddingClient
 from app.llm.clients.factory import (
     PROVIDER_MAX_ATTEMPTS,
     PROVIDER_REQUEST_TIMEOUT_S,
@@ -28,6 +29,7 @@ from app.llm.clients.factory import (
     check_resilience_budget,
 )
 from app.llm.clients.fakes import FakeLlmClient
+from app.llm.clients.providers.embeddings import ApiEmbeddingClient
 from app.llm.clients.providers.openai_compat import OpenAICompatClient
 from app.llm.clients.reranker import FakeReranker, VllmReranker
 from app.llm.clients.resilient import ResilientClient
@@ -48,6 +50,9 @@ _PROVIDERS = [
     },
 ]
 _API_KEYS = {"principal": "sk-test-principal-0123", "respaldo": "sk-test-respaldo-4567"}
+# Proveedor de embeddings de prueba (ADR-028 D4).
+_EMBEDDING_BASE_URL = "https://api.embeddings.test/v1"
+_EMBEDDING_KEY = "sk-test-embeddings-8899"
 
 # JWT secret >= 32 chars: production rechaza un secret debil (ver Settings).
 _PROD_JWT_SECRET = "x" * 48
@@ -64,7 +69,8 @@ def _settings(
     """Settings aislado de cualquier .env. ``production`` exige config no-dev.
 
     Con ``llm_backend='api'`` se cargan los dos proveedores de prueba y sus
-    credenciales (por nombre de campo: ``llm_api_keys``).
+    credenciales (por nombre de campo: ``llm_api_keys``); con ``embedding_backend='api'``,
+    el proveedor de embeddings de prueba y su credencial.
     """
     kwargs: dict[str, object] = {
         "_env_file": None,
@@ -79,6 +85,9 @@ def _settings(
     if llm_backend == "api":
         kwargs["LLM_PROVIDERS"] = json.dumps(_PROVIDERS)
         kwargs["llm_api_keys"] = dict(_API_KEYS)
+    if embedding_backend == "api":
+        kwargs["EMBEDDING_BASE_URL"] = _EMBEDDING_BASE_URL
+        kwargs["EMBEDDING_API_KEY"] = _EMBEDDING_KEY
     if environment == "production":
         # production fail-fast: secret fuerte, CORS no-localhost, master key.
         # ``cors_origins`` no tiene alias: se setea por nombre de campo.
@@ -197,7 +206,8 @@ def test_llm_client_api_uses_the_resilience_policy() -> None:
 
 def test_llm_client_is_resilient_in_production() -> None:
     """En production (``LLM_BACKEND=api`` obligatorio) el cliente es el real."""
-    client = build_llm_client(_settings(environment="production", llm_backend="api"), _config())
+    settings = _settings(environment="production", llm_backend="api", embedding_backend="api")
+    client = build_llm_client(settings, _config())
     assert [c.name for c in _provider_clients(client)] == ["principal", "respaldo"]
 
 
@@ -224,22 +234,46 @@ def test_resilience_budget_rejects_a_timeout_that_starves_the_backup(
 
 
 def test_embedder_is_fake_by_default() -> None:
-    embedder = build_embedder(_settings(embedding_backend="fake"))
+    embedder = build_embedder(_settings())
     assert isinstance(embedder, FakeEmbeddingClient)
 
 
-def test_embedder_is_vllm_when_backend_vllm() -> None:
-    """``embedding_backend='vllm'`` construye el cliente real (sin abrir red)."""
-    embedder = build_embedder(_settings(embedding_backend="vllm"))
-    assert isinstance(embedder, VllmEmbeddingClient)
-
-
-def test_embedder_vllm_takes_timeout_from_settings() -> None:
-    """El timeout del embedder sale de Settings (review PR #198, MEDIUM #1)."""
-    settings = _settings(embedding_backend="vllm").model_copy(update={"embedding_timeout_s": 12.5})
+def test_embedder_api_builds_the_client_from_settings() -> None:
+    """``EMBEDDING_BACKEND=api``: ``ApiEmbeddingClient`` con la config de Settings, sin red."""
+    settings = _settings(embedding_backend="api").model_copy(
+        update={
+            "embedding_model": "org/bge-m3",
+            "embedding_batch_size": 8,
+            "embedding_timeout_s": 12.5,
+        }
+    )
     embedder = build_embedder(settings)
-    assert isinstance(embedder, VllmEmbeddingClient)
+    assert isinstance(embedder, ApiEmbeddingClient)
+    assert embedder.model == "org/bge-m3"
+    assert embedder._base_url == _EMBEDDING_BASE_URL
+    assert embedder._auth._api_key.get_secret_value() == _EMBEDDING_KEY
+    assert embedder._batch_size == 8
     assert embedder._default_timeout_s == 12.5
+
+
+def test_embedder_api_defaults_to_bge_m3() -> None:
+    embedder = build_embedder(_settings(embedding_backend="api"))
+    assert isinstance(embedder, ApiEmbeddingClient)
+    assert embedder.model == "BAAI/bge-m3"
+    assert embedder._batch_size == DEFAULT_EMBEDDING_BATCH_SIZE
+
+
+def test_embedder_api_quiets_the_httpx_request_logs() -> None:
+    """Con el LLM fake, el embedder por API igual deja httpx en WARNING (la URL)."""
+    logging.getLogger("httpx").setLevel(logging.NOTSET)
+    build_embedder(_settings(embedding_backend="api"))
+    assert logging.getLogger("httpx").level == logging.WARNING
+
+
+def test_embedder_fake_leaves_the_httpx_logs_alone() -> None:
+    logging.getLogger("httpx").setLevel(logging.NOTSET)
+    build_embedder(_settings())
+    assert logging.getLogger("httpx").level == logging.NOTSET
 
 
 # ---------- build_reranker ----------
@@ -274,10 +308,11 @@ def test_build_llm_clients_returns_trio_of_fakes_in_dev() -> None:
     assert isinstance(reranker, FakeReranker)
 
 
-def test_build_llm_clients_returns_real_llm_in_production() -> None:
-    settings = _settings(environment="production", llm_backend="api")
+def test_build_llm_clients_returns_real_clients_in_production() -> None:
+    """En production el LLM y el embedder son los de los proveedores por API."""
+    settings = _settings(environment="production", llm_backend="api", embedding_backend="api")
     llm, embedder, reranker = build_llm_clients(settings, _config())
     assert isinstance(llm, ResilientClient)
-    # embedder/reranker reales aun no existen: siguen siendo Fakes detras del gate.
-    assert isinstance(embedder, FakeEmbeddingClient)
+    assert isinstance(embedder, ApiEmbeddingClient)
+    # El reranker real no existe: sigue el Fake detras del gate.
     assert isinstance(reranker, FakeReranker)
