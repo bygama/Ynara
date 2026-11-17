@@ -3,14 +3,14 @@
 Unit: usa FakeLlmClient + ToolRegistry stub. Sin DB.
 
 Escenarios:
-- Gemma sin specs: 1 vuelta, termina sin tools.
-- Qwen 1 vuelta con tool call que termina con stop.
-- Qwen 2 vueltas: tool call en la primera, stop en la segunda.
+- Conversacional sin specs: 1 vuelta, termina sin tools.
+- Agente 1 vuelta con tool call que termina con stop.
+- Agente 2 vueltas: tool call en la primera, stop en la segunda.
 - Guard de MAX_TOOL_ITERATIONS sin converger -> fallback_text.
 - unknown_tool -> tool_error en el resultado de esa action.
 - degraded finish_reason -> termina sin ejecutar tools.
 - result.text vacio al final -> fallback_text.
-- specs vacia -> tools=None en complete (Gemma conversacional).
+- specs vacia -> tools=None en complete (alias conversacional).
 """
 
 from __future__ import annotations
@@ -88,8 +88,8 @@ def _messages() -> list[ChatMessage]:
 
 
 @pytest.mark.asyncio
-async def test_gemma_sin_specs_una_vuelta() -> None:
-    """Gemma (specs=[]) termina en 1 vuelta sin ejecutar ninguna tool."""
+async def test_conversacional_sin_specs_una_vuelta() -> None:
+    """El conversacional (specs=[]) termina en 1 vuelta sin ejecutar ninguna tool."""
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
     fake.queue_result(_make_result(text="Hola! En que te ayudo?", finish_reason="stop"))
 
@@ -115,8 +115,8 @@ async def test_gemma_sin_specs_una_vuelta() -> None:
 
 
 @pytest.mark.asyncio
-async def test_qwen_1_vuelta_con_tool_call() -> None:
-    """Qwen hace 1 tool call y luego devuelve stop."""
+async def test_agente_1_vuelta_con_tool_call() -> None:
+    """El agente hace 1 tool call y luego devuelve stop."""
     fake = FakeLlmClient(models=frozenset({"agente"}))
 
     tc = _make_tool_call("calendar.create_event", "tc-abc")
@@ -365,8 +365,8 @@ async def test_stop_vacio_sin_acciones_no_fuerza_y_cae_a_fallback() -> None:
 
 
 @pytest.mark.asyncio
-async def test_qwen_2_vueltas_con_tool_call() -> None:
-    """Qwen: vuelta 1 tool call, vuelta 2 otra tool call, vuelta 3 stop."""
+async def test_agente_2_vueltas_con_tool_call() -> None:
+    """Agente: vuelta 1 tool call, vuelta 2 otra tool call, vuelta 3 stop."""
     fake = FakeLlmClient(models=frozenset({"agente"}))
 
     tc1 = _make_tool_call("calendar.create_event", "tc-1")

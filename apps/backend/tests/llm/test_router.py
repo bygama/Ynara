@@ -634,7 +634,7 @@ async def test_model_not_served_propagates() -> None:
 async def test_semantic_tool_parsing_error_degrades() -> None:
     """P0.2: un error SEMANTICO (``ToolParsingError``) tambien degrada.
 
-    Una tool call malformada del modelo (parser hermes/gemma4) sale de
+    Una tool call malformada del modelo (p.ej. ``arguments`` que no es JSON) sale de
     ``complete()`` como ``ToolParsingError`` (subclase de ``LlmError``); ``route()``
     la captura y degrada en vez de propagar un 500, dejando constancia en el log
     (solo ``type(exc).__name__``). Fija el contrato de la familia semantica.
@@ -800,7 +800,7 @@ async def test_integration_conversational_reads_memory_via_prompt(db_session: An
     assert resp.actions == []
     assert len(fake.complete_calls) == 1
 
-    # specs vacios: Gemma conversacional no ve tools.
+    # specs vacios: el alias conversacional no ve tools.
     assert fake.complete_calls[0]["tools"] is None
 
     # El system prompt que llego al modelo contiene el bloque de contexto.
@@ -871,7 +871,7 @@ async def test_integration_agent_tool_loop_memory_search(db_session: Any) -> Non
     # El modelo que se pide es el alias del modo.
     assert fake.complete_calls[0]["model"] == "agente"
 
-    # En la primera vuelta, Qwen ve tools (specs no vacios: calendar/reminder/memory).
+    # En la primera vuelta, el agente ve tools (specs no vacios: calendar/reminder/memory).
     first_tools = fake.complete_calls[0]["tools"]
     assert first_tools is not None
     tool_names = {t.name for t in first_tools}
@@ -976,7 +976,7 @@ async def test_integration_user_no_memory_no_context_block(db_session: Any) -> N
 # para blindar a M10 contra un race enqueue-vs-commit cuando escriba FKs a
 # ``sessions.id`` (decision M10 Ola 0). El router ya NO importa ``consolidate_turn``
 # ni llama ``.delay()`` bajo NINGUN modo. La cobertura del encolado por modo
-# (Qwen/memoria encolan, Gemma/estudio no) vive ahora en los E2E de
+# (agente/memoria encolan, conversacional/estudio no) vive ahora en los E2E de
 # ``tests/api/test_chat.py`` y ``tests/api/test_chat_stream.py``, que ejercitan la
 # condicion real (``writes_memory`` + turno no-degradado) post-commit.
 
@@ -1004,12 +1004,12 @@ def test_router_module_no_longer_imports_consolidate_turn() -> None:
 
 @pytest.mark.asyncio
 async def test_route_does_not_enqueue_under_any_mode(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Para cualquier modo (Qwen incluido), ``route()`` NO llama ``.delay()``.
+    """Para cualquier modo (agente incluido), ``route()`` NO llama ``.delay()``.
 
     Se inyecta un ``consolidate_turn`` falso en el modulo router (atributo que
     el codigo refactorizado YA NO tiene): si ``route()`` lo llamara, ``delay``
     registraria la llamada. Como el refactor saco el enqueue, ``delay_calls``
-    queda vacio para Qwen (productividad, ``writes_memory=True``), que era el
+    queda vacio para el agente (productividad, ``writes_memory=True``), que era el
     unico camino que antes encolaba.
     """
     from app.llm import router as router_mod
