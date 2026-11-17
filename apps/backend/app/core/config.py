@@ -27,61 +27,6 @@ from pydantic_settings import (
 from app.core.constants import MODEL_ALIASES
 from app.core.urls import validated_base_url
 
-
-class ServingEndpoint(BaseModel):
-    """Un endpoint de serving (ADR-013): su ``base_url`` y los ``models``
-    (served_names) que anuncia. En 16GB el motor es Ollama/GGUF; en 24GB+ es
-    vLLM (ADR-014).
-
-    Cada entrada de ``LLM_SERVING`` = un endpoint/proceso. ``served_name``,
-    parsers y quantization NO van acá: siguen en ``ynara.config.json`` (ADR-009 D4).
-
-    ``engine`` marca el MOTOR del endpoint y gobierna CÓMO se controla el thinking
-    (ADR-014 D4):
-
-    - ``"vllm"`` (default, 24GB+): el cliente habla el endpoint OpenAI-compat
-      (``/v1/chat/completions`` + ``reasoning_effort`` / ``chat_template_kwargs``).
-      Default ``"vllm"`` para NO cambiar el path existente (byte-equivalente).
-    - ``"ollama"`` (16GB): el OpenAI-compat de Ollama IGNORA ``chat_template_kwargs``
-      y, para gemma4, también ``reasoning_effort`` (upstream Ollama #15288/#15293/
-      #15635) -> el cliente rutea el thinking por la API NATIVA ``/api/chat`` con el
-      top-level ``"think"``, el único mecanismo que apaga el thinking de gemma4.
-
-    Si ``engine`` no se setea explícito en la entrada de ``LLM_SERVING``, se DERIVA
-    del ``base_url`` (puerto 11434 o un host con 'ollama' -> ``"ollama"``), así el dev
-    contra Ollama lo agarra sin tener que tocar el flag. Un ``engine`` explícito
-    SIEMPRE manda.
-    """
-
-    base_url: str
-    models: list[str]
-    engine: Literal["ollama", "vllm"] = "vllm"
-
-    @model_validator(mode="before")
-    @classmethod
-    def _derive_engine_from_base_url(cls, data: object) -> object:
-        """Deriva ``engine`` del ``base_url`` cuando la entrada no lo setea explícito.
-
-        El endpoint OpenAI-compat de Ollama ignora ``chat_template_kwargs`` y, para
-        gemma4, también ``reasoning_effort`` (Ollama #15288/#15293/#15635): el thinking
-        solo se apaga por la API nativa ``/api/chat`` con ``think:false``. Para que un
-        endpoint de Ollama (puerto 11434, o un host con 'ollama') tome ese camino sin que
-        el operador tenga que agregar el flag, si la entrada no trae ``engine`` se infiere
-        del ``base_url`` -> ``"ollama"``; el resto queda en el default ``"vllm"`` (path
-        OpenAI-compat intacto). Un ``engine`` explícito SIEMPRE gana (no se pisa).
-        """
-        if isinstance(data, dict) and "engine" not in data and "base_url" in data:
-            try:
-                parts = urlsplit(str(data["base_url"]))
-                host = (parts.hostname or "").lower()
-                is_ollama = parts.port == 11434 or "ollama" in host
-            except ValueError:
-                return data
-            if is_ollama:
-                return {**data, "engine": "ollama"}
-        return data
-
-
 # Prefijo de la credencial de cada proveedor de IA: ``LLM_API_KEY_<NAME>`` (ADR-028 D2).
 LLM_API_KEY_PREFIX = "LLM_API_KEY_"
 
@@ -201,27 +146,6 @@ class Settings(BaseSettings):
     celery_broker_url: str = Field("", alias="CELERY_BROKER_URL")
     celery_result_backend: str = Field("", alias="CELERY_RESULT_BACKEND")
 
-    # LLM serving (ADR-013): lista explícita de endpoints de serving (Ollama en
-    # 16GB / vLLM en 24GB+, ADR-014). Cada entrada describe un endpoint — su
-    # base_url y los served_names que sirve — y vive en .env (JSON). served_name,
-    # parsers y quantization siguen en ynara.config.json (ADR-009 D4).
-    # pydantic-settings parsea el JSON del env var para tipos complejos
-    # automáticamente (sin NoDecode).
-    llm_serving: list[ServingEndpoint] = Field(
-        default_factory=lambda: [
-            # Default (motor local 16GB, ADR-014): UN endpoint Ollama que sirve
-            # AMBOS modelos (gemma4 + qwen) en la misma GPU. Espeja el default de
-            # ``.env.example``. ``engine="ollama"`` rutea el thinking por la API
-            # nativa ``/api/chat`` (ADR-014 D4). El vLLM dual (2 endpoints, un modelo
-            # c/u) es para 24GB+ y se setea explicito via ``LLM_SERVING`` en el .env.
-            ServingEndpoint(
-                base_url="http://localhost:11434/v1",
-                models=["gemma4", "qwen"],
-                engine="ollama",
-            ),
-        ],
-        alias="LLM_SERVING",
-    )
     # Inferencia por API (ADR-028). ``llm_backend`` elige el cliente LLM: ``fake`` (el
     # default, determinista y sin red: dev y CI) o ``api`` (los proveedores de
     # ``LLM_PROVIDERS``). En production tiene que ser ``api`` (``_require_llm_api``).

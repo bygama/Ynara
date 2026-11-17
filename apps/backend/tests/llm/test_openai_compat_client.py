@@ -1,13 +1,12 @@
 """Contract tests de ``OpenAICompatClient`` con ``httpx.MockTransport`` (sin red).
 
-Portan los casos del camino OpenAI de ``test_vllm_client.py`` (texto, timeouts, mapeo
-de errores, que nada filtre el host, health) y agregan lo propio de un proveedor por
-API: la credencial como ``Bearer`` (y que no aparezca en logs, ``repr`` ni
-excepciones), el alias del router -> id del modelo, 401/403/429 con ``Retry-After``, el
-contexto excedido y, con el ``ResilientClient``, el respaldo: sin reintento ante la
-credencial rechazada y el paso al segundo proveedor. Tools, razonamiento y respuestas
-raras están en ``test_openai_compat_wire.py``; el streaming, en
-``test_openai_compat_stream.py``.
+Cubren el camino OpenAI-compatible (texto, timeouts, mapeo de errores, que nada filtre
+el host, health) y lo propio de un proveedor por API: la credencial como ``Bearer`` (y
+que no aparezca en logs, ``repr`` ni excepciones), el alias del router -> id del
+modelo, 401/403/429 con ``Retry-After``, el contexto excedido y, con el
+``ResilientClient``, el respaldo: sin reintento ante la credencial rechazada y el paso
+al segundo proveedor. Tools, razonamiento y respuestas raras están en
+``test_openai_compat_wire.py``; el streaming, en ``test_openai_compat_stream.py``.
 """
 
 from __future__ import annotations

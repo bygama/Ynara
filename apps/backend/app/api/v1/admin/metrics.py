@@ -30,6 +30,7 @@ from app.core.config import get_settings
 from app.core.db_guard import _host_of, is_prod_db_host
 from app.core.deps import CurrentAdmin, DbSession
 from app.enums import AuditOperation, LlmModel, MemoryLayer, Mode, enum_values
+from app.llm.config import load_llm_config
 from app.schemas.admin import (
     AdminMoatOut,
     AdminModesOut,
@@ -199,7 +200,7 @@ async def admin_system(
     postgres = await _probe_postgres(session)
     redis = await _probe_redis(request)
 
-    models = sorted({m for endpoint in settings.llm_serving for m in endpoint.models})
+    models = sorted(model.served_name for model in load_llm_config().models.values())
     runtime = SystemRuntime(
         models=models,
         modes=enum_values(Mode),
