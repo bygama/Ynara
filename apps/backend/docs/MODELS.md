@@ -246,6 +246,16 @@ Aun siendo operativa, el `content` viaja **cifrado AES-256-GCM per-user** (regla
 `/v1/chat/stream` (vía `ChatService.run_turn`), en la **misma** transacción que la
 `ChatSession` (turnos + sesión atómicos); no se persiste si el turno degradó.
 
+**Marca de consolidación** (idempotencia de `consolidate_turn`): el `content` de un
+turno no se edita nunca, así que `updated_at` nace igual a `created_at`. El chat
+encola la consolidación semántica con el `seq` del turno del usuario y el worker, en
+la **misma** transacción que escribe la memoria, pisa el `updated_at` de ese turno con
+`clock_timestamp()` (`app/workflows/_turn_marker.py`, con `SELECT ... FOR UPDATE`). Una
+re-entrega o un reintento del mensaje que encuentra `updated_at != created_at` no
+vuelve a escribir hechos ni auditoría. Si la fila ya no está (el cierre de la sesión
+purgó los turnos) se consolida igual, sin marca: saltearla perdería el turno. Usa una
+columna que ya existía: sin migración.
+
 | Columna | Tipo | Notas |
 |---|---|---|
 | `id` | UUID PK | `gen_random_uuid()` |
@@ -254,7 +264,7 @@ Aun siendo operativa, el `content` viaja **cifrado AES-256-GCM per-user** (regla
 | `role` | `turn_role_enum` NOT NULL | `user` o `model` |
 | `content` | BYTEA NOT NULL | Cifrado AES-256-GCM (key derivada por usuario, ADR-007 D3) |
 | `seq` | INTEGER NOT NULL | Orden monotónico por sesión (0 = primer turno user, 1 = primera respuesta model, ...) |
-| `created_at`, `updated_at` | TIMESTAMPTZ | TimestampMixin |
+| `created_at`, `updated_at` | TIMESTAMPTZ | TimestampMixin. En el turno `user`, `updated_at != created_at` marca que ya se consolidó (ver arriba) |
 
 **Constraint**:
 - `UNIQUE (session_id, seq)` — un turno por posición en la sesión (idempotencia de orden).
@@ -263,6 +273,7 @@ Aun siendo operativa, el `content` viaja **cifrado AES-256-GCM per-user** (regla
 - `ix_conversation_turns_user_id_session_id_seq` (btree compuesto, `(user_id, session_id, seq)`) —
   **único** índice de la tabla, matchea el patrón real de queries del store: todas filtran por
   `user_id` Y `session_id` (`next_seq`, `list_for_session`, `purge_session`) y ordenan por `seq`.
+  También lo usa la marca de consolidación (`claim_turn`), que busca `(user_id, session_id, seq)`.
   Su prefijo `(user_id)` cubre el cascade-delete por usuario; el índice implícito del
   `UNIQUE (session_id, seq)` cubre el acceso por sesión. Reemplaza los 3 índices parciales
   originales (`ix_..._user_id`, `ix_..._session_id`, `ix_..._session_id_seq`), eliminados en la
