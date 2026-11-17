@@ -43,11 +43,6 @@ export const TimePoint = z.object({ date: z.string(), value: z.number().int().no
 
 ```ts
 export const AdminOverviewOut = z.object({
-  perimeter: z.object({
-    status: z.enum(["intact","attention","verifying"]),
-    detail: z.string().nullable(),
-    checkedAt: z.string(),
-  }),
   kpis: z.object({
     usersTotal:  z.object({ value: z.number().int(), delta: Delta }),
     sessions:    z.object({ value: z.number().int(), delta: Delta, spark: z.array(z.number()) }),
@@ -164,23 +159,50 @@ BY `created_at` DESC, LIMIT/OFFSET. **El `SELECT` no incluye `record_hash` ni
 
 ## `GET /v1/admin/system`
 
+Este bloque copia `features/system/schemas.ts` tal cual, en snake_case como
+viaja por la red.
+
 ```ts
+const ServiceStatus = z.object({
+  up: z.boolean(), latency_ms: z.number(), detail: z.string(), checked_at: z.string(),
+});
+export const AiBackend = z.enum(["fake","api"]);
+export const AiStatus = z.enum(["ok","down","unconfigured"]);
+export const SystemLlmProvider = z.object({
+  name: z.string(),
+  host: z.string(),
+  models: z.array(z.object({ alias: z.string(), model_id: z.string() })),
+  status: AiStatus,
+});
+export const SystemEmbeddings = z.object({
+  backend: AiBackend, host: z.string().nullable(), model: z.string(),
+  dim: z.number().int(), status: AiStatus,
+});
+export const SystemAi = z.object({
+  llm: z.object({ backend: AiBackend, providers: z.array(SystemLlmProvider) }),
+  embeddings: SystemEmbeddings,
+});
 export const AdminSystemOut = z.object({
-  guard: z.object({ active: z.boolean(), dbTarget: z.string(), isProdInDev: z.boolean() }),
-  services: z.object({
-    postgres: z.object({ up: z.boolean(), latencyMs: z.number(), detail: z.string(), checkedAt: z.string() }),
-    redis:    z.object({ up: z.boolean(), latencyMs: z.number(), detail: z.string(), checkedAt: z.string() }),
-  }),
+  guard: z.object({ active: z.boolean(), db_target: z.string(), is_prod_in_dev: z.boolean() }),
+  services: z.object({ postgres: ServiceStatus, redis: ServiceStatus }),
   runtime: z.object({
     models: z.array(z.string()), modes: z.array(z.string()),
-    schemaHead: z.string(), embedder: z.string(), reranker: z.string(), buildVersion: z.string(),
+    schema_head: z.string(), build_version: z.string(),
   }),
+  ai: SystemAi,
 });
 ```
 
 Backend: `SELECT 1` (Postgres+pgvector), PING Redis (`app.state.redis`), guard
-`db_guard.guard_against_prod_db_in_dev`, modos del enum `Mode`, head de Alembic,
-singletons embedder/reranker. Sin queries de negocio, sin `range`.
+`db_guard.guard_against_prod_db_in_dev`, modos del enum `Mode` y head de
+Alembic. Sin queries de negocio, sin `range`.
+
+El bloque `ai` (ADR-028) sale de la config y del health de cada cliente. Lleva un
+proveedor por entrada de `LLM_PROVIDERS`, en su orden: el primero es el principal
+y el resto, el respaldo. Con backend `fake` no se sondea a nadie y el estado es
+`unconfigured`; con `api`, cada proveedor queda `ok` o `down` según responda su
+health. De cada URL base llega solo el host (`null` en embeddings si no hay URL):
+nunca la URL entera, el path ni la credencial.
 
 ---
 
