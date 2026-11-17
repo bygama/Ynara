@@ -84,7 +84,7 @@ describe("useChatStore", () => {
     expect(list.some((m) => m.status === "sending")).toBe(false);
   });
 
-  it("applyChatResponse deja actions undefined cuando viene vacío (Gemma)", () => {
+  it("applyChatResponse deja actions undefined cuando viene vacío (alias conversacional)", () => {
     const sid = useChatStore.getState().createSession("estudio");
     const userMsgId = useChatStore.getState().appendUserMessage(sid, "explicame algo");
     useChatStore.getState().applyChatResponse(sid, userMsgId, {
@@ -222,7 +222,7 @@ describe("useChatStore — streaming (W3)", () => {
     expect(useChatStore.getState().streamStatus).toBe("idle");
   });
 
-  it("finishAssistantStream sin actions deja actions undefined (Gemma)", () => {
+  it("finishAssistantStream sin actions deja actions undefined (alias conversacional)", () => {
     const sid = useChatStore.getState().createSession("vida");
     const userId = useChatStore.getState().appendUserMessage(sid, "che");
     const aid = useChatStore.getState().startAssistantStream(sid, userId);
