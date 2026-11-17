@@ -60,7 +60,7 @@ def _make_result(
         tool_calls=tool_calls or [],
         prompt_tokens=10,
         completion_tokens=5,
-        model_name="gemma4",
+        model_name="conversacional",
         latency_ms=42.0,
         reasoning=reasoning,
     )
@@ -90,12 +90,12 @@ def _messages() -> list[ChatMessage]:
 @pytest.mark.asyncio
 async def test_gemma_sin_specs_una_vuelta() -> None:
     """Gemma (specs=[]) termina en 1 vuelta sin ejecutar ninguna tool."""
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
     fake.queue_result(_make_result(text="Hola! En que te ayudo?", finish_reason="stop"))
 
     result = await run_tool_loop(
         llm_client=fake,
-        model="gemma4",
+        model="conversacional",
         messages=_messages(),
         specs=[],
         registries=_empty_registries(),
@@ -117,7 +117,7 @@ async def test_gemma_sin_specs_una_vuelta() -> None:
 @pytest.mark.asyncio
 async def test_qwen_1_vuelta_con_tool_call() -> None:
     """Qwen hace 1 tool call y luego devuelve stop."""
-    fake = FakeLlmClient(models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"agente"}))
 
     tc = _make_tool_call("calendar.create_event", "tc-abc")
     # Primera respuesta: tool call
@@ -150,7 +150,7 @@ async def test_qwen_1_vuelta_con_tool_call() -> None:
 
     result = await run_tool_loop(
         llm_client=fake,
-        model="qwen",
+        model="agente",
         messages=_messages(),
         specs=[spec],
         registries=(reg, None),
@@ -176,7 +176,7 @@ async def test_tool_call_luego_stop_vacio_fuerza_confirmacion() -> None:
     fallback generico (lee como error aunque la accion SI ocurrio): fuerza UNA completion
     final SIN tools para que el modelo confirme lo accionado. El finish_reason real de la
     forzada reemplaza al terminal-vacio."""
-    fake = FakeLlmClient(models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"agente"}))
 
     tc = _make_tool_call("calendar.create_event", "tc-x")
     # 1) tool call (no terminal) -> se ejecuta la tool
@@ -210,7 +210,7 @@ async def test_tool_call_luego_stop_vacio_fuerza_confirmacion() -> None:
 
     result = await run_tool_loop(
         llm_client=fake,
-        model="qwen",
+        model="agente",
         messages=_messages(),
         specs=[spec],
         registries=(reg, None),
@@ -237,7 +237,7 @@ async def test_tool_call_forzada_tambien_vacia_usa_ack_no_fallback() -> None:
     El usuario NO debe ver el fallback-error: como SI hubo acciones, se devuelve un ack
     determinista (``_ACTIONS_DONE_TEXT``). La forzada va con thinking=False para que la
     confirmacion caiga en content, no en reasoning."""
-    fake = FakeLlmClient(models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"agente"}))
 
     tc = _make_tool_call("memory.add", "tc-z")
     # 1) tool call -> se ejecuta la tool
@@ -271,7 +271,7 @@ async def test_tool_call_forzada_tambien_vacia_usa_ack_no_fallback() -> None:
 
     result = await run_tool_loop(
         llm_client=fake,
-        model="qwen",
+        model="agente",
         messages=_messages(),
         specs=[spec],
         registries=(reg, None),
@@ -294,7 +294,7 @@ async def test_tool_error_con_forzada_vacia_usa_fallback_no_ack() -> None:
     """Si la tool FALLA (action con ``{"error": ...}``) y la forzada vuelve vacia, NO se usa
     el ack (mentiria exito): se cae al ``fallback_text``. El ack es solo para acciones
     EXITOSAS (sin clave ``error`` en el result)."""
-    fake = FakeLlmClient(models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"agente"}))
 
     tc = _make_tool_call("calendar.create_event", "tc-err")
     fake.queue_result(_make_result(text="", finish_reason="tool_calls", tool_calls=[tc]))
@@ -326,7 +326,7 @@ async def test_tool_error_con_forzada_vacia_usa_fallback_no_ack() -> None:
 
     result = await run_tool_loop(
         llm_client=fake,
-        model="qwen",
+        model="agente",
         messages=_messages(),
         specs=[spec],
         registries=(reg, None),
@@ -344,12 +344,12 @@ async def test_stop_vacio_sin_acciones_no_fuerza_y_cae_a_fallback() -> None:
     """Sin acciones ejecutadas, una respuesta normal vacia NO dispara la forzada: cae al
     fallback (no se gasta una inferencia extra en un turno conversacional legitimo vacio).
     El gate de la forzada es ``actions``, no ``not last_text`` a secas."""
-    fake = FakeLlmClient(models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"agente"}))
     fake.queue_result(_make_result(text="", finish_reason="stop"))
 
     result = await run_tool_loop(
         llm_client=fake,
-        model="qwen",
+        model="agente",
         messages=_messages(),
         specs=[],
         registries=_empty_registries(),
@@ -366,7 +366,7 @@ async def test_stop_vacio_sin_acciones_no_fuerza_y_cae_a_fallback() -> None:
 @pytest.mark.asyncio
 async def test_qwen_2_vueltas_con_tool_call() -> None:
     """Qwen: vuelta 1 tool call, vuelta 2 otra tool call, vuelta 3 stop."""
-    fake = FakeLlmClient(models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"agente"}))
 
     tc1 = _make_tool_call("calendar.create_event", "tc-1")
     tc2 = _make_tool_call("calendar.create_event", "tc-2")
@@ -399,7 +399,7 @@ async def test_qwen_2_vueltas_con_tool_call() -> None:
 
     result = await run_tool_loop(
         llm_client=fake,
-        model="qwen",
+        model="agente",
         messages=_messages(),
         specs=[spec],
         registries=(reg, None),
@@ -452,7 +452,7 @@ async def test_guard_max_iteraciones_fuerza_respuesta_final() -> None:
     el ``fallback_text`` ("no pude procesar...") AUNQUE las tools sí se ejecutaron. Ahora
     se fuerza UNA completion sin tools: sin tools que llamar, el modelo responde en
     lenguaje natural y el usuario ve una respuesta real (no el fallback)."""
-    fake = FakeLlmClient(models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"agente"}))
 
     tc = _make_tool_call("calendar.create_event", "tc-x")
     # Las MAX iteraciones devuelven tool_calls con texto vacío (nunca converge).
@@ -465,7 +465,7 @@ async def test_guard_max_iteraciones_fuerza_respuesta_final() -> None:
 
     result = await run_tool_loop(
         llm_client=fake,
-        model="qwen",
+        model="agente",
         messages=_messages(),
         specs=[spec],
         registries=(reg, None),
@@ -489,7 +489,7 @@ async def test_guard_max_iteraciones_fuerza_respuesta_final() -> None:
 @pytest.mark.asyncio
 async def test_guard_max_iteraciones_usa_fallback_si_forzada_vacia() -> None:
     """Si la completion final forzada TAMBIÉN vuelve vacía, se cae al fallback_text."""
-    fake = FakeLlmClient(models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"agente"}))
 
     tc = _make_tool_call("calendar.create_event", "tc-x")
     for _i in range(MAX_TOOL_ITERATIONS):
@@ -501,7 +501,7 @@ async def test_guard_max_iteraciones_usa_fallback_si_forzada_vacia() -> None:
 
     result = await run_tool_loop(
         llm_client=fake,
-        model="qwen",
+        model="agente",
         messages=_messages(),
         specs=[spec],
         registries=(reg, None),
@@ -524,7 +524,7 @@ async def test_guard_max_iteraciones_completion_forzada_propaga_error() -> None:
     No se envuelve en try/except acá (igual que las completions del loop): ``route()``
     captura la familia ``LlmError`` y degrada. Este test fija que el error NO se traga
     silenciosamente dentro de ``run_tool_loop``."""
-    fake = FakeLlmClient(models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"agente"}))
 
     tc = _make_tool_call("calendar.create_event", "tc-x")
     for _i in range(MAX_TOOL_ITERATIONS):
@@ -537,7 +537,7 @@ async def test_guard_max_iteraciones_completion_forzada_propaga_error() -> None:
     with pytest.raises(LlmTimeoutError):
         await run_tool_loop(
             llm_client=fake,
-            model="qwen",
+            model="agente",
             messages=_messages(),
             specs=[spec],
             registries=(reg, None),
@@ -549,7 +549,7 @@ async def test_guard_max_iteraciones_completion_forzada_propaga_error() -> None:
 @pytest.mark.asyncio
 async def test_guard_max_iteraciones_usa_result_text_si_no_vacio() -> None:
     """Al agotar MAX_TOOL_ITERATIONS, usa result.text si NO esta vacio."""
-    fake = FakeLlmClient(models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"agente"}))
 
     tc = _make_tool_call("calendar.create_event", "tc-y")
     # Las primeras N-1 iteraciones devuelven tool_calls con text vacio
@@ -584,7 +584,7 @@ async def test_guard_max_iteraciones_usa_result_text_si_no_vacio() -> None:
 
     result = await run_tool_loop(
         llm_client=fake,
-        model="qwen",
+        model="agente",
         messages=_messages(),
         specs=[spec],
         registries=(reg, None),
@@ -601,7 +601,7 @@ async def test_guard_max_iteraciones_usa_result_text_si_no_vacio() -> None:
 @pytest.mark.asyncio
 async def test_unknown_tool_devuelve_tool_error() -> None:
     """Una tool call para un nombre desconocido devuelve tool_error en actions."""
-    fake = FakeLlmClient(models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"agente"}))
 
     tc = _make_tool_call("nonexistent.tool", "tc-unk")
     fake.queue_result(_make_result(text="", finish_reason="tool_calls", tool_calls=[tc]))
@@ -615,7 +615,7 @@ async def test_unknown_tool_devuelve_tool_error() -> None:
 
     result = await run_tool_loop(
         llm_client=fake,
-        model="qwen",
+        model="agente",
         messages=_messages(),
         specs=[spec],
         registries=_empty_registries(),
@@ -636,7 +636,7 @@ async def test_unknown_tool_devuelve_tool_error() -> None:
 @pytest.mark.asyncio
 async def test_degraded_termina_inmediatamente() -> None:
     """finish_reason='degraded' termina el loop sin ejecutar tools (aunque haya tool_calls)."""
-    fake = FakeLlmClient(models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"agente"}))
 
     tc = _make_tool_call("calendar.create_event", "tc-deg")
     # Degraded con tool_calls: debe terminar sin ejecutar tools
@@ -650,7 +650,7 @@ async def test_degraded_termina_inmediatamente() -> None:
 
     result = await run_tool_loop(
         llm_client=fake,
-        model="qwen",
+        model="agente",
         messages=_messages(),
         specs=[],
         registries=_empty_registries(),
@@ -667,7 +667,7 @@ async def test_degraded_termina_inmediatamente() -> None:
 @pytest.mark.asyncio
 async def test_cap_tool_calls_por_turno() -> None:
     """Si el modelo emite mas de MAX_CALLS_PER_TURN, solo se ejecutan cap."""
-    fake = FakeLlmClient(models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"agente"}))
 
     extra = 3
     many = [
@@ -703,7 +703,7 @@ async def test_cap_tool_calls_por_turno() -> None:
     msgs = _messages()
     result = await run_tool_loop(
         llm_client=fake,
-        model="qwen",
+        model="agente",
         messages=msgs,
         specs=[spec],
         registries=(reg, None),
@@ -729,12 +729,12 @@ async def test_cap_tool_calls_por_turno() -> None:
 @pytest.mark.asyncio
 async def test_result_text_vacio_final_usa_fallback() -> None:
     """Si result.text esta vacio al terminar, se usa fallback_text."""
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
     fake.queue_result(_make_result(text="", finish_reason="stop"))
 
     result = await run_tool_loop(
         llm_client=fake,
-        model="gemma4",
+        model="conversacional",
         messages=_messages(),
         specs=[],
         registries=_empty_registries(),
@@ -750,12 +750,12 @@ async def test_result_text_vacio_final_usa_fallback() -> None:
 @pytest.mark.asyncio
 async def test_specs_vacia_pasa_tools_none() -> None:
     """Cuando specs=[], complete() debe recibir tools=None (Gemma conversacional)."""
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
     fake.queue_result(_make_result(text="ok", finish_reason="stop"))
 
     await run_tool_loop(
         llm_client=fake,
-        model="gemma4",
+        model="conversacional",
         messages=_messages(),
         specs=[],
         registries=_empty_registries(),
@@ -768,7 +768,7 @@ async def test_specs_vacia_pasa_tools_none() -> None:
 @pytest.mark.asyncio
 async def test_specs_no_vacia_pasa_tools_lista() -> None:
     """Cuando specs no esta vacia, complete() recibe la lista de ToolSpec."""
-    fake = FakeLlmClient(models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"agente"}))
     fake.queue_result(_make_result(text="ok", finish_reason="stop"))
 
     spec = ToolSpec(
@@ -779,7 +779,7 @@ async def test_specs_no_vacia_pasa_tools_lista() -> None:
 
     await run_tool_loop(
         llm_client=fake,
-        model="qwen",
+        model="agente",
         messages=_messages(),
         specs=[spec],
         registries=_empty_registries(),
@@ -802,12 +802,12 @@ async def test_run_tool_loop_pasa_thinking_a_complete(thinking: bool | None) -> 
     El thinking es passthrough puro hacia ``llm_client.complete`` (lo decide el
     router por rol): True/False fuerzan ON/OFF, None deja el default del server.
     """
-    fake = FakeLlmClient(models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"agente"}))
     fake.queue_result(_make_result(text="ok", finish_reason="stop"))
 
     await run_tool_loop(
         llm_client=fake,
-        model="qwen",
+        model="agente",
         messages=_messages(),
         specs=[],
         registries=_empty_registries(),
@@ -887,7 +887,7 @@ async def test_execute_anywhere_tool_desconocida() -> None:
 @pytest.mark.asyncio
 async def test_chatmessage_tool_contiene_id_y_nombre() -> None:
     """El ChatMessage 'tool' incluye tool_call_id y name correctos."""
-    fake = FakeLlmClient(models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"agente"}))
 
     tc = ToolCall(id="mi-id", name="calendar.create_event", arguments={})
     fake.queue_result(_make_result(text="", finish_reason="tool_calls", tool_calls=[tc]))
@@ -912,7 +912,7 @@ async def test_chatmessage_tool_contiene_id_y_nombre() -> None:
     msgs = _messages()
     await run_tool_loop(
         llm_client=fake,
-        model="qwen",
+        model="agente",
         messages=msgs,
         specs=[],
         registries=(reg, None),
@@ -980,7 +980,7 @@ async def test_guard_forzada_con_texto_usa_finish_reason_real() -> None:
     'length'). El sentinel 'max_iterations' se reserva para cuando la forzada TAMBIEN
     vuelve vacia (sin texto util).
     """
-    fake = FakeLlmClient(models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"agente"}))
 
     tc = _make_tool_call("calendar.create_event", "tc-x")
     for _i in range(MAX_TOOL_ITERATIONS):
@@ -992,7 +992,7 @@ async def test_guard_forzada_con_texto_usa_finish_reason_real() -> None:
 
     result = await run_tool_loop(
         llm_client=fake,
-        model="qwen",
+        model="agente",
         messages=_messages(),
         specs=[spec],
         registries=(reg, None),
@@ -1015,7 +1015,7 @@ async def test_guard_forzada_vacia_mantiene_sentinel_max_iterations() -> None:
     Complemento del test anterior: cuando la forzada no produce texto (cae al
     fallback_text), el sentinel 'max_iterations' se preserva intacto.
     """
-    fake = FakeLlmClient(models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"agente"}))
 
     tc = _make_tool_call("calendar.create_event", "tc-x")
     for _i in range(MAX_TOOL_ITERATIONS):
@@ -1027,7 +1027,7 @@ async def test_guard_forzada_vacia_mantiene_sentinel_max_iterations() -> None:
 
     result = await run_tool_loop(
         llm_client=fake,
-        model="qwen",
+        model="agente",
         messages=_messages(),
         specs=[spec],
         registries=(reg, None),
@@ -1056,7 +1056,7 @@ async def test_reasoning_se_acumula_y_concatena_entre_iteraciones() -> None:
     y lo concatena en ``ToolLoopResult.reasoning``. Antes el router lo descartaba; ahora
     se devuelve para que el endpoint lo re-trocee como evento SSE ``reasoning``.
     """
-    fake = FakeLlmClient(models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"agente"}))
 
     tc = _make_tool_call("calendar.create_event", "tc-1")
     # Iteracion 1: tool call con reasoning (planifica la tool).
@@ -1072,7 +1072,7 @@ async def test_reasoning_se_acumula_y_concatena_entre_iteraciones() -> None:
 
     result = await run_tool_loop(
         llm_client=fake,
-        model="qwen",
+        model="agente",
         messages=_messages(),
         specs=[spec],
         registries=(reg, None),
