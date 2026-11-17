@@ -57,7 +57,6 @@ from app.schemas.admin import (
     ModeDurationRow,
     ModeMixRow,
     OverviewKpis,
-    Perimeter,
     ProceduralHealth,
     RecentEpisodic,
     SignupPoint,
@@ -311,7 +310,6 @@ class AdminMetricsService:
         ]
 
         return AdminOverviewOut(
-            perimeter=Perimeter(status="intact", detail=None, checked_at=now),
             kpis=OverviewKpis(
                 users_total=users_total_kpi,
                 sessions=sessions_kpi,

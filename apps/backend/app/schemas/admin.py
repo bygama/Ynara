@@ -22,8 +22,6 @@ from app.schemas.base import YnaraBaseModel
 
 # Dirección de un delta entre el período actual y el anterior.
 DeltaDirection = Literal["up", "down", "flat"]
-# Estado del perímetro de soberanía mostrado en el badge del panel.
-PerimeterStatus = Literal["intact", "attention", "verifying"]
 
 
 class Delta(YnaraBaseModel):
@@ -43,14 +41,6 @@ class TimePoint(YnaraBaseModel):
 # ---------------------------------------------------------------------------
 # 4.1 GET /v1/admin/overview
 # ---------------------------------------------------------------------------
-
-
-class Perimeter(YnaraBaseModel):
-    """Estado del perímetro de soberanía (badge del panel)."""
-
-    status: PerimeterStatus
-    detail: str | None
-    checked_at: datetime
 
 
 class KpiValueDelta(YnaraBaseModel):
@@ -98,7 +88,6 @@ class AuditPreviewRow(YnaraBaseModel):
 class AdminOverviewOut(YnaraBaseModel):
     """Respuesta de ``GET /v1/admin/overview``."""
 
-    perimeter: Perimeter
     kpis: OverviewKpis
     sessions_series: list[TimePoint]
     mode_mix: list[ModeCount]
