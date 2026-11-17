@@ -1,4 +1,4 @@
-"""URL base de un proveedor por API (``validated_base_url`` en ``providers/_http.py``).
+"""URL base de un proveedor por API (``validated_base_url`` en ``app/core/urls.py``).
 
 Se valida al construir el ``OpenAICompatClient``: ``https`` con un host (``http`` solo
 contra la propia máquina), sin usuario ni clave, sin query ni fragmento. Los errores
@@ -11,7 +11,7 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
-from app.llm.clients.providers._http import validated_base_url
+from app.core.urls import validated_base_url
 from app.llm.clients.providers.openai_compat import OpenAICompatClient
 
 
