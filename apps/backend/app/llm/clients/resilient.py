@@ -7,11 +7,14 @@ stdlib (regla M3: nada de tenacity/circuitbreaker):
 1. Pide al pool los candidatos para el modelo, en orden de preferencia
    (el principal primero, el respaldo despues).
 2. Para cada candidato cuyo breaker ``allow()``:
-   - Reintenta ante errores TRANSITORIOS (timeout, caida, sobrecarga,
-     respuesta invalida) con backoff exponencial + jitter, hasta
-     ``max_attempts``. Ante un 429 con ``Retry-After`` espera lo que pidio
-     el proveedor si entra en el presupuesto global; si no entra, pasa al
-     siguiente candidato.
+   - Reintenta ante errores TRANSITORIOS (timeout, caida, respuesta
+     invalida) con backoff exponencial + jitter, hasta ``max_attempts``.
+   - Ante un 429 o una sobrecarga, con un respaldo disponible pasa a el,
+     salvo que el ``Retry-After`` sea corto; sin respaldo espera el
+     ``Retry-After``, o el backoff si el proveedor no lo mando. Un
+     ``Retry-After`` solo se espera si despues queda margen en el
+     presupuesto global para el request; si no, pasa al siguiente candidato
+     o degrada.
    - Ante un error del REQUEST (request invalido, contexto excedido, modelo
      no servido) re-lanza de inmediato: es bug del request, no del
      proveedor, y el respaldo fallaria igual.
@@ -46,10 +49,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 
 from app.llm.clients._resilience import (
     BREAKER_ERRORS,
+    DEFAULT_MAX_WAIT_WITH_FALLBACK_S,
+    DEFAULT_REQUEST_MARGIN_S,
     REQUEST_ERRORS,
     BreakerTally,
     RetryPolicy,
@@ -103,6 +108,8 @@ class ResilientClient:
         base_backoff_s: float = 0.5,
         max_backoff_s: float = 8.0,
         total_budget_s: float = _DEFAULT_TOTAL_BUDGET_S,
+        rate_limit_max_wait_with_fallback_s: float = DEFAULT_MAX_WAIT_WITH_FALLBACK_S,
+        rate_limit_request_margin_s: float = DEFAULT_REQUEST_MARGIN_S,
         degraded_text: str = _DEFAULT_DEGRADED_TEXT,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
@@ -119,11 +126,18 @@ class ResilientClient:
         tests deterministas; el ``breaker_factory`` construye un
         ``CircuitBreaker`` por cada cliente del pool (uno por cliente, keyed
         por ``id(client)``).
+
+        Ante un 429, ``rate_limit_max_wait_with_fallback_s`` es el
+        ``Retry-After`` mas largo que se espera si hay un respaldo disponible, y
+        ``rate_limit_request_margin_s`` lo que tiene que quedar del presupuesto
+        despues de esperar, para el request (ver ``RetryPolicy``).
         """
         self._policy = RetryPolicy(
             max_attempts=max_attempts,
             base_backoff_s=base_backoff_s,
             max_backoff_s=max_backoff_s,
+            max_wait_with_fallback_s=rate_limit_max_wait_with_fallback_s,
+            request_margin_s=rate_limit_request_margin_s,
         )
         self._pool = pool
         self._total_budget_s = total_budget_s
@@ -232,7 +246,8 @@ class ResilientClient:
         Devuelve el primer resultado exitoso, o ``None`` si todos se agotan /
         tienen el breaker abierto (el caller degrada).
         """
-        for client in self._pool.candidates(model):
+        candidates = self._pool.candidates(model)
+        for index, client in enumerate(candidates):
             breaker = self._breakers[id(client)]
             if not breaker.allow():
                 continue
@@ -241,6 +256,7 @@ class ResilientClient:
                 breaker,
                 tally,
                 deadline,
+                candidates[index + 1 :],
                 model=model,
                 messages=messages,
                 tools=tools,
@@ -259,6 +275,7 @@ class ResilientClient:
         breaker: CircuitBreaker,
         tally: BreakerTally,
         deadline: float,
+        fallbacks: Sequence[LLMClient],
         *,
         model: str,
         messages: list[ChatMessage],
@@ -271,9 +288,11 @@ class ResilientClient:
         """Reintenta un candidato; ``None`` si se agota (toca el respaldo).
 
         Re-lanza los errores del request sin probar el siguiente candidato.
-        Un rechazo del proveedor (credencial o 4xx propio) o un 429 que no entra
-        en el presupuesto cortan los reintentos de este candidato; el resto de
-        los ``LlmError`` se reintentan con backoff. El breaker se resuelve
+        Un rechazo del proveedor (credencial o 4xx propio) o un 429 que no
+        conviene esperar cortan los reintentos de este candidato; el resto de
+        los ``LlmError`` se reintentan con backoff. ``fallbacks`` son los
+        candidatos que siguen: si alguno puede atender, un 429 no se espera
+        salvo que sea corto (ver ``RetryPolicy``). El breaker se resuelve
         siempre (ver ``BreakerTally``).
         """
         tally.start(breaker)
@@ -297,7 +316,12 @@ class ResilientClient:
                 # LlmError no clasificado (respuesta sin choices, tool parse error).
                 tally.note(exc)
                 last_error = exc
-                delay = self._policy.delay(exc, attempt, deadline - self._clock())
+                delay = self._policy.delay(
+                    exc,
+                    attempt,
+                    deadline - self._clock(),
+                    has_fallback=self._any_available(fallbacks),
+                )
                 if delay is None:
                     break
                 await self._sleep(delay)
@@ -311,6 +335,14 @@ class ResilientClient:
             type(last_error).__name__,
         )
         return None
+
+    def _any_available(self, clients: Sequence[LLMClient]) -> bool:
+        """``True`` si el breaker de alguno de ``clients`` lo dejaria atender.
+
+        Usa ``would_allow()``: preguntar no consume la prueba HALF_OPEN de un
+        respaldo, que queda para cuando le toque.
+        """
+        return any(self._breakers[id(client)].would_allow() for client in clients)
 
     def stream(
         self,

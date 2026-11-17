@@ -8,7 +8,7 @@ con cada error de un candidato:
   se re-lanza, que pasa al siguiente candidato sin reintentar, que no se reintenta contra
   el mismo candidato y que cuenta como caida del proveedor.
 - ``RetryPolicy``: cuanto esperar antes de reintentar el mismo candidato, o si hay que
-  pasar al siguiente.
+  pasar al siguiente (con los defaults de la espera de un 429).
 - ``BreakerTally``: que le hace el candidato en curso a su circuit breaker.
 """
 
@@ -21,6 +21,7 @@ from app.llm.errors import (
     LlmAuthError,
     LlmBadRequestError,
     LlmError,
+    LlmOverloadedError,
     LlmProviderRejectedError,
     LlmRateLimitError,
     LlmTimeoutError,
@@ -53,30 +54,77 @@ PERMANENT_ERRORS: tuple[type[LlmError], ...] = (*REQUEST_ERRORS, *PROVIDER_ERROR
 BREAKER_ERRORS: tuple[type[LlmError], ...] = (LlmTimeoutError, LlmUnavailableError)
 
 
+# Con un respaldo disponible, el ``Retry-After`` mas largo que se espera antes de
+# reintentar el mismo candidato: si el proveedor pide mas, el respaldo contesta antes.
+DEFAULT_MAX_WAIT_WITH_FALLBACK_S: float = 5.0
+
+# Lo que tiene que quedar del presupuesto despues de esperar un ``Retry-After``, para
+# el request que sigue: sin ese margen el reintento se cortaria por el presupuesto,
+# asi que se pasa al siguiente candidato (o se degrada) sin esperar.
+DEFAULT_REQUEST_MARGIN_S: float = 15.0
+
+
 class RetryPolicy:
     """Cuanto esperar antes de reintentar el mismo candidato, o si hay que pasar al siguiente."""
 
-    def __init__(self, *, max_attempts: int, base_backoff_s: float, max_backoff_s: float) -> None:
+    def __init__(
+        self,
+        *,
+        max_attempts: int,
+        base_backoff_s: float,
+        max_backoff_s: float,
+        max_wait_with_fallback_s: float,
+        request_margin_s: float,
+    ) -> None:
         if max_attempts < 1:
             raise ValueError("max_attempts tiene que ser al menos 1")
+        if max_wait_with_fallback_s < 0:
+            raise ValueError("rate_limit_max_wait_with_fallback_s no puede ser negativo")
+        if request_margin_s < 0:
+            raise ValueError("rate_limit_request_margin_s no puede ser negativo")
         self.max_attempts = max_attempts
         self._base_backoff_s = base_backoff_s
         self._max_backoff_s = max_backoff_s
+        self._max_wait_with_fallback_s = max_wait_with_fallback_s
+        self._request_margin_s = request_margin_s
 
-    def delay(self, exc: LlmError, attempt: int, remaining_s: float) -> float | None:
+    def delay(
+        self, exc: LlmError, attempt: int, remaining_s: float, *, has_fallback: bool
+    ) -> float | None:
         """Espera antes de reintentar el mismo candidato, o ``None`` para pasar al siguiente.
 
         Sin reintento tras el ultimo intento ni ante un error permanente (la
-        credencial y los modelos del proveedor no cambian entre intentos). Un 429
-        con ``Retry-After`` espera lo que pidio el proveedor si entra en lo que queda
-        del presupuesto (``remaining_s``); si no entra, pasa al siguiente candidato
-        en vez de gastar el presupuesto esperando. El resto, backoff exponencial.
+        credencial y los modelos del proveedor no cambian entre intentos). Un 429 o
+        una sobrecarga siguen ``_overload_delay``; el resto, backoff exponencial.
+        ``remaining_s`` es lo que queda del presupuesto global y ``has_fallback``
+        dice si algun candidato posterior puede atender.
         """
         if isinstance(exc, PERMANENT_ERRORS) or attempt + 1 >= self.max_attempts:
             return None
-        if isinstance(exc, LlmRateLimitError) and exc.retry_after_s is not None:
-            return exc.retry_after_s if exc.retry_after_s <= remaining_s else None
+        if isinstance(exc, LlmOverloadedError):
+            return self._overload_delay(exc, attempt, remaining_s, has_fallback=has_fallback)
         return self.backoff(attempt)
+
+    def _overload_delay(
+        self, exc: LlmOverloadedError, attempt: int, remaining_s: float, *, has_fallback: bool
+    ) -> float | None:
+        """Espera ante un 429 o una sobrecarga, o ``None`` para pasar al siguiente.
+
+        Sin ``Retry-After`` el proveedor no dijo cuando vuelve: con respaldo se pasa
+        a el; sin respaldo, backoff como cualquier transitorio. Con ``Retry-After``,
+        si hay respaldo solo se espera si es corto (``max_wait_with_fallback_s``), y
+        en cualquier caso solo si despues queda ``request_margin_s`` del presupuesto
+        para el request; si no, se pasa al siguiente en vez de gastar el
+        presupuesto esperando un reintento que despues se corta.
+        """
+        retry_after_s = exc.retry_after_s if isinstance(exc, LlmRateLimitError) else None
+        if retry_after_s is None:
+            return None if has_fallback else self.backoff(attempt)
+        if has_fallback and retry_after_s > self._max_wait_with_fallback_s:
+            return None
+        if retry_after_s + self._request_margin_s > remaining_s:
+            return None
+        return retry_after_s
 
     def backoff(self, attempt: int) -> float:
         """Backoff exponencial cap a ``max_backoff_s`` mas jitter."""

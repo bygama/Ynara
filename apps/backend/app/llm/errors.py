@@ -75,8 +75,9 @@ class LlmRateLimitError(LlmOverloadedError):
 
     ``retry_after_s`` es la espera que pidio con ``Retry-After``, en segundos (ya
     convertida si vino como fecha HTTP), o ``None`` si no la mando. El
-    ``ResilientClient`` la respeta si entra en su presupuesto; si no, pasa al
-    siguiente proveedor. Subclase de ``LlmOverloadedError``: quien ya trataba la
+    ``ResilientClient`` la espera si es corta o si no hay respaldo, y solo si
+    despues le queda presupuesto para el request; si no, pasa al siguiente
+    proveedor. Subclase de ``LlmOverloadedError``: quien ya trataba la
     sobrecarga (p.ej. el 503 del playground) la trata igual.
     """
 
