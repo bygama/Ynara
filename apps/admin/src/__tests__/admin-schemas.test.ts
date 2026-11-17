@@ -71,6 +71,68 @@ const SERVING_FAKE_PAYLOAD = {
   low_perf_available: false,
 };
 
+/** Proveedores del bloque `ai` de `GET /v1/admin/system` con `LLM_BACKEND=api`. */
+const PRINCIPAL_PAYLOAD = {
+  name: "principal",
+  host: "api.example.com",
+  models: [
+    { alias: "agente", model_id: "proveedor/modelo-agente" },
+    { alias: "conversacional", model_id: "proveedor/modelo-chat" },
+  ],
+  status: "ok",
+};
+const RESPALDO_PAYLOAD = {
+  ...PRINCIPAL_PAYLOAD,
+  name: "respaldo",
+  host: "respaldo.example.com",
+  status: "down",
+};
+const EMBEDDINGS_API_PAYLOAD = {
+  backend: "api",
+  host: "embeddings.example.com",
+  model: "BAAI/bge-m3",
+  dim: 1024,
+  status: "ok",
+};
+
+/**
+ * Respuesta real de `GET /v1/admin/system` con `LLM_BACKEND=api` y
+ * `EMBEDDING_BACKEND=api`, tal como la arma el handler del backend
+ * (`admin_system`): de cada proveedor llega solo el host, nunca la URL ni la
+ * credencial. Es la forma del wire, no un fixture.
+ */
+const SYSTEM_API_PAYLOAD = {
+  guard: { active: true, db_target: "localhost", is_prod_in_dev: false },
+  services: {
+    postgres: {
+      up: true,
+      latency_ms: 1.42,
+      detail: "SELECT 1",
+      checked_at: "2026-11-17T12:00:00Z",
+    },
+    redis: { up: true, latency_ms: 0.31, detail: "PING", checked_at: "2026-11-17T12:00:00Z" },
+  },
+  runtime: {
+    models: ["agente", "conversacional"],
+    modes: ["productividad", "estudio", "bienestar", "vida", "memoria"],
+    schema_head: "20260615_0200",
+    build_version: "0.1.0",
+  },
+  ai: {
+    llm: { backend: "api", providers: [PRINCIPAL_PAYLOAD, RESPALDO_PAYLOAD] },
+    embeddings: EMBEDDINGS_API_PAYLOAD,
+  },
+};
+
+/** La misma respuesta con los dos backends fake (default de dev): nada se sondea. */
+const SYSTEM_FAKE_PAYLOAD = {
+  ...SYSTEM_API_PAYLOAD,
+  ai: {
+    llm: { backend: "fake", providers: [] },
+    embeddings: { ...EMBEDDINGS_API_PAYLOAD, backend: "fake", host: null, status: "unconfigured" },
+  },
+};
+
 describe("contrato fixtures ↔ Zod (blueprint §4)", () => {
   it("overview parsea en todos los rangos", () => {
     for (const range of RANGES) {
@@ -98,6 +160,64 @@ describe("contrato fixtures ↔ Zod (blueprint §4)", () => {
 
   it("system parsea (sin rango)", () => {
     expect(() => AdminSystemOut.parse(systemFixture())).not.toThrow();
+  });
+
+  it("system: el fixture cubre los tres estados de proveedor", () => {
+    const { ai } = systemFixture();
+    const statuses = new Set([...ai.llm.providers.map((p) => p.status), ai.embeddings.status]);
+    expect(statuses).toEqual(new Set(["ok", "down", "unconfigured"]));
+  });
+
+  it("system: la respuesta real del backend (api y fake) parsea contra AdminSystemOut", () => {
+    const api = AdminSystemOut.parse(SYSTEM_API_PAYLOAD);
+    expect(api.ai.llm.providers.map((p) => [p.name, p.host, p.status])).toEqual([
+      ["principal", "api.example.com", "ok"],
+      ["respaldo", "respaldo.example.com", "down"],
+    ]);
+    const fake = AdminSystemOut.parse(SYSTEM_FAKE_PAYLOAD);
+    expect(fake.ai.llm.providers).toEqual([]);
+    expect(fake.ai.embeddings).toMatchObject({
+      backend: "fake",
+      host: null,
+      status: "unconfigured",
+    });
+  });
+
+  it("system: el parse descarta lo que el contrato no declara (ni URL ni credencial)", () => {
+    const leaky = {
+      ...SYSTEM_API_PAYLOAD,
+      ai: {
+        llm: {
+          backend: "api",
+          providers: [
+            {
+              ...PRINCIPAL_PAYLOAD,
+              base_url: "https://api.example.com/v1",
+              api_key: "sk-test-filtrada",
+            },
+            RESPALDO_PAYLOAD,
+          ],
+        },
+        embeddings: { ...EMBEDDINGS_API_PAYLOAD, api_key: "sk-test-filtrada" },
+      },
+    };
+    const parsed = AdminSystemOut.parse(leaky);
+    const serialized = JSON.stringify(parsed);
+    expect(serialized).not.toContain("sk-test-filtrada");
+    expect(serialized).not.toContain("://");
+    expect(parsed.ai.llm.providers[0]).not.toHaveProperty("api_key");
+    expect(parsed.ai.embeddings).not.toHaveProperty("api_key");
+  });
+
+  it("system rechaza un estado de proveedor fuera del contrato", () => {
+    const unknownStatus = {
+      ...SYSTEM_API_PAYLOAD,
+      ai: {
+        ...SYSTEM_API_PAYLOAD.ai,
+        llm: { backend: "api", providers: [{ ...PRINCIPAL_PAYLOAD, status: "healthy" }] },
+      },
+    };
+    expect(AdminSystemOut.safeParse(unknownStatus).success).toBe(false);
   });
 
   it("audit page parsea sin filtros y paginada", () => {

@@ -11,10 +11,6 @@ type Props = {
   modes: string[];
   /** Revisión de Alembic en cabeza (último migrado), p.ej. `20260615_0200`. */
   schemaHead: string;
-  /** Modelo de embeddings en uso (`EMBEDDING_MODEL`), p.ej. `BAAI/bge-m3`. */
-  embedder: string;
-  /** Reranker en uso: `passthrough`, que deja el orden de la búsqueda. */
-  reranker: string;
   /** Versión de build del panel (`admin@0.1.0`). */
   buildVersion: string;
   className?: string;
@@ -27,24 +23,16 @@ const KNOWN_MODES = new Set<string>(Object.keys(MODE_BY_ID));
  * Inventario de runtime/config NO sensible (blueprint §2.3 / §3 F1.6).
  *
  * Tabla de definición plana (hairlines entre filas, sin zebra, sin cajas) con la
- * configuración que el panel puede exponer sin riesgo: modelos LLM, los 5 modos,
- * cabeza del schema (Alembic), embedder/reranker y versión de build. Cero datos
- * de negocio ni de usuario.
+ * configuración que el panel puede exponer sin riesgo: alias de modelo, los 5
+ * modos, cabeza del schema (Alembic) y versión de build. Cero datos de negocio ni
+ * de usuario. El modelo de embeddings y los proveedores van en `AiProviders`.
  *
  * Los valores técnicos (versión de schema, build) van con `tabular-nums` para
  * que las revisiones alineen. Los modos conocidos se renderizan con `ModeChip`
  * (sus tints oficiales); cualquier string no reconocido cae a label plano —
  * honestidad: no fingimos que un modo desconocido es uno de los cinco.
  */
-export function RuntimeInventory({
-  models,
-  modes,
-  schemaHead,
-  embedder,
-  reranker,
-  buildVersion,
-  className,
-}: Props) {
+export function RuntimeInventory({ models, modes, schemaHead, buildVersion, className }: Props) {
   return (
     <Card className={cn("flex flex-col gap-5", className)}>
       <header className="flex flex-col gap-1">
@@ -85,14 +73,6 @@ export function RuntimeInventory({
 
         <Row label="Schema head (Alembic)">
           <span className="text-body-sm tabular-nums text-[var(--color-ink)]">{schemaHead}</span>
-        </Row>
-
-        <Row label="Embedder">
-          <span className="text-body-sm tabular-nums text-[var(--color-ink)]">{embedder}</span>
-        </Row>
-
-        <Row label="Reranker">
-          <span className="text-body-sm tabular-nums text-[var(--color-ink)]">{reranker}</span>
         </Row>
 
         <Row label="Build" last>
