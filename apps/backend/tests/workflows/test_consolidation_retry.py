@@ -10,6 +10,7 @@ programado, sin red.
   recuerdo se guarda UNA vez, en el intento que anda.
 - Un 401 es permanente: un solo intento, sin reintento y sin escribir.
 - Una respuesta degradada es transitoria: se reintenta.
+- Un intento que vence el soft limit (un proveedor lento) se reintenta igual.
 - Agotados los reintentos, la task termina sin propagar y loguea sin contenido.
 - Cada intento cierra el cliente HTTP que armo.
 - El chat no cambia: el mismo 429 le llega como respuesta degradada.
@@ -26,6 +27,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
+from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
@@ -234,6 +236,24 @@ def test_a_degraded_response_is_retried(semantic_add: AsyncMock) -> None:
     semantic_add.assert_awaited_once()
 
 
+def test_an_attempt_past_the_soft_time_limit_is_retried(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Un proveedor lento que hace vencer el soft limit no pierde el turno: se reintenta."""
+    body = AsyncMock(side_effect=[SoftTimeLimitExceeded(), 1])
+
+    with (
+        patch.object(consolidation, "_async_consolidate", body),
+        caplog.at_level(logging.INFO),
+    ):
+        result = consolidate_turn.apply(kwargs=_TURN)
+
+    assert result.state == "SUCCESS"
+    assert body.await_count == 2
+    assert any("intento=1: SoftTimeLimitExceeded, se reintenta" in m for m in caplog.messages)
+    assert any("applied=1" in m for m in caplog.messages)
+
+
 def test_gives_up_after_the_last_retry_without_propagating(
     semantic_add: AsyncMock, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -271,8 +291,14 @@ def test_the_worker_builds_the_llm_client_without_degrading() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_consolidate_session_is_retried_on_a_transient_error() -> None:
-    body = AsyncMock(side_effect=[LlmTransientError("HTTP 503"), 1])
+@pytest.mark.parametrize(
+    "failure",
+    [LlmTransientError("HTTP 503"), SoftTimeLimitExceeded()],
+    ids=["transient-error", "soft-time-limit"],
+)
+def test_consolidate_session_is_retried(failure: Exception) -> None:
+    """El cierre de sesion se reintenta como el turno: falla transitoria o soft limit."""
+    body = AsyncMock(side_effect=[failure, 1])
 
     with patch.object(consolidation, "_async_consolidate_session", body):
         result = consolidate_session.apply(

@@ -28,10 +28,11 @@ Reglas no negociables (ADR-010 + critica adversarial M8):
    MISMA transaccion (``_turn_marker.claim_turn``). Una re-entrega del mismo turno
    encuentra la marca y no vuelve a escribir.
 8. Reintentos ante fallas transitorias del proveedor (``LlmTransientError``: 429,
-   5xx, timeout, breaker abierto, respuesta degradada): Celery reprograma la task
-   con backoff exponencial y jitter, y la ackea tarde (ver
-   ``_CONSOLIDATION_TASK_OPTIONS``). Lo permanente (credencial rechazada, request
-   invalido) no se reintenta: el motor lo descarta con un log sin contenido.
+   5xx, timeout, breaker abierto, respuesta degradada) y ante un intento que vence
+   el soft limit (``SoftTimeLimitExceeded``): Celery reprograma la task con backoff
+   exponencial y jitter, y la ackea tarde (ver ``_CONSOLIDATION_TASK_OPTIONS``). Lo
+   permanente (credencial rechazada, request invalido) no se reintenta: el motor lo
+   descarta con un log sin contenido.
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ from typing import Any
 from uuid import UUID
 
 from celery import Task
+from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -381,9 +383,13 @@ async def _async_consolidate(
 #
 # Limites de tiempo propios: el soft limit global (90s) es igual al presupuesto del
 # cliente LLM (``PROVIDER_TOTAL_BUDGET_S``), asi que saltaria antes de que el cliente
-# corte con ``LlmTransientError``, y ``SoftTimeLimitExceeded`` no se reintenta. 180s
-# cubren el presupuesto del LLM mas los embeddings de las ops; el hard limit (210s)
-# mata la task si el soft no alcanzo a cortarla.
+# corte con ``LlmTransientError``. 180s cubren ese presupuesto mas los embeddings de
+# unas pocas ops (``EMBEDDING_TIMEOUT_S``, 30s por request): un proveedor colgado
+# corta antes por timeout, como ``LlmTransientError``. Uno lento que igual contesta
+# puede pasarse (muchas ops con embeddings lentos): ``SoftTimeLimitExceeded`` corta
+# el intento y la task lo reintenta como una falla transitoria; re-ejecutar no
+# duplica (ver arriba). El hard limit (210s) mata la task si el soft no alcanzo a
+# cortarla.
 _CONSOLIDATION_TASK_OPTIONS: dict[str, Any] = {
     "autoretry_for": (LlmTransientError,),
     "max_retries": 5,
@@ -397,15 +403,22 @@ _CONSOLIDATION_TASK_OPTIONS: dict[str, Any] = {
 
 
 def _retry_or_give_up(
-    task: Task, exc: LlmTransientError, *, label: str, user_id: str, session_id: str
+    task: Task,
+    exc: LlmTransientError | SoftTimeLimitExceeded,
+    *,
+    label: str,
+    user_id: str,
+    session_id: str,
 ) -> None:
     """Re-levanta la falla transitoria para que Celery reintente, o la registra al agotar.
 
-    Con reintentos disponibles levanta un ``LlmTransientError`` nuevo y sin cadena
-    (``from None``): ``autoretry_for`` reprograma la task y ni el log del reintento ni
-    el backend de resultados guardan el error original. Agotados, NO levanta: una task
-    fallida hace que Celery loguee sus kwargs (el turno del usuario, regla #4) en el
-    ``extra`` del log. Se loguean solo los ids, el intento y el tipo del error.
+    La falla es del proveedor (``LlmTransientError``) o un intento que vencio el soft
+    limit (``SoftTimeLimitExceeded``). Con reintentos disponibles levanta un
+    ``LlmTransientError`` nuevo y sin cadena (``from None``): ``autoretry_for``
+    reprograma la task y ni el log del reintento ni el backend de resultados guardan el
+    error original. Agotados, NO levanta: una task fallida hace que Celery loguee sus
+    kwargs (el turno del usuario, regla #4) en el ``extra`` del log. Se loguean solo los
+    ids, el intento y el tipo del error.
     """
     attempt = task.request.retries + 1
     max_retries = task.max_retries
@@ -452,10 +465,10 @@ def consolidate_turn(
     el wire un ``AsyncSession``, un ``LLMClient``, un ``UUID`` ni un store.
 
     El cuerpo async se corre con ``asyncio.run`` (worker prefork de Celery). Una
-    falla transitoria del proveedor se re-levanta para que Celery reintente (ver
-    ``_CONSOLIDATION_TASK_OPTIONS``); cualquier otro fallo, o la falla transitoria con
-    los reintentos agotados, se loguea SIN el contenido del usuario (regla #4) y NO
-    tumba el worker.
+    falla transitoria del proveedor, o un intento que vence el soft limit, se
+    re-levanta para que Celery reintente (ver ``_CONSOLIDATION_TASK_OPTIONS``);
+    cualquier otro fallo, o la falla transitoria con los reintentos agotados, se
+    loguea SIN el contenido del usuario (regla #4) y NO tumba el worker.
 
     Args:
         user_id: UUID del usuario como string (JSON-safe).
@@ -487,7 +500,7 @@ def consolidate_turn(
             session_id,
             applied,
         )
-    except LlmTransientError as exc:
+    except (LlmTransientError, SoftTimeLimitExceeded) as exc:
         _retry_or_give_up(
             self, exc, label="consolidate_turn", user_id=user_id, session_id=session_id
         )
@@ -751,11 +764,12 @@ def consolidate_session(
     wire un ``AsyncSession``, un ``LLMClient``, un ``UUID`` ni un store.
 
     El cuerpo async se corre con ``asyncio.run`` (worker prefork de Celery). Una falla
-    transitoria del proveedor se re-levanta para que Celery reintente (mismos
-    ``_CONSOLIDATION_TASK_OPTIONS`` que ``consolidate_turn``: el resumen y la purga van
-    en un solo commit y un episodio existente corta, asi que re-ejecutar no duplica);
-    cualquier otro fallo, o la falla transitoria con los reintentos agotados, se loguea
-    SIN el contenido del usuario (regla #4) y NO tumba el worker.
+    transitoria del proveedor, o un intento que vence el soft limit, se re-levanta para
+    que Celery reintente (mismos ``_CONSOLIDATION_TASK_OPTIONS`` que
+    ``consolidate_turn``: el resumen y la purga van en un solo commit y un episodio
+    existente corta, asi que re-ejecutar no duplica); cualquier otro fallo, o la falla
+    transitoria con los reintentos agotados, se loguea SIN el contenido del usuario
+    (regla #4) y NO tumba el worker.
 
     Args:
         user_id: UUID del usuario como string (JSON-safe).
@@ -779,7 +793,7 @@ def consolidate_session(
             session_id,
             created,
         )
-    except LlmTransientError as exc:
+    except (LlmTransientError, SoftTimeLimitExceeded) as exc:
         _retry_or_give_up(
             self, exc, label="consolidate_session", user_id=user_id, session_id=session_id
         )
