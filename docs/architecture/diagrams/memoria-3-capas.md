@@ -37,13 +37,14 @@ Hechos persistentes sobre el usuario y su mundo.
 - "Mateo trabaja en X", "Mateo estudia Y en la UBA".
 - Engine: in-house (ADR-010). Cifrado AES-256-GCM per-user; embeddings bge-m3 en pgvector.
 - Store: `semantic_memory` (Postgres + pgvector).
-- Embedding: bge-m3.
+- Embedding: bge-m3 por API, de 1024 dimensiones (ADR-028 D4).
 
 ### Episódica
 Resúmenes de conversaciones pasadas, recuperables por contexto.
 - "Hace dos semanas Mateo estaba preparando un parcial de cálculo".
 - Store: `episodic_memory` (Postgres + pgvector + JSONB).
-- Resumen generado por Qwen al cerrar la conversación.
+- Resumen generado por el alias `agente` en el worker
+  (`consolidate_session`) al cerrar la sesión.
 
 ### Procedural
 Preferencias y patrones de comportamiento.
@@ -74,7 +75,8 @@ capa sagrada** y es distinta de las 3 capas y del `audit_log`.
 
 ## Reglas
 
-- **Solo Qwen escribe memoria.** Gemma solo lee.
+- **Solo el alias `agente` escribe memoria** (en el chat con las tools
+  `memory.*` y en la consolidación). `conversacional` solo lee.
 - **Consolidación siempre async** vía Celery, fuera del path de
   respuesta.
 - Las tres tablas son **sagradas** (regla #3 de `AGENTS.md`):
