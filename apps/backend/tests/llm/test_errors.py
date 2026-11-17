@@ -19,6 +19,7 @@ from app.llm.errors import (
     LlmProviderRejectedError,
     LlmRateLimitError,
     LlmTimeoutError,
+    LlmTransientError,
     LlmUnavailableError,
     MemoryRetrievalError,
     ModelNotServedError,
@@ -28,6 +29,7 @@ from app.llm.errors import (
 )
 
 _ALL_ERRORS = [
+    LlmTransientError,
     LlmTimeoutError,
     LlmUnavailableError,
     LlmOverloadedError,
@@ -83,6 +85,39 @@ def test_transient_vs_permanent_disjoint() -> None:
     permanent = LlmBadRequestError()
     assert not isinstance(transient, LlmBadRequestError)
     assert not isinstance(permanent, (LlmTimeoutError, LlmUnavailableError))
+
+
+_TRANSIENT_ERRORS = [LlmTimeoutError, LlmUnavailableError, LlmOverloadedError, LlmRateLimitError]
+_NON_TRANSIENT_ERRORS = [
+    LlmBadRequestError,
+    LlmContextOverflowError,
+    ModelNotServedError,
+    LlmAuthError,
+    LlmProviderRejectedError,
+    EmbeddingDimensionError,
+    ToolParsingError,
+    ToolExecutionError,
+    MemoryRetrievalError,
+]
+
+
+@pytest.mark.parametrize("error_cls", _TRANSIENT_ERRORS)
+def test_transient_errors_share_a_root(error_cls: type[LlmError]) -> None:
+    """Timeout, caida, sobrecarga y 429 son ``LlmTransientError``: una clase para reintentar."""
+    assert issubclass(error_cls, LlmTransientError)
+
+
+@pytest.mark.parametrize("error_cls", _NON_TRANSIENT_ERRORS)
+def test_permanent_and_semantic_errors_are_not_transient(error_cls: type[LlmError]) -> None:
+    """Un error permanente o semantico no se reintenta: no hereda de ``LlmTransientError``."""
+    assert not issubclass(error_cls, LlmTransientError)
+
+
+def test_transient_root_has_a_fixed_label() -> None:
+    """La raiz se levanta sola (cadena agotada): etiqueta fija, sin contenido del usuario."""
+    err = LlmTransientError("cadena agotada")
+    assert str(err) == "falla transitoria del proveedor LLM: cadena agotada"
+    assert isinstance(err, LlmError)
 
 
 def test_rate_limit_is_overloaded_with_retry_after() -> None:
