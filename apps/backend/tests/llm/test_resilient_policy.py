@@ -2,10 +2,10 @@
 
 Complementa ``test_resilient.py`` con lo que agrega un proveedor por API: la
 credencial rechazada o un 4xx propio del proveedor (sin reintento, pasa al respaldo),
-el 429 con ``Retry-After`` medido contra el presupuesto global, qué errores abren el
-breaker y cuáles no, la prueba HALF_OPEN que se cierra con cualquier respuesta del
-proveedor, el corte del presupuesto que cuenta como caída y el log del candidato
-descartado.
+qué errores abren el breaker y cuáles no, la prueba HALF_OPEN que se cierra con
+cualquier respuesta del proveedor, el corte del presupuesto que cuenta como caída y el
+log del candidato descartado. El 429 y la sobrecarga van en
+``test_resilient_rate_limit.py``.
 
 Mismos dobles que ``test_resilient.py``: ``FakeLlmClient`` programable, ``sleep`` y
 ``clock`` fakes. ``_AdvancingSleep`` además avanza el reloj, así el presupuesto que
@@ -150,90 +150,6 @@ async def test_provider_errors_everywhere_degrade() -> None:
 
     assert result.finish_reason == "degraded"
     assert (len(primary.complete_calls), len(secondary.complete_calls)) == (1, 1)
-
-
-# ---------- 429 con Retry-After contra el presupuesto ----------
-
-
-async def test_rate_limit_waits_retry_after_within_budget() -> None:
-    primary, secondary = _fake(), _fake()
-    primary.queue_error(LlmRateLimitError("HTTP 429", retry_after_s=7.0))
-    primary.queue_result(_result("después de esperar"))
-    clock = _Clock()
-    sleep = _AdvancingSleep(clock)
-    resilient = _resilient([primary, secondary], clock=clock, sleep=sleep)
-
-    result = await _complete(resilient)
-
-    assert result.text == "después de esperar"
-    assert sleep.delays == [7.0]
-    assert secondary.complete_calls == []
-
-
-async def test_rate_limit_waits_while_budget_lasts_then_uses_secondary() -> None:
-    """40 s entran dos veces en 90 s; la tercera vez quedan 10 y se pasa al respaldo."""
-    primary, secondary = _fake(), _fake()
-    for _ in range(3):
-        primary.queue_error(LlmRateLimitError("HTTP 429", retry_after_s=40.0))
-    secondary.queue_result(_result("desde el respaldo"))
-    clock = _Clock()
-    sleep = _AdvancingSleep(clock)
-    resilient = _resilient([primary, secondary], clock=clock, sleep=sleep, max_attempts=4)
-
-    result = await _complete(resilient)
-
-    assert result.text == "desde el respaldo"
-    assert sleep.delays == [40.0, 40.0]
-    assert len(primary.complete_calls) == 3
-
-
-async def test_rate_limit_beyond_budget_goes_straight_to_secondary() -> None:
-    primary, secondary = _fake(), _fake()
-    primary.queue_error(LlmRateLimitError("HTTP 429", retry_after_s=120.0))
-    secondary.queue_result(_result("desde el respaldo"))
-    clock = _Clock()
-    sleep = _AdvancingSleep(clock)
-    resilient = _resilient([primary, secondary], clock=clock, sleep=sleep)
-
-    result = await _complete(resilient)
-
-    assert result.text == "desde el respaldo"
-    assert sleep.delays == []
-    assert len(primary.complete_calls) == 1
-
-
-async def test_rate_limit_on_last_attempt_does_not_wait() -> None:
-    primary, secondary = _fake(), _fake()
-    primary.queue_error(LlmRateLimitError("HTTP 429", retry_after_s=5.0))
-    primary.queue_error(LlmRateLimitError("HTTP 429", retry_after_s=5.0))
-    secondary.queue_result(_result("desde el respaldo"))
-    clock = _Clock()
-    sleep = _AdvancingSleep(clock)
-    resilient = _resilient([primary, secondary], clock=clock, sleep=sleep, max_attempts=2)
-
-    result = await _complete(resilient)
-
-    assert result.text == "desde el respaldo"
-    assert sleep.delays == [5.0]
-
-
-@pytest.mark.parametrize(
-    "error",
-    [LlmRateLimitError("HTTP 429", retry_after_s=None), LlmOverloadedError("HTTP 429")],
-)
-async def test_overload_without_retry_after_uses_backoff(error: LlmError) -> None:
-    primary = _fake()
-    primary.queue_error(error)
-    primary.queue_result(_result("recuperado"))
-    clock = _Clock()
-    sleep = _AdvancingSleep(clock)
-    resilient = _resilient([primary], clock=clock, sleep=sleep)
-
-    result = await _complete(resilient)
-
-    assert result.text == "recuperado"
-    assert len(sleep.delays) == 1
-    assert 0.5 <= sleep.delays[0] <= 1.0  # backoff del primer intento + jitter
 
 
 # ---------- qué abre el breaker ----------
