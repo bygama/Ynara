@@ -749,7 +749,7 @@ Cerradas por @bygama en [`RESPUESTAS-CONTRATO-CHAT.md`](./RESPUESTAS-CONTRATO-CH
 - [`apps/backend/app/llm/schemas.py`](../../apps/backend/app/llm/schemas.py) — **contrato fuente** (ChatRequest/Response, ChatMessage, ToolCall, CompletionChunk).
 - [`docs/planning/RESPUESTAS-CONTRATO-CHAT.md`](./RESPUESTAS-CONTRATO-CHAT.md) — **respuestas de contrato cerradas** (@bygama, PR #61): streaming, eventos, `Action.result`, markdown, límite.
 - [`apps/backend/docs/ENDPOINTS.md`](../../apps/backend/docs/ENDPOINTS.md) — spec de `POST /v1/chat` + `POST /v1/chat/stream` (M9).
-- [`docs/planning/LLM-INFERENCE-INTEGRATION.md`](./LLM-INFERENCE-INTEGRATION.md) — milestones del backend LLM (M8 router, M9 endpoint).
+- [`docs/planning/archive/LLM-INFERENCE-INTEGRATION.md`](./archive/LLM-INFERENCE-INTEGRATION.md) — milestones del backend LLM (M8 router, M9 endpoint).
 - [`docs/product/MODES.md`](../product/MODES.md) — definición + tono de los 5 modos.
 - [`docs/architecture/adrs/ADR-002-gemma-qwen-dual-stack.md`](../architecture/adrs/ADR-002-gemma-qwen-dual-stack.md) — Gemma lee / Qwen escribe + tools.
 - [`ynara.config.json`](../../ynara.config.json) — config canónica de modos.
