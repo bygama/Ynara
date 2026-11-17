@@ -12,7 +12,6 @@ import type { PlaygroundInT } from "@/features/playground/schemas";
 import { env } from "@/lib/env";
 import type { RangeId as RangeIdStore } from "@/stores/range";
 import { auditPage } from "./audit";
-import { connectivityFixture } from "./connectivity";
 import { moatFixture } from "./moat";
 import { modesFixture } from "./modes";
 import { overviewFixture } from "./overview";
@@ -141,9 +140,6 @@ export const adminHandlers = [
 
   // GET /v1/admin/serving  (sin range: runtime/config) — backend "api" real.
   http.get(apiUrl("/v1/admin/serving"), () => HttpResponse.json(servingFixture())),
-
-  // GET /v1/admin/connectivity  (sin range: estado del tailnet + URLs para compartir)
-  http.get(apiUrl("/v1/admin/connectivity"), () => HttpResponse.json(connectivityFixture())),
 
   // POST /v1/admin/playground — eco determinista con latencia simulada.
   http.post(apiUrl("/v1/admin/playground"), async ({ request }) => {
