@@ -26,7 +26,10 @@ El breaker de cada candidato abre solo por caidas (timeout, 5xx, red:
 ``_BREAKER_ERRORS``) o porque el presupuesto global corto su request. Cualquier
 otra respuesta (error del request, credencial, 429, respuesta invalida) quiere
 decir que el proveedor contesto: cuenta como exito y cierra la prueba
-HALF_OPEN si la habia.
+HALF_OPEN si la habia. Un candidato que termina devolviendo un resultado
+siempre cuenta como exito, aunque un intento anterior haya sido una caida: el
+proveedor ya respondio, y una prueba HALF_OPEN que responde en el reintento
+vuelve a ``CLOSED`` (contrato de ``CircuitBreaker``).
 
 El respaldo es otro cliente del pool: otra instancia de serving o, con
 ADR-028, otro proveedor por API (regla #4b). ``clock`` y ``sleep`` son
@@ -313,7 +316,7 @@ class ResilientClient:
                     break
                 await self._sleep(delay)
             else:
-                tally.resolve()
+                tally.succeed()
                 return result
         tally.resolve()
         logger.warning(
@@ -455,8 +458,11 @@ class ResilientClient:
 class _BreakerTally:
     """Lo que el candidato en curso de un ``complete()`` le hace a su breaker.
 
-    Se resuelve UNA vez por candidato: falla si alguno de sus intentos fue una
-    caida (``_BREAKER_ERRORS``) o si el presupuesto global lo corto; si no, exito,
+    Se resuelve UNA vez por candidato. Si devuelve un resultado, exito
+    (``succeed``), aunque un intento anterior haya sido una caida: el proveedor
+    respondio. Si se agota sin resultado o re-lanza un error del request
+    (``resolve``), falla si alguno de sus intentos fue una caida
+    (``_BREAKER_ERRORS``) o si el presupuesto global lo corto; si no, exito,
     porque el proveedor respondio (aunque haya sido con un error del request, de
     la credencial o un 429). Resolver siempre cierra tambien la prueba HALF_OPEN
     que ``allow()`` pudo haber abierto: sin eso el candidato quedaria salteado
@@ -475,6 +481,11 @@ class _BreakerTally:
     def note(self, exc: LlmError) -> None:
         if isinstance(exc, _BREAKER_ERRORS):
             self._failed = True
+
+    def succeed(self) -> None:
+        breaker, self._breaker = self._breaker, None
+        if breaker is not None:
+            breaker.record_success()
 
     def resolve(self, *, cut: bool = False) -> None:
         breaker, self._breaker = self._breaker, None
