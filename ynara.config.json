@@ -5,63 +5,46 @@
   "description": "Asistente personal adaptativo con memoria propia",
   "modes": {
     "productividad": {
-      "model": "qwen-3.5-9b",
+      "model": "agente",
       "memory_layers": ["semantic", "episodic"],
       "tools_enabled": ["calendar", "reminder", "memory", "task"],
       "tone": "neutro-eficaz"
     },
     "estudio": {
-      "model": "gemma-4-12b",
+      "model": "conversacional",
       "memory_layers": ["episodic", "procedural"],
       "tools_enabled": [],
       "tone": "encouragement"
     },
     "bienestar": {
-      "model": "gemma-4-12b",
+      "model": "conversacional",
       "memory_layers": ["procedural", "semantic"],
       "tools_enabled": [],
       "tone": "casual-empatico"
     },
     "vida": {
-      "model": "gemma-4-12b",
+      "model": "conversacional",
       "memory_layers": ["procedural"],
       "tools_enabled": [],
       "tone": "casual-rioplatense"
     },
     "memoria": {
-      "model": "qwen-3.5-9b",
+      "model": "agente",
       "memory_layers": ["episodic", "semantic", "procedural"],
       "tools_enabled": ["memory"],
       "tone": "neutro-eficaz"
     }
   },
   "models": {
-    "gemma-4-12b": {
+    "conversacional": {
       "role": "conversational",
       "writes_memory": false,
-      "served_name": "gemma4",
-      "context_window": 128000
+      "context_tokens": 8192
     },
-    "qwen-3.5-9b": {
+    "agente": {
       "role": "agent",
       "writes_memory": true,
-      "served_name": "qwen",
-      "context_window": 262144
-    }
-  },
-  "llm": {
-    "serving": {
-      "tool_parsers": {
-        "gemma-4-12b": "gemma4",
-        "qwen-3.5-9b": "hermes"
-      },
-      "quantization": "awq_marlin",
-      "kv_cache_dtype": "fp8",
-      "max_model_len": {
-        "gemma-4-12b": 8192,
-        "qwen-3.5-9b": 32768
-      },
-      "request_timeout_s": 120
+      "context_tokens": 32768
     }
   },
   "memory": {
