@@ -466,7 +466,7 @@ async def admin_playground_agent(
     try:
         loop_result = await run_tool_loop(
             llm_client=llm_client,
-            served_name=model_cfg.served_name,
+            model=model_cfg.served_name,
             messages=messages,
             specs=specs,
             registries=(default_reg, None),  # None = SIN memory_registry = imposible escribir DB

@@ -164,13 +164,13 @@ def test_estimate_tokens_empty_returns_one() -> None:
 
 def test_context_budget_subtracts_system_and_reserve() -> None:
     prompt = "x" * 300
-    budget = context_budget(max_model_len=4096, system_prompt=prompt)
+    budget = context_budget(context_tokens=4096, system_prompt=prompt)
     assert budget == 4096 - estimate_tokens(prompt) - COMPLETION_RESERVE_TOKENS
 
 
 def test_context_budget_floor_zero() -> None:
     # Ventana minuscula + prompt enorme: el presupuesto cae a 0, nunca negativo.
-    assert context_budget(max_model_len=10, system_prompt="x" * 5000) == 0
+    assert context_budget(context_tokens=10, system_prompt="x" * 5000) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -961,7 +961,7 @@ def test_trim_history_keeps_all_when_budget_large() -> None:
     """Ventana enorme -> se conserva TODO el historial, en el mismo orden cronológico."""
     history = _hist(4)
     result = trim_history_to_budget(
-        history, max_model_len=100_000, system_prompt="sys", current_user="hola"
+        history, context_tokens=100_000, system_prompt="sys", current_user="hola"
     )
     assert result == history
 
@@ -970,23 +970,24 @@ def test_trim_history_drops_oldest_keeps_recent_chronological() -> None:
     """Ventana chica -> se conservan los MÁS RECIENTES (turnos completos), orden cronológico.
 
     Cada msg cuesta 20 tokens (60 // 3). reserved = est("")=1 + est("")=1 + 512 = 514;
-    con max_model_len=564 el presupuesto es 50 -> entran 2 (40), el 3ro (60) no.
+    con context_tokens=564 el presupuesto es 50 -> entran 2 (40), el 3ro (60) no.
     """
     history = _hist(4, length=60)
-    result = trim_history_to_budget(history, max_model_len=564, system_prompt="", current_user="")
+    result = trim_history_to_budget(history, context_tokens=564, system_prompt="", current_user="")
     assert result == history[2:]  # los últimos 2, en orden cronológico
 
 
 def test_trim_history_empty_returns_empty() -> None:
     assert (
-        trim_history_to_budget([], max_model_len=100_000, system_prompt="s", current_user="u") == []
+        trim_history_to_budget([], context_tokens=100_000, system_prompt="s", current_user="u")
+        == []
     )
 
 
 def test_trim_history_zero_budget_returns_empty() -> None:
     """Ventana más chica que la reserva -> presupuesto 0 -> sin historial (no desborda)."""
     result = trim_history_to_budget(
-        _hist(3), max_model_len=100, system_prompt="s", current_user="u"
+        _hist(3), context_tokens=100, system_prompt="s", current_user="u"
     )
     assert result == []
 
@@ -1008,7 +1009,7 @@ def test_trim_history_logs_debug_when_most_recent_exceeds_budget(
     with caplog.at_level(logging.DEBUG, logger="app.llm.context"):
         result = trim_history_to_budget(
             history,
-            max_model_len=600,  # reserva > budget tras descontar system + user + COMPLETION
+            context_tokens=600,  # reserva > budget tras descontar system + user + COMPLETION
             system_prompt="",
             current_user="",
         )
@@ -1032,7 +1033,7 @@ def test_trim_history_no_log_when_some_fit(caplog: pytest.LogCaptureFixture) -> 
 
     with caplog.at_level(logging.DEBUG, logger="app.llm.context"):
         result = trim_history_to_budget(
-            history, max_model_len=100_000, system_prompt="", current_user=""
+            history, context_tokens=100_000, system_prompt="", current_user=""
         )
 
     assert len(result) > 0

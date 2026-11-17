@@ -104,7 +104,7 @@ async def _execute_anywhere(
 async def run_tool_loop(
     *,
     llm_client: object,
-    served_name: str,
+    model: str,
     messages: list[ChatMessage],
     specs: list[ToolSpec],
     registries: tuple[ToolRegistry, ToolRegistry | None],
@@ -115,7 +115,7 @@ async def run_tool_loop(
     """Loop principal de inferencia + ejecucion de tools.
 
     Por cada iteracion:
-    1. Llama a ``llm_client.complete(model=served_name, messages=messages,
+    1. Llama a ``llm_client.complete(model=model, messages=messages,
        tools=specs or None)``.
     2. Termina si no hay tool_calls O si finish_reason es terminal
        (``stop`` / ``length`` / ``degraded``).
@@ -134,8 +134,8 @@ async def run_tool_loop(
 
     Args:
         llm_client: Implementacion de ``LLMClient`` (real o fake).
-        served_name: ``served_name`` del modelo (ej. ``'qwen'`` o ``'gemma4'``).
-            Siempre el ``served_name``, NUNCA la key interna (decision #5).
+        model: Modelo que se le pide a ``llm_client.complete``: el del modo, que
+            resuelve el caller desde la config (decision #5).
         messages: Historial inicial (system + user actual). Se muta con los
             turnos del tool loop; el caller puede pasar una copia si necesita
             preservar el original.
@@ -169,7 +169,7 @@ async def run_tool_loop(
 
     for _ in range(max_iterations):
         result = await llm_client.complete(
-            model=served_name,
+            model=model,
             messages=messages,
             tools=tool_specs,
             thinking=thinking,
@@ -252,7 +252,7 @@ async def run_tool_loop(
         # el content VACIO -> con think:false la confirmacion cae en content. La forzada va
         # SIN tools, asi que rutea por el /api/chat nativo de Ollama que honra think:false.
         forced = await llm_client.complete(
-            model=served_name,
+            model=model,
             messages=messages,
             tools=None,
             thinking=False,

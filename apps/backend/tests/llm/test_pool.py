@@ -33,7 +33,7 @@ _QWEN_URL = "http://qwen:8002/v1"
 
 
 def _fake(model: str) -> FakeLlmClient:
-    return FakeLlmClient(served_models=frozenset({model}))
+    return FakeLlmClient(models=frozenset({model}))
 
 
 def _pool(clients: list[FakeLlmClient], strategy: RoutingStrategy | None = None) -> ClientPool:
@@ -207,7 +207,7 @@ class _Provider(FakeLlmClient):
     """``FakeLlmClient`` con ``name``, como ``OpenAICompatClient``."""
 
     def __init__(self, name: str, *models: str) -> None:
-        super().__init__(served_models=frozenset(models))
+        super().__init__(models=frozenset(models))
         self.name = name
 
 

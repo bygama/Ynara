@@ -45,7 +45,7 @@ def _result(text: str = "ok") -> CompletionResult:
 
 
 def _fake() -> FakeLlmClient:
-    return FakeLlmClient(served_models=frozenset({_MODEL}))
+    return FakeLlmClient(models=frozenset({_MODEL}))
 
 
 def _resilient(

@@ -190,7 +190,7 @@ async def route(
     mode_key = request.mode.value
     mode_cfg = cfg.modes[mode_key]
     model_cfg = cfg.model_for_mode(mode_key)
-    max_model_len = cfg.serving.max_model_len[model_cfg.key]
+    context_tokens = cfg.serving.max_model_len[model_cfg.key]
 
     # Modo de razonamiento por rol (ADR-012 D4): conversacional NUNCA piensa
     # (Gemma -> content vacio con thinking ON), agente SI (Qwen planifica tool
@@ -224,7 +224,7 @@ async def route(
     # (reserva el preambulo) y final_system se arma sobre la misma base. El preambulo va al
     # inicio para que el modelo ancle las fechas relativas antes de leer el resto.
     base_system = f"{now_preamble}\n\n{system_prompt}"
-    budget = context_budget(max_model_len=max_model_len, system_prompt=base_system)
+    budget = context_budget(context_tokens=context_tokens, system_prompt=base_system)
     context_block = await render_context_block(mem_ctx, query=request.text, budget_tokens=budget)
 
     # Si el bloque de memoria esta vacio, final_system es solo la base (preambulo + prompt).
@@ -246,7 +246,7 @@ async def route(
     # completion. messages = [system, *historial_recortado, user_actual].
     budgeted_history = trim_history_to_budget(
         history or [],
-        max_model_len=max_model_len,
+        context_tokens=context_tokens,
         system_prompt=final_system,
         current_user=request.text,
     )
@@ -273,7 +273,7 @@ async def route(
     try:
         loop_result = await run_tool_loop(
             llm_client=llm_client,
-            served_name=model_cfg.served_name,
+            model=model_cfg.served_name,
             messages=messages,
             specs=specs,
             registries=mem_ctx.registries,

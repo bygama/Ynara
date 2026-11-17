@@ -52,7 +52,7 @@ SESSION_ID = str(uuid.uuid4())
 
 def _make_llm_with_summary(summary: str, topics: dict | None = None) -> FakeLlmClient:
     """FakeLlmClient cuyo proximo ``complete`` devuelve un resumen JSON valido."""
-    client = FakeLlmClient(served_models=frozenset({"qwen"}))
+    client = FakeLlmClient(models=frozenset({"qwen"}))
     client.queue_result(
         CompletionResult(
             text=json.dumps({"summary": summary, "topics": topics or {}}),
@@ -254,7 +254,7 @@ class TestAsyncConsolidateSession:
         user = await _seed_user(db_session)
         cs = await _seed_session(db_session, user_id=user.id)
         await _seed_turns(db_session, user_id=user.id, session_id=cs.id)
-        client = FakeLlmClient(served_models=frozenset({"qwen"}))
+        client = FakeLlmClient(models=frozenset({"qwen"}))
         client.queue_result(
             CompletionResult(
                 text="esto no es json valido {",
