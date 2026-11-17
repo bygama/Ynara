@@ -7,7 +7,8 @@ proveedor: el resto del backend entra por ``app/llm/router.py`` y por los Protoc
 ``app/llm/clients/`` (``LLMClient``, ``EmbeddingClient``), donde también viven los
 clientes fake de dev y CI.
 
-``openai_compat.OpenAICompatClient`` es el cliente de chat (implementa ``LLMClient``).
+``openai_compat.OpenAICompatClient`` es el cliente de chat (implementa ``LLMClient``) y
+``embeddings.ApiEmbeddingClient``, el de embeddings (implementa ``EmbeddingClient``).
 Los módulos con ``_`` son helpers internos del paquete (mapeo de errores HTTP,
 traducción y streaming del wire de Chat Completions, nombres de tools, razonamiento
 inline); no se importan desde afuera.
