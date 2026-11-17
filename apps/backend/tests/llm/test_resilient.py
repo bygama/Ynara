@@ -582,7 +582,7 @@ async def test_stream_permanent_error_does_not_open_breaker() -> None:
     """SEC-R4-01: un error PERMANENTE en el stream (request invalido) NO abre el breaker.
 
     Espeja ``_try_candidate`` en el path de ``complete``, que re-lanza
-    ``_PERMANENT_ERRORS`` SIN ``record_failure``. Antes, ``_stream`` hacia
+    ``_REQUEST_ERRORS`` SIN ``record_failure``. Antes, ``_stream`` hacia
     ``except Exception: record_failure``, abriendo el breaker de una instancia sana por
     culpa de un request invalido (que luego ``complete`` saltearia).
     """
