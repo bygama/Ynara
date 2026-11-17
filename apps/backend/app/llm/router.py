@@ -66,7 +66,7 @@ Decisiones de diseno documentadas (M8 Ola 1 + Ola 2):
     degrada por su cuenta los transitorios (reintento y respaldo) y la credencial
     rechazada (respaldo sin reintento), pero RE-LANZA los errores del request
     (``LlmBadRequestError``/``LlmContextOverflowError`` y ``ModelNotServedError``:
-    sus ``_REQUEST_ERRORS``); un ``VllmClient`` pelado RE-LANZA todo. Asi la
+    sus ``REQUEST_ERRORS``); un ``VllmClient`` pelado RE-LANZA todo. Asi la
     promesa "``route()`` nunca propaga un error transitorio/permanente del modelo
     al caller" se cumple con cualquier cliente, y un deploy roto sigue siendo
     ruidoso.
@@ -265,7 +265,7 @@ async def route(
     # permanentes bad-request/overflow/auth, semanticos parse/exec) significa "el turno
     # no se pudo completar" -> fallback degradado. El ResilientClient degrada solo los
     # transitorios y la credencial rechazada, pero RE-LANZA los errores del request
-    # (bad-request/overflow y ModelNotServedError: sus _REQUEST_ERRORS) y un VllmClient
+    # (bad-request/overflow y ModelNotServedError: sus REQUEST_ERRORS) y un VllmClient
     # pelado RE-LANZA todo: este except es la red real. Se loguea SOLO
     # type(exc).__name__ (regla #4) para no degradar a ciegas.
     try:
