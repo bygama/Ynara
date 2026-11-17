@@ -7,6 +7,13 @@
 ## Convenciones
 
 - Naming: `namespace.action` (snake_case en ambos).
+- En la API del proveedor el punto no entra: cada `.` viaja como `__`
+  (`calendar__create_event`) y se revierte al parsear la respuesta
+  (`app/llm/clients/providers/_tool_names.py`, ADR-028 D3). Por eso el
+  nombre no puede traer `__` ni un `_` justo antes del `.`, y mapeado
+  tiene que cumplir `^[a-zA-Z0-9_-]{1,64}$`;
+  `tests/llm/test_provider_tool_names.py` lo verifica con todas las tools
+  del código.
 - Cada tool tiene su schema Pydantic en
   `app/llm/tools/<namespace>.py`.
 - Una tool no debe tener efectos colaterales fuera de los explícitos
