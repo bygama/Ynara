@@ -1,12 +1,11 @@
 """Panel admin interno (``/v1/admin/*``): subpaquete por superficie.
 
 Superficie de SOBERANÍA del operador, gateada con ``CurrentAdmin``. El router del panel
-se arma combinando 3 sub-routers, uno por superficie:
+se arma combinando 2 sub-routers, uno por superficie:
 
-- ``metrics``      — 5 GET de métricas de negocio (overview/users/modes/moat/audit,
+- ``metrics``    — 5 GET de métricas de negocio (overview/users/modes/moat/audit,
   delegan en ``AdminMetricsService``) + ``GET /admin/system`` (salud operacional).
-- ``playground``   — inventario de serving + 3 probes de LLM aislados (ADR-018/019).
-- ``connectivity`` — estado del tailnet + URLs para compartir el serving.
+- ``playground`` — inventario de serving + 3 probes de LLM aislados (ADR-018/019).
 
 Wiring sin cambios: ``app/main.py`` sigue haciendo ``from app.api.v1 import admin`` +
 ``app.include_router(admin.router, prefix="/v1", tags=["admin"])``; ``admin.router`` es el
@@ -21,9 +20,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.v1.admin import connectivity, metrics, playground
+from app.api.v1.admin import metrics, playground
 
 router = APIRouter()
 router.include_router(metrics.router)
 router.include_router(playground.router)
-router.include_router(connectivity.router)
