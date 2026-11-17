@@ -43,7 +43,8 @@ cat <<EOF
 
   Checklist:
     * Tu cuenta debe ser admin: users.is_admin=true, o tu UUID en ADMIN_BOOTSTRAP_IDS (apps/backend/.env).
-    * Ollama corriendo con los modelos (gemma4/qwen). LLM_BACKEND=vllm ya esta en tu .env.
+    * LLM_BACKEND=api y LLM_PROVIDERS en apps/backend/.env, con la LLM_API_KEY_<NAME> de cada proveedor.
+    * Hasta cerrar las compuertas de ADR-028 el proveedor recibe solo datos sinteticos: nada personal en el chat.
     * Tu amigo tiene que estar en el MISMO tailnet (invitalo desde la consola de Tailscale).
 
 EOF
