@@ -15,6 +15,7 @@ from app.llm.errors import (
     LlmContextOverflowError,
     LlmError,
     LlmOverloadedError,
+    LlmProviderRejectedError,
     LlmRateLimitError,
     LlmTimeoutError,
     LlmUnavailableError,
@@ -34,6 +35,7 @@ _ALL_ERRORS = [
     LlmContextOverflowError,
     ModelNotServedError,
     LlmAuthError,
+    LlmProviderRejectedError,
     ToolParsingError,
     ToolExecutionError,
     MemoryRetrievalError,
@@ -99,6 +101,18 @@ def test_auth_error_is_not_a_request_error() -> None:
     assert not isinstance(err, LlmBadRequestError)
     assert not isinstance(err, (LlmTimeoutError, LlmUnavailableError, LlmOverloadedError))
     assert str(err) == "credencial rechazada por el proveedor LLM: HTTP 401"
+
+
+def test_provider_rejected_is_not_a_request_error() -> None:
+    """Un 4xx propio del proveedor no es un request invalido: otro proveedor puede aceptarlo.
+
+    Si heredara de ``LlmBadRequestError``, el ``ResilientClient`` lo re-lanzaria sin
+    probar el respaldo.
+    """
+    err = LlmProviderRejectedError("HTTP 404")
+    assert not isinstance(err, (LlmBadRequestError, LlmAuthError))
+    assert not isinstance(err, (LlmTimeoutError, LlmUnavailableError, LlmOverloadedError))
+    assert str(err) == "request rechazado por el proveedor LLM: HTTP 404"
 
 
 class TestDegradedResponse:

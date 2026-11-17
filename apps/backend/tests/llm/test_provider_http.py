@@ -29,6 +29,7 @@ from app.llm.errors import (
     LlmContextOverflowError,
     LlmError,
     LlmOverloadedError,
+    LlmProviderRejectedError,
     LlmRateLimitError,
     LlmTimeoutError,
     LlmUnavailableError,
@@ -121,9 +122,18 @@ def test_rate_limit_is_overloaded() -> None:
         raise_for_provider_status(httpx.Response(429))
 
 
-@pytest.mark.parametrize("status", [404, 405, 409, 413])
-def test_other_4xx_is_generic_llm_error(status: int) -> None:
-    """Un 4xx sin mapeo propio queda como ``LlmError`` base (reintentable, con respaldo)."""
+@pytest.mark.parametrize("status", [402, 404, 405, 409, 410, 413, 415])
+def test_provider_specific_4xx_is_rejected_by_that_provider(status: int) -> None:
+    """Un 4xx propio del proveedor (modelo inexistente, límite, crédito): otro puede aceptarlo."""
+    with pytest.raises(LlmProviderRejectedError) as excinfo:
+        raise_for_provider_status(httpx.Response(status, json=_error_body("x")))
+    assert not isinstance(excinfo.value, LlmBadRequestError)
+    assert str(excinfo.value) == f"request rechazado por el proveedor LLM: HTTP {status}"
+
+
+@pytest.mark.parametrize("status", [408, 425])
+def test_4xx_that_asks_to_repeat_is_generic_llm_error(status: int) -> None:
+    """408 y 425 piden repetir el request: quedan como ``LlmError`` base (reintentable)."""
     with pytest.raises(LlmError) as excinfo:
         raise_for_provider_status(httpx.Response(status, json=_error_body("x")))
     assert type(excinfo.value) is LlmError
@@ -217,7 +227,7 @@ async def test_400_stream_not_read_is_bad_request() -> None:
 # ---------- regla #4a: el detail nunca trae el body ----------
 
 
-@pytest.mark.parametrize("status", [400, 401, 403, 429, 500])
+@pytest.mark.parametrize("status", [400, 401, 403, 404, 413, 429, 500])
 def test_detail_never_leaks_body(status: int) -> None:
     leaky = "Incorrect API key provided: sk-abc...wxyz. Tu mensaje era 'mi secreto 4111-1111'"
     response = httpx.Response(status, json=_error_body(leaky, code="context_length_exceeded"))
