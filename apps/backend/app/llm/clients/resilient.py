@@ -23,7 +23,7 @@ stdlib (regla M3: nada de tenacity/circuitbreaker):
    propaga una excepcion de infra al caller (UX: siempre algo coherente).
 
 El breaker de cada candidato abre solo por caidas (timeout, 5xx, red:
-``_BREAKER_ERRORS``) o porque el presupuesto global corto su request. Cualquier
+``BREAKER_ERRORS``) o porque el presupuesto global corto su request. Cualquier
 otra respuesta (error del request, credencial, 429, respuesta invalida) quiere
 decir que el proveedor contesto: cuenta como exito y cierra la prueba
 HALF_OPEN si la habia. Un candidato que termina devolviendo un resultado
@@ -34,26 +34,29 @@ vuelve a ``CLOSED`` (contrato de ``CircuitBreaker``).
 El respaldo es otro cliente del pool: otra instancia de serving o, con
 ADR-028, otro proveedor por API (regla #4b). ``clock`` y ``sleep`` son
 inyectables para tests sin tiempo real.
+
+Que errores se reintentan, cuanto se espera y que le toca al breaker vive en
+``_resilience.py``; aca queda el recorrido de los candidatos y el presupuesto.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import random
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 
+from app.llm.clients._resilience import (
+    BREAKER_ERRORS,
+    REQUEST_ERRORS,
+    BreakerTally,
+    RetryPolicy,
+)
 from app.llm.clients.base import LLMClient
 from app.llm.clients.circuit import CircuitBreaker
 from app.llm.clients.pool import ClientPool
 from app.llm.errors import (
-    LlmAuthError,
-    LlmBadRequestError,
     LlmError,
-    LlmRateLimitError,
-    LlmTimeoutError,
-    LlmUnavailableError,
     ModelNotServedError,
     degraded_response,
 )
@@ -66,25 +69,6 @@ from app.llm.schemas import (
 )
 
 logger = logging.getLogger(__name__)
-
-# Errores del REQUEST: se re-lanzan sin reintentar ni pasar al respaldo (bug del
-# request, no del proveedor: el respaldo fallaria igual). Incluye el contexto
-# excedido, subclase de ``LlmBadRequestError``.
-_REQUEST_ERRORS: tuple[type[LlmError], ...] = (
-    LlmBadRequestError,
-    ModelNotServedError,
-)
-
-# Errores PERMANENTES: no se reintentan contra el mismo candidato. Los del request
-# se re-lanzan; la credencial rechazada (401/403) es del proveedor, no del request,
-# asi que se pasa al siguiente candidato, que tiene la suya. Cualquier OTRO
-# ``LlmError`` (timeout, caida, sobrecarga, 4xx no mapeado, respuesta malformada,
-# tool parse error) se reintenta y, al agotarse, pasa al respaldo o degrada.
-_PERMANENT_ERRORS: tuple[type[LlmError], ...] = (*_REQUEST_ERRORS, LlmAuthError)
-
-# Errores que abren el breaker: el proveedor no respondio (timeout, 5xx, red). El
-# resto de los ``LlmError`` son respuestas del proveedor: no lo marcan como caido.
-_BREAKER_ERRORS: tuple[type[LlmError], ...] = (LlmTimeoutError, LlmUnavailableError)
 
 _DEFAULT_DEGRADED_TEXT = "Estoy con un problema tecnico, proba en un ratito."
 
@@ -134,12 +118,12 @@ class ResilientClient:
         ``CircuitBreaker`` por cada cliente del pool (uno por cliente, keyed
         por ``id(client)``).
         """
-        if max_attempts < 1:
-            raise ValueError("max_attempts tiene que ser al menos 1")
+        self._policy = RetryPolicy(
+            max_attempts=max_attempts,
+            base_backoff_s=base_backoff_s,
+            max_backoff_s=max_backoff_s,
+        )
         self._pool = pool
-        self._max_attempts = max_attempts
-        self._base_backoff_s = base_backoff_s
-        self._max_backoff_s = max_backoff_s
         self._total_budget_s = total_budget_s
         self._degraded_text = degraded_text
         self._clock = clock
@@ -203,7 +187,7 @@ class ResilientClient:
         ``thinking`` es passthrough puro hacia el cliente subyacente (ADR-012 D4):
         no hay logica nueva, solo se hila por toda la cadena de candidatos.
         """
-        tally = _BreakerTally()
+        tally = BreakerTally()
         deadline = self._clock() + self._total_budget_s
         try:
             async with asyncio.timeout(self._total_budget_s):
@@ -230,7 +214,7 @@ class ResilientClient:
 
     async def _run_candidates(
         self,
-        tally: _BreakerTally,
+        tally: BreakerTally,
         deadline: float,
         *,
         model: str,
@@ -271,7 +255,7 @@ class ResilientClient:
         self,
         client: LLMClient,
         breaker: CircuitBreaker,
-        tally: _BreakerTally,
+        tally: BreakerTally,
         deadline: float,
         *,
         model: str,
@@ -288,11 +272,11 @@ class ResilientClient:
         Una credencial rechazada o un 429 que no entra en el presupuesto cortan
         los reintentos de este candidato; el resto de los ``LlmError`` se
         reintentan con backoff. El breaker se resuelve siempre (ver
-        ``_BreakerTally``).
+        ``BreakerTally``).
         """
         tally.start(breaker)
         last_error: LlmError | None = None
-        for attempt in range(self._max_attempts):
+        for attempt in range(self._policy.max_attempts):
             try:
                 result = await client.complete(
                     model=model,
@@ -303,7 +287,7 @@ class ResilientClient:
                     thinking=thinking,
                     timeout_s=timeout_s,
                 )
-            except _REQUEST_ERRORS:
+            except REQUEST_ERRORS:
                 tally.resolve()
                 raise
             except LlmError as exc:
@@ -311,7 +295,7 @@ class ResilientClient:
                 # mapeado, respuesta sin choices, tool parse error).
                 tally.note(exc)
                 last_error = exc
-                delay = self._retry_delay(exc, attempt, deadline)
+                delay = self._policy.delay(exc, attempt, deadline - self._clock())
                 if delay is None:
                     break
                 await self._sleep(delay)
@@ -325,32 +309,6 @@ class ResilientClient:
             type(last_error).__name__,
         )
         return None
-
-    def _retry_delay(self, exc: LlmError, attempt: int, deadline: float) -> float | None:
-        """Espera antes de reintentar el mismo candidato, o ``None`` para pasar al siguiente.
-
-        Sin reintento tras el ultimo intento ni ante un error permanente (la
-        credencial no cambia entre intentos). Un 429 con ``Retry-After`` espera lo
-        que pidio el proveedor si entra en lo que queda del presupuesto; si no
-        entra, pasa al siguiente candidato en vez de gastar el presupuesto
-        esperando. El resto, backoff exponencial.
-        """
-        if isinstance(exc, _PERMANENT_ERRORS) or attempt + 1 >= self._max_attempts:
-            return None
-        if isinstance(exc, LlmRateLimitError) and exc.retry_after_s is not None:
-            remaining = deadline - self._clock()
-            return exc.retry_after_s if exc.retry_after_s <= remaining else None
-        return self._backoff_delay(attempt)
-
-    def _backoff_delay(self, attempt: int) -> float:
-        """Backoff exponencial cap a ``max_backoff_s`` mas jitter."""
-        exponential = self._base_backoff_s * (2**attempt)
-        capped = min(exponential, self._max_backoff_s)
-        # Jitter para descorrelacionar reintentos de instancias paralelas;
-        # no es uso criptografico, asi que ``random`` esta bien (noqa S311).
-        jitter = random.uniform(0.0, self._base_backoff_s)  # noqa: S311
-        # Cap duro: el jitter no debe empujar el delay por encima del techo.
-        return min(capped + jitter, self._max_backoff_s)
 
     def stream(
         self,
@@ -407,7 +365,7 @@ class ResilientClient:
         # puede haber consumido una prueba HALF_OPEN (``allow()`` pasa de OPEN a
         # HALF_OPEN y marca ``_probe_in_flight``), y sin cerrarla este candidato
         # quedaria salteado en ``complete()`` hasta reiniciar el proceso. Mismo
-        # criterio que ``_try_candidate``: una caida (``_BREAKER_ERRORS``) o un error
+        # criterio que ``_try_candidate``: una caida (``BREAKER_ERRORS``) o un error
         # que no es ``LlmError`` lo (re)abre; cualquier otro ``LlmError`` (request
         # invalido, credencial, 429) es una respuesta del proveedor y cuenta como
         # exito, asi un request invalido no abre el breaker de un proveedor sano.
@@ -427,7 +385,7 @@ class ResilientClient:
             ):
                 yield chunk
         except LlmError as exc:
-            if isinstance(exc, _BREAKER_ERRORS):
+            if isinstance(exc, BREAKER_ERRORS):
                 breaker.record_failure()
             else:
                 breaker.record_success()
@@ -453,48 +411,6 @@ class ResilientClient:
             if self._breakers[id(client)].allow():
                 return client
         return candidates[0]
-
-
-class _BreakerTally:
-    """Lo que el candidato en curso de un ``complete()`` le hace a su breaker.
-
-    Se resuelve UNA vez por candidato. Si devuelve un resultado, exito
-    (``succeed``), aunque un intento anterior haya sido una caida: el proveedor
-    respondio. Si se agota sin resultado o re-lanza un error del request
-    (``resolve``), falla si alguno de sus intentos fue una caida
-    (``_BREAKER_ERRORS``) o si el presupuesto global lo corto; si no, exito,
-    porque el proveedor respondio (aunque haya sido con un error del request, de
-    la credencial o un 429). Resolver siempre cierra tambien la prueba HALF_OPEN
-    que ``allow()`` pudo haber abierto: sin eso el candidato quedaria salteado
-    hasta reiniciar el proceso. Vive por llamada (no en el ``ResilientClient``)
-    para que dos ``complete()`` concurrentes no se pisen.
-    """
-
-    def __init__(self) -> None:
-        self._breaker: CircuitBreaker | None = None
-        self._failed = False
-
-    def start(self, breaker: CircuitBreaker) -> None:
-        self._breaker = breaker
-        self._failed = False
-
-    def note(self, exc: LlmError) -> None:
-        if isinstance(exc, _BREAKER_ERRORS):
-            self._failed = True
-
-    def succeed(self) -> None:
-        breaker, self._breaker = self._breaker, None
-        if breaker is not None:
-            breaker.record_success()
-
-    def resolve(self, *, cut: bool = False) -> None:
-        breaker, self._breaker = self._breaker, None
-        if breaker is None:
-            return
-        if self._failed or cut:
-            breaker.record_failure()
-        else:
-            breaker.record_success()
 
 
 def _client_label(client: LLMClient) -> str:
