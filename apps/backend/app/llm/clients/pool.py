@@ -117,10 +117,11 @@ def build_provider_pool(clients: Sequence[LLMClient]) -> ClientPool:
     """Arma el ``ClientPool`` con proveedores por API en orden de prioridad (ADR-028).
 
     El primero es el principal y los siguientes, el respaldo: el
-    ``ResilientClient`` pasa al siguiente ante una credencial rechazada, un 429
-    que no entra en el presupuesto, una caida (5xx, timeout, red) o un breaker
-    abierto. Cada proveedor anuncia sus alias (``serves_model``), asi que un
-    modelo que solo sirve el respaldo va directo a el.
+    ``ResilientClient`` pasa al siguiente ante una credencial rechazada, un request
+    que ese proveedor no acepta (404, 413, ...), un 429 que no entra en el
+    presupuesto, una caida (5xx, timeout, red) o un breaker abierto. Cada proveedor
+    anuncia sus alias (``serves_model``), asi que un modelo que solo sirve el
+    respaldo va directo a el.
 
     Levanta ``ValueError`` si la lista esta vacia, si el mismo cliente aparece dos
     veces (compartiria breaker y se reintentaria dos veces) o si dos proveedores

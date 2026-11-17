@@ -1,10 +1,11 @@
 """Política del ``ResilientClient`` ante proveedores por API (ADR-028).
 
 Complementa ``test_resilient.py`` con lo que agrega un proveedor por API: la
-credencial rechazada (sin reintento, pasa al respaldo), el 429 con ``Retry-After``
-medido contra el presupuesto global, qué errores abren el breaker y cuáles no, la
-prueba HALF_OPEN que se cierra con cualquier respuesta del proveedor, el corte del
-presupuesto que cuenta como caída y el log del candidato descartado.
+credencial rechazada o un 4xx propio del proveedor (sin reintento, pasa al respaldo),
+el 429 con ``Retry-After`` medido contra el presupuesto global, qué errores abren el
+breaker y cuáles no, la prueba HALF_OPEN que se cierra con cualquier respuesta del
+proveedor, el corte del presupuesto que cuenta como caída y el log del candidato
+descartado.
 
 Mismos dobles que ``test_resilient.py``: ``FakeLlmClient`` programable, ``sleep`` y
 ``clock`` fakes. ``_AdvancingSleep`` además avanza el reloj, así el presupuesto que
@@ -28,6 +29,7 @@ from app.llm.errors import (
     LlmContextOverflowError,
     LlmError,
     LlmOverloadedError,
+    LlmProviderRejectedError,
     LlmRateLimitError,
     LlmTimeoutError,
     LlmUnavailableError,
@@ -117,12 +119,14 @@ async def _complete(resilient: ResilientClient) -> CompletionResult:
     return await resilient.complete(model=_MODEL, messages=_messages())
 
 
-# ---------- credencial rechazada ----------
+# ---------- credencial rechazada o 4xx propio del proveedor ----------
 
 
-async def test_auth_error_is_not_retried_and_uses_secondary() -> None:
+@pytest.mark.parametrize("error", [LlmAuthError("HTTP 401"), LlmProviderRejectedError("HTTP 404")])
+async def test_provider_error_is_not_retried_and_uses_secondary(error: LlmError) -> None:
+    """La credencial o un 4xx propio del proveedor no cambian reintentando contra el mismo."""
     primary, secondary = _fake(), _fake()
-    primary.queue_error(LlmAuthError("HTTP 401"))
+    primary.queue_error(error)
     secondary.queue_result(_result("desde el respaldo"))
     clock = _Clock()
     sleep = _AdvancingSleep(clock)
@@ -131,15 +135,15 @@ async def test_auth_error_is_not_retried_and_uses_secondary() -> None:
     result = await _complete(resilient)
 
     assert result.text == "desde el respaldo"
-    assert len(primary.complete_calls) == 1  # sin reintentos con la misma credencial
+    assert len(primary.complete_calls) == 1  # sin reintentos contra el mismo proveedor
     assert sleep.delays == []
     assert _state(resilient, primary) is CircuitState.CLOSED  # contestó: no está caído
 
 
-async def test_auth_error_everywhere_degrades() -> None:
+async def test_provider_errors_everywhere_degrade() -> None:
     primary, secondary = _fake(), _fake()
     primary.queue_error(LlmAuthError("HTTP 401"))
-    secondary.queue_error(LlmAuthError("HTTP 403"))
+    secondary.queue_error(LlmProviderRejectedError("HTTP 404"))
     resilient = _resilient([primary, secondary])
 
     result = await _complete(resilient)
@@ -253,6 +257,7 @@ async def test_outage_opens_breaker(error: LlmError) -> None:
     "error",
     [
         LlmAuthError("HTTP 401"),
+        LlmProviderRejectedError("HTTP 404"),
         LlmRateLimitError("HTTP 429", retry_after_s=500.0),
         LlmOverloadedError("HTTP 429"),
         LlmError("respuesta sin choices"),
@@ -305,6 +310,7 @@ async def test_any_outage_among_attempts_opens_breaker() -> None:
     "error",
     [
         LlmAuthError("HTTP 401"),
+        LlmProviderRejectedError("HTTP 404"),
         LlmRateLimitError("HTTP 429", retry_after_s=500.0),
         LlmBadRequestError("HTTP 400"),
     ],
