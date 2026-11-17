@@ -1,13 +1,15 @@
 # infra/
 
-Infraestructura: Docker, vLLM, prod.
+Infraestructura: Docker y prod. El backend corre en una VPS sin GPU y
+consume la IA por API de proveedores externos
+([ADR-028](../docs/architecture/adrs/ADR-028-inferencia-por-api.md)):
+acá no hay serving de modelos.
 
 ## Subcarpetas
 
 - `docker/` — docker-compose para dev y prod, Dockerfile del backend.
-- `vllm/` — scripts para correr vLLM con Gemma + Qwen.
-- `prod/` — notas y configs específicas de producción (systemd
-  units, Cloudflare Tunnel config, etc.).
+- `prod/` — notas y configs específicas de producción (broker Redis con
+  auth, proveedores de IA, Cloudflare Tunnel, backups, etc.).
 
 ## Notas
 
