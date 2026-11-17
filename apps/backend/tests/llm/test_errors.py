@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from app.llm.errors import (
+    EmbeddingDimensionError,
     LlmAuthError,
     LlmBadRequestError,
     LlmContextOverflowError,
@@ -36,6 +37,7 @@ _ALL_ERRORS = [
     ModelNotServedError,
     LlmAuthError,
     LlmProviderRejectedError,
+    EmbeddingDimensionError,
     ToolParsingError,
     ToolExecutionError,
     MemoryRetrievalError,
@@ -113,6 +115,17 @@ def test_provider_rejected_is_not_a_request_error() -> None:
     assert not isinstance(err, (LlmBadRequestError, LlmAuthError))
     assert not isinstance(err, (LlmTimeoutError, LlmUnavailableError, LlmOverloadedError))
     assert str(err) == "request rechazado por el proveedor LLM: HTTP 404"
+
+
+def test_embedding_dimension_carries_only_the_dimensions() -> None:
+    """Un vector de otra dimension es permanente y el error lleva solo los dos numeros."""
+    err = EmbeddingDimensionError("768 en vez de 1024", expected=1024, received=768)
+    assert (err.expected, err.received) == (1024, 768)
+    assert str(err) == "dimension de embedding inesperada: 768 en vez de 1024"
+    assert not isinstance(err, (LlmBadRequestError, LlmAuthError, LlmProviderRejectedError))
+    assert not isinstance(err, (LlmTimeoutError, LlmUnavailableError, LlmOverloadedError))
+    bare = EmbeddingDimensionError()
+    assert (bare.expected, bare.received) == (None, None)
 
 
 class TestDegradedResponse:
