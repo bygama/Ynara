@@ -12,7 +12,7 @@ type Props = {
 };
 
 /**
- * Tarjeta de una superficie para compartir (API OpenAI-compatible / chat). Muestra
+ * Tarjeta de una superficie para compartir (panel admin / app web). Muestra
  * la URL alcanzable por el tailnet (mono, seleccionable) + un botón de copiar con
  * feedback por Toast. El puerto va en `tabular-nums` (guard de diseño). Sin
  * gradiente: color plano por token.
