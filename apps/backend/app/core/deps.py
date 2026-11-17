@@ -231,7 +231,7 @@ CurrentAdmin = Annotated[UUID, Depends(get_current_admin)]
 # Clientes LLM / embedder / reranker — singletons del lifespan (app.state)
 # ---------------------------------------------------------------------------
 # El lifespan de app/main.py construye los singletons una vez en startup.
-# Cuando vLLM esté disponible, solo cambia el lifespan; estas deps no tocan.
+# Pasar del Fake a los proveedores de IA solo cambia el lifespan; estas deps no.
 
 
 def get_llm_client(request: Request) -> LLMClientProtocol:

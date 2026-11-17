@@ -3,7 +3,7 @@
 Sin DB ni red. Verifican:
 
 - ``default_registry().specs_for([...])`` filtra por namespace y devuelve
-  ``ToolSpec`` bien formados (la identidad que el cliente vLLM envuelve en el
+  ``ToolSpec`` bien formados (la identidad que el cliente del proveedor envuelve en el
   wire OpenAI ``{"type": "function", "function": {...}}``).
 - ``execute`` devuelve dict de resultado o dict de error estructurado, nunca
   propaga una excepcion al modelo.
@@ -61,7 +61,7 @@ class TestSpecsFor:
 
     def test_specs_are_openai_shaped(self) -> None:
         # ``specs_for`` devuelve ``ToolSpec`` con la identidad plana; el
-        # cliente vLLM la envuelve en ``{"type": "function", "function": ...}``.
+        # cliente del proveedor la envuelve en ``{"type": "function", "function": ...}``.
         specs = default_registry().specs_for(["calendar", "reminder"])
         for spec in specs:
             assert isinstance(spec, ToolSpec)
