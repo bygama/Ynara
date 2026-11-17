@@ -13,7 +13,7 @@ import { qk } from "@/lib/queryKeys";
 /**
  * Smoke de `POST /v1/chat` (W1): manda un mensaje en el modo elegido y muestra
  * el `ChatResponse` mockeado. Sirve para verificar a ojo que el handler MSW
- * responde por modo y que los modos Qwen traen `actions`.
+ * responde por modo y que los modos del alias agente traen `actions`.
  */
 export function ChatMockSmoke() {
   const [mode, setMode] = useState<ModeId>("productividad");
