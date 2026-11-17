@@ -291,6 +291,14 @@ async def test_reranker_passthrough_keeps_the_ann_order() -> None:
     assert [result.index for result in results] == [0, 1]
 
 
+async def test_reranker_passthrough_does_not_keep_the_calls() -> None:
+    """Es un singleton de la app: no acumula la consulta ni los documentos."""
+    reranker = build_reranker()
+    assert isinstance(reranker, FakeReranker)
+    await reranker.rerank("consulta", ["un documento"])
+    assert reranker.rerank_calls == []
+
+
 @pytest.mark.parametrize("environment", ["development", "production"])
 def test_reranker_is_the_passthrough_in_every_environment(environment: str) -> None:
     """Production tambien usa el passthrough: no hay reranker real que prender."""

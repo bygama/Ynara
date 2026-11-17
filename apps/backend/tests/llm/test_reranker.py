@@ -139,6 +139,15 @@ async def test_rerank_calls_are_recorded() -> None:
     assert fake.rerank_calls[1]["top_n"] == 1
 
 
+async def test_rerank_calls_are_not_kept_without_record_calls() -> None:
+    """Con ``record_calls=False`` (el de la factory) no guarda nada y reordena igual."""
+    fake = FakeReranker(record_calls=False)
+    results = await fake.rerank(query="consulta", documents=["a", "b"], top_n=1)
+
+    assert [r.index for r in results] == [0]
+    assert fake.rerank_calls == []
+
+
 # ---------- health ----------
 
 

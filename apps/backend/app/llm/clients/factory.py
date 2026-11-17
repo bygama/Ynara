@@ -179,11 +179,12 @@ def build_embedder(settings: Settings) -> EmbeddingClient:
 def build_reranker() -> Reranker:
     """El reranker de todos los entornos: el ``FakeReranker`` passthrough (ADR-028 D5).
 
-    Deja el orden del ANN tal cual y se reporta como ``RERANKER_PASSTHROUGH``. Un
+    Deja el orden del ANN tal cual y se reporta como ``RERANKER_PASSTHROUGH``. Va con
+    ``record_calls=False``: es un singleton de la app y no guarda las llamadas. Un
     rerank real por API queda como palanca futura, a decidir con una medicion de
     recall; no depende de settings.
     """
-    return FakeReranker(model=RERANKER_PASSTHROUGH)
+    return FakeReranker(model=RERANKER_PASSTHROUGH, record_calls=False)
 
 
 def build_llm_clients(
