@@ -27,6 +27,12 @@ _PROVIDER: dict[str, object] = {
     "base_url": "https://api.proveedor.test/v1",
     "models": {"conversacional": "org/chat", "agente": "org/agent"},
 }
+# Inferencia por API lista para production: el proveedor con su credencial.
+_LLM_API: dict[str, object] = {
+    "LLM_BACKEND": "api",
+    "LLM_PROVIDERS": json.dumps([_PROVIDER]),
+    "llm_api_keys": {"principal": "sk-test-principal-0123"},
+}
 
 
 def test_dev_allows_weak_secret() -> None:
@@ -52,6 +58,7 @@ def test_prod_accepts_strong_secret() -> None:
         JWT_SECRET="x" * 40,
         cors_origins=["https://app.ynara.com"],
         MEMORY_ENCRYPTION_MASTER_KEY="k" * 44,
+        **_LLM_API,
     )
     assert s.environment == "production"
 
@@ -60,13 +67,14 @@ def test_prod_accepts_strong_secret() -> None:
 # S5 — fail-fast de config de dev en production (CORS localhost + master key)
 # ---------------------------------------------------------------------------
 
-# Config "limpia" de prod reutilizable: master key seteada + CORS de dominio real.
-# Los tests sobreescriben SOLO el campo que quieren romper.
+# Config "limpia" de prod reutilizable: master key seteada + CORS de dominio real +
+# inferencia por API. Los tests sobreescriben SOLO el campo que quieren romper.
 _PROD_CLEAN: dict[str, object] = {
     "environment": "production",
     "JWT_SECRET": "x" * 40,
     "MEMORY_ENCRYPTION_MASTER_KEY": "k" * 44,
     "cors_origins": ["https://app.ynara.com"],
+    **_LLM_API,
 }
 
 
@@ -404,3 +412,70 @@ def test_provider_base_url_with_credentials_is_rejected_without_echoing_it() -> 
 def test_providers_reject_a_repeated_name() -> None:
     with pytest.raises(ValueError, match="repite el proveedor: principal"):
         _provider_settings([_PROVIDER, _PROVIDER])
+
+
+# ---------------------------------------------------------------------------
+# Inferencia por API (ADR-028): LLM_BACKEND y el fail-fast del arranque
+# ---------------------------------------------------------------------------
+
+
+def _api_settings(providers: list[dict[str, object]], **overrides: object) -> Settings:
+    return _provider_settings(providers, LLM_BACKEND="api", **overrides)
+
+
+def test_prod_with_fake_llm_does_not_start() -> None:
+    """Production con el LLM fake no arranca (ADR-028 D7)."""
+    overrides = {**_PROD_CLEAN, "LLM_BACKEND": "fake"}
+    with pytest.raises(ValueError, match="LLM_BACKEND tiene que ser 'api' en production"):
+        _settings(**overrides)
+
+
+def test_prod_without_llm_backend_does_not_start() -> None:
+    """Sin LLM_BACKEND el default es fake: production tampoco arranca."""
+    overrides = {k: v for k, v in _PROD_CLEAN.items() if k != "LLM_BACKEND"}
+    with pytest.raises(ValueError, match="LLM_BACKEND"):
+        _settings(**overrides)
+
+
+@pytest.mark.parametrize("environment", ["production", "development"])
+def test_api_without_providers_does_not_start(environment: str) -> None:
+    """``LLM_BACKEND=api`` con la lista vacía no arranca, tampoco en dev."""
+    overrides = {**_PROD_CLEAN, "environment": environment, "LLM_PROVIDERS": "[]"}
+    with pytest.raises(ValueError, match="LLM_PROVIDERS está vacío"):
+        _settings(**overrides)
+
+
+def test_api_with_a_missing_key_names_the_variable_without_leaking_secrets() -> None:
+    """Falta la credencial del respaldo: el error nombra la variable y no muestra claves."""
+    present_key = "sk-test-principal-secret-9876"
+    with pytest.raises(ValueError) as excinfo:
+        _api_settings(
+            [_PROVIDER, _SECOND_PROVIDER],
+            llm_api_keys={"principal": present_key},
+            JWT_SECRET="jwt-secret-que-no-se-muestra-0123456789",
+        )
+    rendered = str(excinfo.value)
+    assert "LLM_API_KEY_RESPALDO" in rendered
+    assert "LLM_API_KEY_PRINCIPAL" not in rendered
+    assert present_key not in rendered
+    assert present_key[-6:] not in rendered
+    assert "jwt-secret-que-no-se-muestra" not in rendered
+
+
+def test_api_empty_key_counts_as_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_API_KEY_PRINCIPAL", "   ")
+    with pytest.raises(ValueError, match="LLM_API_KEY_PRINCIPAL"):
+        _api_settings([_PROVIDER])
+
+
+def test_prod_api_config_from_the_environment_starts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Como en el arranque real: todo por variables de entorno, sin kwargs del LLM."""
+    monkeypatch.setenv("LLM_BACKEND", "api")
+    monkeypatch.setenv("LLM_PROVIDERS", json.dumps([_PROVIDER, _SECOND_PROVIDER]))
+    monkeypatch.setenv("LLM_API_KEY_PRINCIPAL", "sk-env-principal")
+    monkeypatch.setenv("LLM_API_KEY_RESPALDO", "sk-env-respaldo")
+    base = {k: v for k, v in _PROD_CLEAN.items() if k not in _LLM_API}
+    s = _settings(**base)
+    assert s.llm_backend == "api"
+    assert [p.name for p in s.llm_providers] == ["principal", "respaldo"]
+    assert set(s.llm_api_keys) == {"principal", "respaldo"}

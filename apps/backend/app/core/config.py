@@ -222,15 +222,10 @@ class Settings(BaseSettings):
         ],
         alias="LLM_SERVING",
     )
-    # `llm_backend` elige entre el Fake determinista (default, sin GPU) y los
-    # clientes HTTP reales. Paralelo a `embedding_backend`. En production el
-    # serving real se fuerza igual (ver factory); este flag lo prende en
-    # dev/staging (p.ej. apuntando a Ollama o a un vLLM local) SIN mentir
-    # `environment` (que dispara los fail-fast de prod: JWT fuerte, CORS, key).
-    # El valor 'vllm' es un nombre legacy del cliente HTTP OpenAI-compatible: NO
-    # implica vLLM, es compatible tanto con el motor local de 16GB (Ollama/GGUF,
-    # ADR-014) como con vLLM en 24GB+.
-    llm_backend: Literal["fake", "vllm"] = Field("fake", alias="LLM_BACKEND")
+    # Inferencia por API (ADR-028). ``llm_backend`` elige el cliente LLM: ``fake`` (el
+    # default, determinista y sin red: dev y CI) o ``api`` (los proveedores de
+    # ``LLM_PROVIDERS``). En production tiene que ser ``api`` (``_require_llm_api``).
+    llm_backend: Literal["fake", "api"] = Field("fake", alias="LLM_BACKEND")
     # Proveedores en orden de prioridad: el primero es el principal y el resto, respaldo
     # (ADR-028 D2). Lista JSON en el env; vacía (``LLM_PROVIDERS=``) es sin proveedores.
     # ``NoDecode``: el string crudo llega a ``_parse_llm_providers``, que lo decodifica.
@@ -603,6 +598,31 @@ class Settings(BaseSettings):
                     f"ADMIN_BOOTSTRAP_IDS contiene una entry inválida ({entry!r}): "
                     "cada valor debe ser un UUID parseable"
                 ) from exc
+        return self
+
+    @model_validator(mode="after")
+    def _require_llm_api(self) -> Settings:
+        """Fail-fast de la inferencia por API (ADR-028 D7).
+
+        En production el LLM tiene que ser ``api``: con ``fake`` el chat le contestaría
+        a un usuario real con el cliente de prueba. Con ``api``, en cualquier entorno,
+        tiene que haber al menos un proveedor y cada uno con su credencial
+        ``LLM_API_KEY_<NAME>``. El error nombra la variable que falta, nunca un valor.
+        """
+        if self.environment == "production" and self.llm_backend != "api":
+            raise ValueError(
+                "LLM_BACKEND tiene que ser 'api' en production: el cliente fake no le "
+                "contesta a usuarios reales (ADR-028)"
+            )
+        if self.llm_backend != "api":
+            return self
+        if not self.llm_providers:
+            raise ValueError(
+                "LLM_PROVIDERS está vacío: con LLM_BACKEND=api hace falta al menos un proveedor"
+            )
+        missing = [p.api_key_env for p in self.llm_providers if p.name not in self.llm_api_keys]
+        if missing:
+            raise ValueError(f"falta la credencial del proveedor: {', '.join(missing)}")
         return self
 
 
