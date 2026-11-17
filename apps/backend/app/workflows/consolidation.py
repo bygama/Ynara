@@ -66,10 +66,9 @@ logger = logging.getLogger(__name__)
 def _build_embedder(settings: Settings) -> EmbeddingClient:
     """Construye el cliente de embeddings para la consolidacion.
 
-    Delega en la factory (``build_embedder``): ``embedding_backend='fake'``
-    (default sin GPU) -> ``FakeEmbeddingClient``; ``'vllm'`` -> cliente real
-    (``VllmEmbeddingClient``, ya implementado; en 16GB apunta a Ollama via su
-    API OpenAI-compatible de embeddings, ADR-014). El gate vive en un solo lugar.
+    Delega en la factory (``build_embedder``): ``EMBEDDING_BACKEND=fake`` (default
+    de dev y CI) -> ``FakeEmbeddingClient``; ``api`` -> ``ApiEmbeddingClient``
+    contra el proveedor de embeddings (ADR-028 D4). El gate vive en un solo lugar.
     """
     return build_embedder(settings)
 

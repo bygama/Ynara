@@ -166,9 +166,9 @@ async def lifespan(app: FastAPI):
     # shutdown — liberar recursos. El llm_client puede ser un ResilientClient REAL
     # (un httpx.AsyncClient por proveedor de IA, ADR-028); aclose() cierra esos
     # connection pools (en dev/test es el no-op del Fake), evitando fuga de sockets.
-    # embedder/reranker reales (VllmEmbeddingClient / VllmReranker) tienen su propio
-    # httpx.AsyncClient; se cierran defensivamente vía getattr (los Fakes no tienen
-    # aclose, igual que ClientPool.aclose). Redis se cierra siempre.
+    # El embedder por API (ApiEmbeddingClient) y el reranker real (VllmReranker) tienen
+    # su propio httpx.AsyncClient; se cierran defensivamente vía getattr (los Fakes no
+    # tienen aclose, igual que ClientPool.aclose). Redis se cierra siempre.
     await app.state.llm_client.aclose()
     for _client in (app.state.embedder, app.state.reranker):
         _aclose = getattr(_client, "aclose", None)
