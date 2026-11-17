@@ -54,7 +54,7 @@ app/
 │   ├── security.py    # JWT/hashing — implementado con PyJWT + bcrypt directo (ADR-015, no python-jose/passlib): create_access_token, verify_access_token, hash_password, verify_password
 │   ├── token_store.py # blocklist de jti + revocación por familia (sid) + contadores genéricos; Protocol + RedisTokenStore + InMemoryTokenStore (tests)
 │   └── urls.py        # validated_base_url(): URL base de un proveedor de IA (https; http solo contra la propia máquina), la usan Settings y los clientes de providers/
-├── api/v1/            # routers, un archivo por dominio (health, auth, chat, sessions, events, tasks, reminders, devices, today, memory, modes, users) + subpaquete admin/ (metrics, playground, connectivity); privados _http.py / _sessions.py
+├── api/v1/            # routers, un archivo por dominio (health, auth, chat, sessions, events, tasks, reminders, devices, today, memory, modes, users) + subpaquete admin/ (metrics, playground); privados _http.py / _sessions.py
 ├── models/            # SQLAlchemy 2 (user, session, conversation_turn, calendar_event, task, reminder, device_token, admin_audit, memory 🔴, audit 🔴) — base.py: mixins UUIDPK/Timestamp
 ├── schemas/           # Pydantic v2 mirror de models + payloads de API (*_api.py: envelopes de presentación)
 ├── services/          # lógica de negocio SIN framework, deps por argumento: auth, chat, memory, admin_metrics, notifications (push noop) + stores de dominio operativo (calendar.py: CalendarEventStore; tasks.py: TaskStore; reminders.py: ReminderStore; devices.py: DeviceTokenStore; ≠ Celery). Agenda/Tareas/Recordatorios son dominios ordinarios → layer-split acá (ADR-011 D1), no feature-packages
