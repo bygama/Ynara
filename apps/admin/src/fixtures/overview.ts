@@ -54,11 +54,6 @@ export function overviewFixture(range: RangeId, now: Date = FIXTURE_NOW): AdminO
   const spark = sessions_series.slice(-14).map((p) => p.value);
 
   const data: AdminOverviewOutT = {
-    perimeter: {
-      status: "intact",
-      detail: "Token no viaja a host ajeno · contenido cifrado · hash no expuesto",
-      checked_at: minutesBack(1, now),
-    },
     kpis: {
       users_total: { value: 1240, delta: { pct: 3.4, direction: "up" } },
       sessions: { value: sessionsTotal, delta: { pct: 5.1, direction: "up" }, spark },
