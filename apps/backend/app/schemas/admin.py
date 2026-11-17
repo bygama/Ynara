@@ -277,13 +277,11 @@ class SystemServices(YnaraBaseModel):
 
 
 class SystemRuntime(YnaraBaseModel):
-    """Inventario de runtime/config no sensible."""
+    """Inventario de runtime/config no sensible (el modelo de embeddings va en ``ai``)."""
 
     models: list[str]
     modes: list[str]
     schema_head: str
-    embedder: str
-    reranker: str
     build_version: str
 
 
