@@ -5,9 +5,9 @@ en ``AdminMetricsService`` (``app/services/admin_metrics.py``); este módulo sol
 las rutas, valida los query params (rango, facets, paginación) y arma el service.
 
 ``GET /admin/system`` queda acá (no en el service): es salud OPERACIONAL —probes de
-Postgres/Redis + guard anti-prod + inventario de runtime—, no una métrica de negocio, y
-necesita ``app.state`` (Redis singleton) + el head de Alembic. Lee ``app.state``, no la DB
-de negocio.
+Postgres/Redis + guard anti-prod + inventario de runtime + proveedores de IA—, no una
+métrica de negocio, y necesita ``app.state`` (Redis y los clientes de IA singleton) + el
+head de Alembic. Lee ``app.state``, no la DB de negocio.
 
 Gate: todos con ``CurrentAdmin`` (``get_current_admin``): sin admin -> 401 estático.
 Privacidad (regla #4): el service NUNCA descifra contenido ni expone ``record_hash`` /
@@ -16,30 +16,41 @@ Privacidad (regla #4): el service NUNCA descifra contenido ni expone ``record_ha
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Protocol, runtime_checkable
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import __version__
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
+from app.core.constants import EMBEDDING_DIM
 from app.core.db_guard import _host_of, is_prod_db_host
-from app.core.deps import CurrentAdmin, DbSession
+from app.core.deps import CurrentAdmin, DbSession, get_embedder, get_llm_client
+from app.core.llm_protocol import EmbeddingClientProtocol, LLMClientProtocol
 from app.enums import AuditOperation, LlmModel, MemoryLayer, Mode, enum_values
 from app.llm.clients.reranker import RERANKER_PASSTHROUGH
 from app.llm.config import load_llm_config
+from app.llm.schemas import ModelHealth
 from app.schemas.admin import (
     AdminMoatOut,
     AdminModesOut,
     AdminOverviewOut,
     AdminSystemOut,
     AdminUsersOut,
+    AiBackend,
+    AiStatus,
     ServiceStatus,
+    SystemAi,
+    SystemEmbeddings,
     SystemGuard,
+    SystemLlm,
+    SystemLlmProvider,
+    SystemModelRoute,
     SystemRuntime,
     SystemServices,
 )
@@ -124,7 +135,7 @@ async def admin_audit(
 
 
 # ---------------------------------------------------------------------------
-# GET /v1/admin/system — salud de infra + guard + runtime (operacional, no métrica)
+# GET /v1/admin/system — infra + guard + runtime + IA (operacional, no métrica)
 # ---------------------------------------------------------------------------
 
 
@@ -181,13 +192,98 @@ def _schema_head() -> str:
         return "unknown"
 
 
+@runtime_checkable
+class _ProviderHealthReporter(Protocol):
+    """Cliente LLM que sabe la salud de cada proveedor (el ``ResilientClient``)."""
+
+    async def provider_health(self) -> list[ModelHealth]: ...
+
+
+def _ai_status(backend: AiBackend, healthy: bool | None) -> AiStatus:
+    """Estado de un proveedor de IA para el panel.
+
+    Con el backend ``fake`` no se sondea a nadie: ``unconfigured``. Con ``api`` es ``ok``
+    solo si el proveedor respondió el health; uno que no se pudo sondear (``None``)
+    cuenta como ``down``, nunca como sano.
+    """
+    if backend != "api":
+        return "unconfigured"
+    return "ok" if healthy else "down"
+
+
+async def _probe_llm(settings: Settings, llm_client: LLMClientProtocol) -> SystemLlm:
+    """Los proveedores de ``LLM_PROVIDERS`` con su host, sus modelos y su estado.
+
+    Con ``api`` sondea a todos a la vez (``provider_health``); si el sondeo levanta,
+    todos quedan caídos. El health lo hace cada cliente del proveedor (regla #4b): acá no
+    hay HTTP. La credencial no sale: solo el host de la URL base, como el ``db_target``
+    del guard.
+    """
+    healthy: dict[str, bool] = {}
+    if settings.llm_backend == "api" and isinstance(llm_client, _ProviderHealthReporter):
+        try:
+            healthy = {h.model_name: h.healthy for h in await llm_client.provider_health()}
+        except Exception:
+            healthy = {}
+    providers = [
+        SystemLlmProvider(
+            name=provider.name,
+            host=_host_of(provider.base_url) or "unknown",
+            models=[
+                SystemModelRoute(alias=alias, model_id=model_id)
+                for alias, model_id in sorted(provider.models.items())
+            ],
+            status=_ai_status(settings.llm_backend, healthy.get(provider.name)),
+        )
+        for provider in settings.llm_providers
+    ]
+    return SystemLlm(backend=settings.llm_backend, providers=providers)
+
+
+async def _probe_embeddings(
+    settings: Settings, embedder: EmbeddingClientProtocol
+) -> SystemEmbeddings:
+    """El cliente de embeddings: modo, host, modelo, dimensión y estado.
+
+    Con ``api`` usa el ``health()`` del cliente; uno que levanta cuenta como caído.
+    """
+    healthy: bool | None = None
+    if settings.embedding_backend == "api":
+        try:
+            healthy = (await embedder.health()).healthy
+        except Exception:
+            healthy = False
+    return SystemEmbeddings(
+        backend=settings.embedding_backend,
+        host=_host_of(settings.embedding_base_url) or None,
+        model=settings.embedding_model,
+        dim=EMBEDDING_DIM,
+        status=_ai_status(settings.embedding_backend, healthy),
+    )
+
+
+async def _probe_ai(
+    settings: Settings, llm_client: LLMClientProtocol, embedder: EmbeddingClientProtocol
+) -> SystemAi:
+    """Proveedores de IA (ADR-028): el LLM y los embeddings, sondeados a la vez."""
+    llm, embeddings = await asyncio.gather(
+        _probe_llm(settings, llm_client), _probe_embeddings(settings, embedder)
+    )
+    return SystemAi(llm=llm, embeddings=embeddings)
+
+
 @router.get("/admin/system", response_model=AdminSystemOut, status_code=200)
 async def admin_system(
     request: Request,
     session: DbSession,
     admin_id: CurrentAdmin,
+    llm_client: Annotated[LLMClientProtocol, Depends(get_llm_client)],
+    embedder: Annotated[EmbeddingClientProtocol, Depends(get_embedder)],
 ) -> AdminSystemOut:
-    """Salud de infra + guard anti-prod + inventario de runtime. Sin queries de negocio."""
+    """Salud de infra + guard anti-prod + inventario de runtime + proveedores de IA.
+
+    Sin queries de negocio.
+    """
     settings = get_settings()
 
     is_prod_in_dev = settings.environment != "production" and is_prod_db_host(settings.database_url)
@@ -215,4 +311,5 @@ async def admin_system(
         guard=guard,
         services=SystemServices(postgres=postgres, redis=redis),
         runtime=runtime,
+        ai=await _probe_ai(settings, llm_client, embedder),
     )
