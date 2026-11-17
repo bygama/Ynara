@@ -6,7 +6,7 @@ Ver `docs/architecture/diagrams/deploy-topology.md`.
 
 - **Web** → Vercel (Next.js 16).
 - **Mobile** → Expo EAS Build (iOS + Android).
-- **Backend** → VPS LATAM detrás de Cloudflare Tunnel.
+- **Backend** → VPS LATAM sin GPU, detrás de Cloudflare Tunnel.
 - **DB** → Supabase (MVP) → Postgres self-hosted (V2).
 - **Cache / queue / auth store** → Redis (Upstash o Docker en VPS).
   **Requerido**: además de caché y broker/result de Celery, desde #63 es
@@ -14,14 +14,11 @@ Ver `docs/architecture/diagrams/deploy-topology.md`.
   de login). La auth degrada a fail-open si Redis cae, pero el servicio
   debe estar provisto.
 - **Storage** → Cloudflare R2.
-- **GPU inference** → en la 4080 Super 16 GB el motor de serving local es
-  **Ollama/GGUF** (ADR-014): un solo endpoint (`:11434`) sirve gemma4 +
-  qwen + bge-m3 co-residentes en la misma GPU. **vLLM queda reservado a
-  GPU de 24 GB+** (en 16 GB no entran dos LLM por proceso, medido en #207).
-  _(El backend default usa `FakeLlmClient`; para apuntar al serving real se
-  configura `LLM_SERVING` (ADR-013: lista de `{base_url, models}`) y se
-  prende `LLM_BACKEND=vllm` — nombre legacy del cliente OpenAI-compatible,
-  sirve igual a Ollama o vLLM.)_
+- **IA** → proveedores externos por API compatible con OpenAI
+  ([ADR-028](../architecture/adrs/ADR-028-inferencia-por-api.md)). El chat,
+  el agente y la consolidación de memoria van contra `LLM_PROVIDERS`
+  (principal y respaldo) y los embeddings contra `EMBEDDING_BASE_URL`. La
+  VPS no sirve modelos: ver [Proveedores de IA](#proveedores-de-ia).
 
 ## Pipelines CI/CD
 
@@ -71,37 +68,54 @@ docker build -f infra/docker/Dockerfile.backend -t ynara-backend:latest .
 3. `docker compose -f infra/docker/docker-compose.yml pull`.
 4. `docker compose -f infra/docker/docker-compose.yml up -d`.
 5. Verificar health: `curl https://api.ynara.app/v1/health`.
-6. Verificar logs: `docker compose logs -f api`.
+6. Verificar los proveedores de IA: página System Health del panel admin
+   (`GET /v1/admin/system`, bloque `ai`), con cada proveedor y los
+   embeddings en `ok`. `/v1/health/ready` mira solo la DB y Redis.
+7. Verificar logs: `docker compose logs -f api`.
+
+Si `api`, `worker` o `beat` no arrancan por la config de IA, ver
+"App no arranca por la config de IA" en [`RUNBOOK.md`](./RUNBOOK.md).
 
 ### Rollback
 1. `docker compose pull <tag-anterior>`.
 2. `docker compose up -d`.
 3. Verificar.
 
-## Serving de inferencia
+## Proveedores de IA
 
-**16 GB (4080 Super) → Ollama/GGUF (ADR-014).** El motor de serving local
-es Ollama: un endpoint (`:11434`) con gemma4 + qwen + bge-m3 co-residentes.
-Es lo que corre hoy como stack de dev.
+La IA se consume por API (ADR-028): en la VPS no hay GPU, pesos ni
+servicios de modelos que levantar. La configuración vive en
+`apps/backend/.env`, el `env_file` que comparten `api`, `worker` y `beat`.
+Variables, fail-fast y salida a internet en
+[`infra/prod/README.md`](../../infra/prod/README.md#proveedores-de-ia). En
+corto:
 
-**24 GB+ → vLLM.** `./infra/vllm/start-vllm.sh` levanta **3 procesos** (uno
-por modelo): Gemma `:8001`, Qwen `:8002`, bge-m3 `:8003`. Esta ruta no entra
-en 16 GB (medido en #207); aplica solo a GPU de 24 GB+.
+- `LLM_BACKEND=api` y `LLM_PROVIDERS`: lista JSON en orden de prioridad (el
+  primero es el principal y el resto, respaldo), con la credencial de cada
+  proveedor en `LLM_API_KEY_<NAME>`.
+- `EMBEDDING_BACKEND=api`, `EMBEDDING_BASE_URL`, `EMBEDDING_API_KEY` y
+  `EMBEDDING_MODEL` (default `BAAI/bge-m3`, 1024 dimensiones). Los
+  embeddings tienen un solo proveedor, sin respaldo.
+- Con `ENVIRONMENT=production`, el backend no arranca si el LLM o los
+  embeddings quedan en `fake`, si `LLM_PROVIDERS` está vacía o si falta una
+  URL, un modelo o una credencial (ADR-028 D7). El error nombra la
+  variable, nunca su valor.
 
-Para producción (ruta vLLM) hay **systemd units por modelo** en
-`infra/prod/`: `vllm-gemma.service`, `vllm-qwen.service` y
-`vllm-bge.service`. Levantar el stack completo:
+Las credenciales son secretos (regla #2): viven solo en el entorno de la
+VPS, nunca en el repo, en `ynara.config.json` ni en el `environment:` del
+compose. Un cambio en `apps/backend/.env` se aplica recreando los
+contenedores: `docker compose up -d --force-recreate api worker beat`. Un
+`docker compose restart` sigue con el entorno viejo.
 
-```sh
-systemctl enable --now vllm-gemma.service vllm-qwen.service vllm-bge.service
-```
+**Datos reales.** Hasta cerrar las cinco compuertas de ADR-028 (legal,
+crisis, costo, respaldo probado y latencia), los proveedores reciben solo
+datos sintéticos (regla #4b).
 
-> **Nota:** el comentario de cabecera de esos `.service` todavía dice "RTX 4080
-> Super 16 GB" — quedó stale (pre-ADR-014). Esas units son la ruta **24 GB+**; en
-> 16 GB el motor es Ollama y no se usan (pendiente: actualizar ese comentario en
-> `infra/prod/`).
-
-Detalle de checkpoints, flags y topología en `infra/vllm/README.md`.
+El techo de concurrencia lo pone la cuota de los proveedores: los procesos
+del worker se ajustan con `CELERY_CONCURRENCY`
+([`infra/prod/README.md`](../../infra/prod/README.md#concurrencia-del-worker-de-celery)).
+Rotar credenciales, pasar al respaldo a mano o atender una caída del
+proveedor: [`RUNBOOK.md`](./RUNBOOK.md).
 
 ## Migración a V2
 
