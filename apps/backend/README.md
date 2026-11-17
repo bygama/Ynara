@@ -14,7 +14,7 @@ proveedores aprobados y solo para la inferencia (regla #4).
 
 ## Estado
 
-- **Construido y mergeado**: capa LLM **M0–M8** completa — config single-source, cliente resiliente de los proveedores por API (pool + circuit breaker + respaldo), prompts por modo, tools de agente (calendar + task reales, síncronas en el chat — ADR-022; reminder stub), tools `memory.*` (M7), router LLM (M8). Auth JWT real (`/v1/auth` register/token/me). Endpoints `/v1/chat` (sync + SSE streaming), `/v1/sessions` (list/detail/close), `/v1/memory` (list/detail/export, PATCH/DELETE individual por capa, wipe total). Persistencia de turnos crudos cifrados (`conversation_turns`, operativa) en `/v1/chat` + consolidación **episódica** async al cerrar la sesión (`consolidate_session`: resume con el alias `agente`, embeddea, cifra y persiste en `episodic_memory`, purga los turnos). Workers Celery: consolidación async (semantic/procedural + episódica) + decay procedural. Cifrado AES-256-GCM per-user (`app/core/crypto.py`). Guard anti-prod (`app/core/db_guard.py`). Migraciones: cadena de **15** (de `initial_schema` hasta `users.preferences`); 12 tablas, 9 enums, pgvector + pgcrypto. Ver [`docs/MIGRATIONS.md`](./docs/MIGRATIONS.md).
+- **Construido y mergeado**: capa LLM **M0–M8** completa — config single-source, cliente resiliente de los proveedores por API (pool + circuit breaker + respaldo), prompts por modo, tools de agente (calendar + task reales, síncronas en el chat — ADR-022; reminder stub), tools `memory.*` (M7), router LLM (M8). Auth JWT real (`/v1/auth` register/token/me). Endpoints `/v1/chat` (sync + SSE streaming), `/v1/sessions` (list/detail/close), `/v1/memory` (list/detail/export, PATCH/DELETE individual por capa, wipe total). Persistencia de turnos crudos cifrados (`conversation_turns`, operativa) en `/v1/chat` + consolidación **episódica** async al cerrar la sesión (`consolidate_session`: resume con el alias `agente`, embeddea, cifra y persiste en `episodic_memory`, purga los turnos). Workers Celery: consolidación async (semantic/procedural + episódica, con reintentos ante fallas transitorias del proveedor e idempotente por turno) + decay procedural. Cifrado AES-256-GCM per-user (`app/core/crypto.py`). Guard anti-prod (`app/core/db_guard.py`). Migraciones: cadena de **15** (de `initial_schema` hasta `users.preferences`); 12 tablas, 9 enums, pgvector + pgcrypto. Ver [`docs/MIGRATIONS.md`](./docs/MIGRATIONS.md).
 - **Inferencia**: `LLM_BACKEND=api` arma un `OpenAICompatClient` por proveedor de
   `LLM_PROVIDERS`, en orden de prioridad, detrás de un `ResilientClient` con respaldo
   (ADR-028). El código pide un alias (`conversacional` o `agente`) y cada proveedor lo
@@ -42,7 +42,7 @@ app/
 │                     #   embedding.py (embed_one), config.py (decay+retention de [memory]),
 │                     #   conversation_turns.py (store del buffer operativo de turnos)
 ├── workers/         # Celery (consolidación async + beat_schedule de jobs periódicos)
-└── workflows/       # consolidation, decay, episodic_retention, audit_retention, agent_pass (dormant), _engine
+└── workflows/       # consolidation, decay, episodic_retention, audit_retention, agent_pass (dormant), _engine, _turn_marker
 
 alembic/             # Migraciones (env.py acepta TEST_DATABASE_URL)
 docs/                # Catálogos vivos (MODELS, ENDPOINTS, TOOLS, MIGRATIONS)
