@@ -3,7 +3,7 @@ import { AdminAuditPage, EMPTY_AUDIT_FILTERS } from "@/features/audit/schemas";
 import { AdminMoatOut } from "@/features/moat/schemas";
 import { AdminModesOut } from "@/features/modes/schemas";
 import { AdminOverviewOut } from "@/features/overview/schemas";
-import { PlaygroundAgentOut, PlaygroundOut } from "@/features/playground/schemas";
+import { PlaygroundAgentOut, PlaygroundOut, ServingOut } from "@/features/playground/schemas";
 import { ConnectivityOut } from "@/features/sharing/schemas";
 import { AdminSystemOut } from "@/features/system/schemas";
 import { AdminUsersOut } from "@/features/users/schemas";
@@ -12,7 +12,7 @@ import { connectivityFixture } from "@/fixtures/connectivity";
 import { moatFixture } from "@/fixtures/moat";
 import { modesFixture } from "@/fixtures/modes";
 import { overviewFixture } from "@/fixtures/overview";
-import { playgroundAgentEcho, playgroundEcho } from "@/fixtures/playground";
+import { playgroundAgentEcho, playgroundEcho, servingFixture } from "@/fixtures/playground";
 import { systemFixture } from "@/fixtures/system";
 import { usersFixture } from "@/fixtures/users";
 import { RANGE_IDS, type RangeId } from "@/stores/range";
@@ -30,6 +30,48 @@ import { RANGE_IDS, type RangeId } from "@/stores/range";
  */
 
 const RANGES = RANGE_IDS as readonly RangeId[];
+
+/**
+ * Respuesta real de `GET /v1/admin/serving` con `LLM_BACKEND=api`, tal como la
+ * arma el handler del backend (`admin_serving`) con los alias de
+ * `ynara.config.json`. Es la forma del wire, no un fixture: si el Pydantic cambia
+ * y el Zod no, este test lo marca.
+ */
+const SERVING_API_PAYLOAD = {
+  backend: "api",
+  is_real: true,
+  serving_healthy: true,
+  request_timeout_s: 20.0,
+  low_perf_available: true,
+  models: [
+    {
+      alias: "conversacional",
+      role: "conversational",
+      writes_memory: false,
+      context_tokens: 8192,
+      healthy: true,
+      default_thinking: false,
+    },
+    {
+      alias: "agente",
+      role: "agent",
+      writes_memory: true,
+      context_tokens: 32768,
+      healthy: true,
+      default_thinking: true,
+    },
+  ],
+  embedder: "bge-m3",
+  reranker: "bge-reranker-v2-m3",
+};
+
+/** La misma respuesta con el backend fake (default de dev): sin serving real. */
+const SERVING_FAKE_PAYLOAD = {
+  ...SERVING_API_PAYLOAD,
+  backend: "fake",
+  is_real: false,
+  low_perf_available: false,
+};
 
 describe("contrato fixtures ↔ Zod (blueprint §4)", () => {
   it("overview parsea en todos los rangos", () => {
@@ -102,9 +144,39 @@ describe("contrato fixtures ↔ Zod (blueprint §4)", () => {
 
   // ── Playground (Fase A probe + Fase B agente) ───────────────────────────
 
+  it("serving fixture parsea contra ServingOut", () => {
+    expect(() => ServingOut.parse(servingFixture())).not.toThrow();
+  });
+
+  it("serving: la respuesta real del backend (api y fake) parsea contra ServingOut", () => {
+    for (const payload of [SERVING_API_PAYLOAD, SERVING_FAKE_PAYLOAD]) {
+      const parsed = ServingOut.parse(payload);
+      expect(parsed.models.map((m) => m.alias)).toEqual(["conversacional", "agente"]);
+    }
+  });
+
+  it("serving rechaza la forma previa a los alias (served_name, backend vllm)", () => {
+    const legacyModel = {
+      key: "qwen-3.5-9b",
+      served_name: "qwen",
+      role: "agent",
+      writes_memory: true,
+      context_window: 262144,
+      max_model_len: 32768,
+      quantization: "awq_marlin",
+      tool_parser: "hermes",
+      healthy: true,
+      default_thinking: true,
+    };
+    expect(ServingOut.safeParse({ ...SERVING_API_PAYLOAD, backend: "vllm" }).success).toBe(false);
+    expect(ServingOut.safeParse({ ...SERVING_API_PAYLOAD, models: [legacyModel] }).success).toBe(
+      false,
+    );
+  });
+
   it("playground probe echo parsea contra PlaygroundOut", () => {
     const body = {
-      model: "qwen",
+      model: "agente",
       message: "Hola test",
       params: { max_tokens: 256, temperature: 0.7, low_perf: false },
       thinking: null,
@@ -114,7 +186,7 @@ describe("contrato fixtures ↔ Zod (blueprint §4)", () => {
 
   it("playground probe echo con low_perf y thinking off parsea contra PlaygroundOut", () => {
     const body = {
-      model: "gemma4",
+      model: "conversacional",
       message: "Test low perf",
       params: { max_tokens: 256, temperature: 0.2, low_perf: true },
       thinking: false,
@@ -124,7 +196,7 @@ describe("contrato fixtures ↔ Zod (blueprint §4)", () => {
 
   it("playground agent echo parsea contra PlaygroundAgentOut", () => {
     const body = {
-      model: "qwen",
+      model: "agente",
       message: "Creá un evento para mañana",
       params: { max_tokens: 512, temperature: 0.7, low_perf: false },
       thinking: null,

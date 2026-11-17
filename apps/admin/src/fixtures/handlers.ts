@@ -139,7 +139,7 @@ export const adminHandlers = [
   // GET /v1/admin/system  (sin range: runtime/config)
   http.get(apiUrl("/v1/admin/system"), () => HttpResponse.json(systemFixture())),
 
-  // GET /v1/admin/serving  (sin range: runtime/config) — backend "vllm" real.
+  // GET /v1/admin/serving  (sin range: runtime/config) — backend "api" real.
   http.get(apiUrl("/v1/admin/serving"), () => HttpResponse.json(servingFixture())),
 
   // GET /v1/admin/connectivity  (sin range: estado del tailnet + URLs para compartir)
