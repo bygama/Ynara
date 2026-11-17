@@ -34,7 +34,7 @@ export type ChatUiMessage = {
   role: "user" | "assistant" | "system";
   text: string;
   status: ChatMessageStatus;
-  /** Solo en mensajes de assistant de modos Qwen. */
+  /** Solo en mensajes de assistant de los modos del alias `agente`. */
   actions?: Action[];
   /** Código del error del backend (mapea a copy humano) si status==="error". */
   errorCode?: string;
