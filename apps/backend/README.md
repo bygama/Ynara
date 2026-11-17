@@ -1,10 +1,10 @@
 # apps/backend — Backend de Ynara
 
 FastAPI + Pydantic v2 + SQLAlchemy 2 async + Alembic + Celery + uv.
-Cabeza del producto: **router LLM, memoria y tools del agente**. Toda
-inferencia es on-prem (Ollama/GGUF en 16GB; vLLM para 24GB+ — ADR-014):
-Gemma conversacional + Qwen agente; ningún dato de usuario sale del
-perímetro (regla #4).
+Cabeza del producto: **router LLM, memoria y tools del agente**. La
+inferencia se consume por API (ADR-028) con dos alias de modelo:
+`conversacional` y `agente`. Los datos de usuario solo van a los
+proveedores aprobados y solo para la inferencia (regla #4).
 
 ## Antes de tocar nada
 
@@ -14,15 +14,13 @@ perímetro (regla #4).
 
 ## Estado
 
-- **Construido y mergeado**: capa LLM **M0–M8** completa — config single-source, cliente vLLM resiliente (pool + circuit breaker + fallback on-prem), prompts por modo, tools de agente (calendar + task reales, síncronas en el chat — ADR-022; reminder stub), tools `memory.*` (M7), router LLM (M8). Auth JWT real (`/v1/auth` register/token/me). Endpoints `/v1/chat` (sync + SSE streaming), `/v1/sessions` (list/detail/close), `/v1/memory` (list/detail/export, PATCH/DELETE individual por capa, wipe total). Persistencia de turnos crudos cifrados (`conversation_turns`, operativa) en `/v1/chat` + consolidación **episódica** async al cerrar la sesión (`consolidate_session`: resume con Qwen, embeddea, cifra y persiste en `episodic_memory`, purga los turnos). Workers Celery: consolidación async (semantic/procedural + episódica) + decay procedural. Cifrado AES-256-GCM per-user (`app/core/crypto.py`). Guard anti-prod (`app/core/db_guard.py`). Migraciones: cadena de **15** (de `initial_schema` hasta `users.preferences`); 12 tablas, 9 enums, pgvector + pgcrypto. Ver [`docs/MIGRATIONS.md`](./docs/MIGRATIONS.md).
-- **Serving**: el motor local de 16GB es **Ollama/GGUF** (un endpoint OpenAI-compatible
-  `http://localhost:11434/v1` con los modelos `gemma4` + `qwen`); vLLM queda reservado a 24GB+
-  (ADR-014). El cliente HTTP del backend es OpenAI-compatible y sirve **ambos** motores: el flag
-  `LLM_BACKEND=vllm` es un **nombre legacy** del cliente (NO implica vLLM — habla igual con
-  Ollama). Default `LLM_BACKEND=fake` (`FakeLlmClient` determinista, sin GPU); ídem
-  `EMBEDDING_BACKEND` / `RERANKER_BACKEND` (`fake` por default, `vllm` para prender el cliente
-  real). Los clientes reales (`VllmClient` / `VllmEmbeddingClient` / `VllmReranker`) ya existen y
-  se probaron contra Ollama.
+- **Construido y mergeado**: capa LLM **M0–M8** completa — config single-source, cliente resiliente de los proveedores por API (pool + circuit breaker + respaldo), prompts por modo, tools de agente (calendar + task reales, síncronas en el chat — ADR-022; reminder stub), tools `memory.*` (M7), router LLM (M8). Auth JWT real (`/v1/auth` register/token/me). Endpoints `/v1/chat` (sync + SSE streaming), `/v1/sessions` (list/detail/close), `/v1/memory` (list/detail/export, PATCH/DELETE individual por capa, wipe total). Persistencia de turnos crudos cifrados (`conversation_turns`, operativa) en `/v1/chat` + consolidación **episódica** async al cerrar la sesión (`consolidate_session`: resume con Qwen, embeddea, cifra y persiste en `episodic_memory`, purga los turnos). Workers Celery: consolidación async (semantic/procedural + episódica) + decay procedural. Cifrado AES-256-GCM per-user (`app/core/crypto.py`). Guard anti-prod (`app/core/db_guard.py`). Migraciones: cadena de **15** (de `initial_schema` hasta `users.preferences`); 12 tablas, 9 enums, pgvector + pgcrypto. Ver [`docs/MIGRATIONS.md`](./docs/MIGRATIONS.md).
+- **Inferencia**: `LLM_BACKEND=api` arma un `OpenAICompatClient` por proveedor de
+  `LLM_PROVIDERS`, en orden de prioridad, detrás de un `ResilientClient` con respaldo
+  (ADR-028). El código pide un alias (`conversacional` o `agente`) y cada proveedor lo
+  traduce a su id de modelo. Default `LLM_BACKEND=fake` (`FakeLlmClient` determinista,
+  sin red); production no arranca con el fake. `EMBEDDING_BACKEND` / `RERANKER_BACKEND`
+  siguen con `fake` por default y `vllm` para prender su cliente real.
 
 ## Estructura
 
@@ -30,7 +28,7 @@ perímetro (regla #4).
 app/
 ├── main.py          # entrypoint FastAPI (lifespan, CORS, 13 routers v1)
 ├── enums.py         # StrEnums cross-domain (Mode, MemoryLayer, LlmModel, AuditOperation, TurnRole, EventStatus, TaskStatus, DevicePlatform, ReminderStatus)
-├── core/            # config (Settings lazy), constants (EMBEDDING_DIM), crypto, deps (engine async lazy), security (JWT PyJWT+bcrypt — ADR-015), db_guard, ratelimit, token_store, observability, paths
+├── core/            # config (Settings lazy), constants (EMBEDDING_DIM, alias de modelo), crypto, deps (engine async lazy), security (JWT PyJWT+bcrypt — ADR-015), db_guard, ratelimit, token_store, observability, paths, urls (URL base de un proveedor)
 ├── api/v1/          # routers, un archivo por dominio (auth, chat, sessions, events, tasks, reminders, devices, memory, modes, users, health) + subpaquete admin/ (metrics, playground, connectivity)
 ├── models/          # SQLAlchemy 2 (user, session, conversation_turn operativa, calendar_event, task, reminder, device_token, admin_audit, memory 🔴, audit 🔴)
 ├── schemas/         # Pydantic v2 (mirror de models + payloads de API; *_api.py: envelopes)
@@ -74,14 +72,14 @@ Copiar `.env.example` a `.env` (gitignored). Críticas:
 | `DATABASE_URL` | Postgres (`postgresql+asyncpg://...`). MVP: session pooler de Supabase. |
 | `REDIS_URL` | Broker + result backend de Celery. |
 | `JWT_SECRET` | Firma de tokens (auth). |
-| `LLM_SERVING` | Endpoints de serving: lista JSON `[{base_url, models}]`, una entrada por proceso/endpoint (ADR-013). Motor local 16GB = un endpoint Ollama/GGUF (`http://localhost:11434/v1`, models `gemma4`+`qwen`); vLLM (24GB+) usa una entrada por modelo (ADR-014). |
-| `LLM_BACKEND` | `fake` (default, `FakeLlmClient` sin GPU) o `vllm` (nombre **legacy** del cliente OpenAI-compatible; sirve Ollama y vLLM). Ídem `EMBEDDING_BACKEND` / `RERANKER_BACKEND`. |
+| `LLM_BACKEND` | `fake` (default, `FakeLlmClient` sin red) o `api` (proveedores de `LLM_PROVIDERS`). Production exige `api`. |
+| `LLM_PROVIDERS` | Lista JSON de proveedores en orden de prioridad: `name`, `base_url`, `models` (`{alias: model_id}` con `conversacional` y `agente`) y `supports_reasoning_effort` (ADR-028). |
+| `LLM_API_KEY_<NAME>` | Credencial de cada proveedor (`<NAME>` es su `name` en mayúsculas). Secreto: solo en el entorno, nunca en el JSON, la config ni los logs. |
 | `TEST_DATABASE_URL` | Solo tests de integración — DB **dedicada**, nunca prod. |
 | `MEMORY_ENCRYPTION_MASTER_KEY` | Cifrado de memoria (implementado, ADR-007 D3). |
 
-`served_name` (en `models`), parsers, `quantization` y `max_model_len` (en
-`llm.serving`) NO van en `.env`: viven en
-[`../../ynara.config.json`](../../ynara.config.json).
+Los alias de modelo (`role`, `writes_memory` y `context_tokens`) y el alias de cada
+modo NO van en `.env`: viven en [`../../ynara.config.json`](../../ynara.config.json).
 
 ## Base de datos: dev vs prod
 
