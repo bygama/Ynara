@@ -4,7 +4,8 @@ import { createSseParser, parseSseText, SseParseError } from "./sse";
 
 /**
  * Tests del parser SSE del chat. El wire que parsea es el del *endpoint*
- * (`event: <name>\ndata: <json>\n\n`), no el wire interno de vLLM.
+ * (`event: <name>\ndata: <json>\n\n`), no el wire interno con los proveedores
+ * de IA (chunks de Chat Completions).
  */
 
 const DONE_DATA = JSON.stringify({
@@ -96,7 +97,7 @@ describe("parseSseText", () => {
     expect(events).toEqual([{ type: "token", data: { delta: "x" } }]);
   });
 
-  it("ignora eventos sin nombre conocido (wire interno de vLLM)", () => {
+  it("ignora eventos sin nombre conocido (wire interno con los proveedores)", () => {
     // Chunk OpenAI-like sin `event:` — el parser lo descarta.
     const text = 'data: {"id":"x","choices":[{"delta":{"content":"Hola"}}]}\n\n';
 

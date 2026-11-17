@@ -9,8 +9,9 @@ describe("chatPausedCopy", () => {
   it("es genérico-honesto: no menciona una causa concreta (sirve para pausa y overflow)", () => {
     const copy = chatPausedCopy().toLowerCase();
     expect(copy).toContain("no está disponible");
-    // No debe atarse a una causa puntual que sería mentira en el caso de overflow.
-    expect(copy).not.toContain("ollama");
+    // No debe atarse a una causa puntual (el proveedor de IA, un técnico) que sería
+    // mentira en el caso de overflow.
+    expect(copy).not.toContain("proveedor");
     expect(copy).not.toContain("técnico");
   });
 
