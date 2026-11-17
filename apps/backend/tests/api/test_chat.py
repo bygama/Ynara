@@ -242,9 +242,11 @@ async def test_happy_path_qwen_productividad_with_actions(db_session: AsyncSessi
         assert action["arguments"] == {"query": "reuniones"}
         # Qwen escribe memoria -> se encolo la consolidacion (post-commit).
         mock_task.delay.assert_called_once()
-        # Los kwargs replican EXACTO los que pasaba route(): todos str. El
-        # session_id es el de la ChatSession ya devuelta/persistida -> el enqueue
-        # ocurrio DESPUES del commit (la fila existe cuando se encola).
+        # Los kwargs son primitivos JSON: los str que pasaba route() mas el
+        # ``turn_seq`` del turno del usuario (0: primer turno de la sesion), la marca
+        # de idempotencia de la consolidacion. El session_id es el de la ChatSession
+        # ya devuelta/persistida -> el enqueue ocurrio DESPUES del commit (la fila
+        # existe cuando se encola).
         call_kwargs = mock_task.delay.call_args.kwargs
         assert call_kwargs == {
             "user_id": str(user.id),
@@ -252,6 +254,7 @@ async def test_happy_path_qwen_productividad_with_actions(db_session: AsyncSessi
             "user_msg": "agenda una reunion",
             "model_response": "Listo, lo agende.",
             "mode": "productividad",
+            "turn_seq": 0,
         }
         # La ChatSession ya esta persistida en la DB cuando se encolo.
         persisted = await db_session.get(ChatSession, uuid.UUID(body["session_id"]))
