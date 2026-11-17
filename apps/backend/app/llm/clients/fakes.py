@@ -49,7 +49,7 @@ class FakeLlmClient:
         ``complete`` devuelve el ``CompletionResult`` encolado TAL CUAL, incluido su
         canal ``reasoning`` (separado del ``content``): encolar un resultado con
         ``reasoning`` alcanza para ejercitar el evento SSE ``reasoning`` del chat con
-        ``LLM_BACKEND=fake`` (sin Ollama). No hace falta una API aparte.
+        ``LLM_BACKEND=fake`` (sin proveedor). No hace falta una API aparte.
         """
         self._results.append(result)
 
@@ -128,6 +128,6 @@ class FakeLlmClient:
         """No-op: el Fake no tiene recursos de red que liberar.
 
         Existe para que el teardown del lifespan/pool cierre el cliente LLM de
-        forma uniforme sea Fake o real (``ResilientClient``/``VllmClient``).
+        forma uniforme sea Fake o real (``ResilientClient``/``OpenAICompatClient``).
         """
         return None

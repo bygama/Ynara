@@ -1,15 +1,17 @@
 """Clientes de inferencia LLM.
 
 - ``base`` define los Protocols (``LLMClient``, ``ToolCallParser``).
-- ``vllm`` implementa el cliente HTTP contra un proceso vLLM
-  OpenAI-compatible.
-- ``parsers`` normaliza las tool calls del formato OpenAI que devuelve vLLM.
+- ``providers`` implementa el cliente HTTP contra la API de Chat Completions de
+  cada proveedor de IA (``OpenAICompatClient``, ADR-028): es el unico lugar del
+  backend que habla con los proveedores (regla #4b).
+- ``parsers`` normaliza las tool calls del formato OpenAI que devuelven los
+  proveedores.
 - ``fakes`` provee un cliente programable para tests del router / pool.
 - ``circuit`` implementa el ``CircuitBreaker`` por instancia (M3).
 - ``pool`` agrupa clientes y rutea por modelo (``ClientPool`` +
   ``RoutingStrategy``).
-- ``resilient`` envuelve el pool con retry + breaker + fallback on-prem
-  (``ResilientClient``).
+- ``resilient`` envuelve el pool con retry + breaker + respaldo entre
+  proveedores (``ResilientClient``).
 - ``embedding`` define el Protocol ``EmbeddingClient`` y el
   ``FakeEmbeddingClient`` determinista que consumen los wrappers de memoria (M7).
 - ``reranker`` define el Protocol ``Reranker`` (reordena el top-K ANN) con el

@@ -37,9 +37,9 @@ siempre cuenta como exito, aunque un intento anterior haya sido una caida: el
 proveedor ya respondio, y una prueba HALF_OPEN que responde en el reintento
 vuelve a ``CLOSED`` (contrato de ``CircuitBreaker``).
 
-El respaldo es otro cliente del pool: otra instancia de serving o, con
-ADR-028, otro proveedor por API (regla #4b). ``clock`` y ``sleep`` son
-inyectables para tests sin tiempo real.
+El respaldo es otro cliente del pool: el siguiente proveedor de
+``LLM_PROVIDERS`` (ADR-028, regla #4b). ``clock`` y ``sleep`` son inyectables
+para tests sin tiempo real.
 
 Que errores se reintentan, cuanto se espera y que le toca al breaker vive en
 ``_resilience.py``; aca queda el recorrido de los candidatos y el presupuesto.
@@ -82,19 +82,16 @@ _DEFAULT_DEGRADED_TEXT = "Estoy con un problema tecnico, proba en un ratito."
 
 # Presupuesto global (en segundos) para TODA la cadena de candidatos + respaldo
 # de un ``complete``. Sin este tope, el peor caso es ~timeout_per_request x
-# max_attempts x N_candidatos (p.ej. 120s x 3 x 2 -> ~12 min) antes de degradar.
+# max_attempts x N_candidatos (p.ej. 20s x 3 x 2 -> 2 min) antes de degradar.
 # Al vencerse el budget se corta limpio y se devuelve la respuesta degradada
 # (mismo contrato que agotar la cadena), dando ademas un punto de cancelacion
 # async cooperativo. Es una cota defensiva, no el camino feliz.
 #
-# Relacion con ``request_timeout_s`` (ynara.config.json[llm.serving] = 120s, el
-# timeout POR request individual): este tope (90s) es deliberadamente MENOR que
-# un solo request timeout. Asi la cota global de la cadena corta ANTES de que
-# siquiera el primer request llegue a su propio timeout de 120s, garantizando un
-# techo de latencia agregada por debajo del peor caso de un request aislado.
-# Para que un proveedor colgado deje lugar al respaldo, su timeout por request
-# tiene que entrar varias veces en este tope (intentos x timeout + backoff + el
-# request al respaldo); si no, el presupuesto corta antes y la respuesta degrada.
+# Relacion con el timeout POR request (``PROVIDER_REQUEST_TIMEOUT_S`` de la
+# factory, 20s): para que un proveedor colgado deje lugar al respaldo, su timeout
+# por request tiene que entrar varias veces en este tope (intentos x timeout +
+# backoff + el request al respaldo); si no, el presupuesto corta antes y la
+# respuesta degrada. ``check_resilience_budget`` lo verifica al armar el cliente.
 _DEFAULT_TOTAL_BUDGET_S: float = 90.0
 
 

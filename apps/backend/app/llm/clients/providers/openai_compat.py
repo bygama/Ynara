@@ -2,16 +2,16 @@
 
 ``OpenAICompatClient`` habla ``POST {base_url}/chat/completions`` de cualquier
 proveedor compatible con OpenAI, con la credencial del proveedor como
-``Authorization: Bearer``. Implementa ``LLMClient`` con las mismas firmas que
-``VllmClient``: el router, el tool loop, el playground y el ``ResilientClient`` lo
-usan sin cambios. Recibe el ``httpx.AsyncClient`` por constructor, así que se testea
-con ``httpx.MockTransport`` sin red.
+``Authorization: Bearer``. Implementa ``LLMClient``: el router, el tool loop, el
+playground y el ``ResilientClient`` lo usan sin saber qué proveedor atiende. Recibe el
+``httpx.AsyncClient`` por constructor, así que se testea con ``httpx.MockTransport``
+sin red.
 
-Respecto del camino OpenAI de ``VllmClient``:
+Qué resuelve el cliente:
 
-- Modelos: el router pide un alias (el ``served_name`` de ``ynara.config.json``) y el
-  cliente manda el id del modelo en el proveedor (``model_map``). Un alias que no está
-  en el mapa levanta ``ModelNotServedError`` sin hacer el request.
+- Modelos: el código pide un alias de ``ynara.config.json`` (``conversacional`` o
+  ``agente``) y el cliente manda el id del modelo en el proveedor (``model_map``). Un
+  alias que no está en el mapa levanta ``ModelNotServedError`` sin hacer el request.
 - Tools: ``calendar.create_event`` viaja como ``calendar__create_event`` y vuelve
   revertido, también en streaming (``_tool_names``).
 - Razonamiento: ``reasoning_effort`` solo si el proveedor tiene un valor configurado
@@ -22,7 +22,7 @@ Respecto del camino OpenAI de ``VllmClient``:
 - Errores: el mapeo de ``_http`` (credencial, límite de tasa con ``Retry-After``,
   contexto excedido, caídas y red), también para el status de un stream.
 
-Sin extensiones de vLLM (``chat_template_kwargs``) ni API nativa de Ollama.
+Sin extensiones propias de un server (``chat_template_kwargs``) ni APIs nativas.
 
 Regla #4a: el cliente no loguea nada. La clave vive en un ``SecretStr`` que solo se lee
 al armar el header (``BearerAuth``); ni el ``repr`` del cliente ni el detail de una

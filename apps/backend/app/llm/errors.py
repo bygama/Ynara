@@ -13,7 +13,7 @@ Tres familias:
 - **Semanticos**: fallas de parseo / ejecucion de tools y de recuperacion
   de memoria.
 
-Regla #4 (datos del usuario nunca fuera del perimetro): **ninguna
+Regla #4a (datos del usuario nunca en logs ni errores): **ninguna
 excepcion expone contenido del usuario ni la respuesta del modelo en su
 ``__str__``**. Los mensajes son etiquetas tecnicas fijas; cualquier detalle
 sensible viaja en atributos privados que el logging con scrubbing puede
@@ -185,7 +185,7 @@ def degraded_response(
 ) -> CompletionResult:
     """Construye un ``CompletionResult`` de respuesta degradada.
 
-    Se usa cuando la cadena de fallback on-prem se agoto y hay que
+    Se usa cuando la cadena de proveedores y respaldo se agoto y hay que
     devolverle algo coherente al usuario en vez de una excepcion. El
     ``finish_reason`` queda en ``"degraded"`` para que las capas superiores
     lo distingan de una respuesta normal.

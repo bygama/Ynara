@@ -1,9 +1,9 @@
 """Streaming SSE de Chat Completions: de eventos ``data:`` a ``CompletionChunk``.
 
 ``sse_data`` saca el payload de cada línea del stream y ``StreamDecoder`` lo convierte
-en chunks con la misma forma que ``VllmClient``: texto, razonamiento, fragmentos de
-tool calls (``tool_call_delta``, que el consumer junta con ``ToolCallParser.accumulate``)
-y ``finish_reason``.
+en ``CompletionChunk``: texto, razonamiento, fragmentos de tool calls
+(``tool_call_delta``, que el consumer junta con ``ToolCallParser.accumulate``) y
+``finish_reason``.
 """
 
 from __future__ import annotations
@@ -45,9 +45,9 @@ class StreamDecoder:
     def feed(self, data: str) -> CompletionChunk | None:
         """Un evento ``data:``; ``None`` si no trae nada para el consumer.
 
-        Un evento que no es JSON se ignora, como en ``VllmClient``. Un evento de error
-        sin ``choices`` (el proveedor corta el stream después del 200) levanta
-        ``LlmError`` con una etiqueta fija.
+        Un evento que no es JSON se ignora. Un evento de error sin ``choices`` (el
+        proveedor corta el stream después del 200) levanta ``LlmError`` con una
+        etiqueta fija.
         """
         try:
             event = json.loads(data)

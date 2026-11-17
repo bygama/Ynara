@@ -1,7 +1,7 @@
 """Schemas de la capa LLM (M1).
 
 Tipos de dominio del cliente de inferencia, independientes de FastAPI y de
-vLLM. ``ChatRequest`` / ``ChatResponse`` son el contrato del router (se
+cada proveedor. ``ChatRequest`` / ``ChatResponse`` son el contrato del router (se
 movieron desde ``router.py``); el resto modela lo que el cliente manda al
 servidor y lo que devuelve, en formato neutro (no OpenAI ni custom de
 modelo).
@@ -102,11 +102,12 @@ class CompletionResult(BaseModel):
     completion_tokens: int
     model_name: str
     latency_ms: float
-    # Razonamiento del modelo en su canal SEPARADO (campo ``reasoning`` del message
-    # OpenAI). Ollama / vLLM con reasoning-parser lo emiten APARTE del ``content``
-    # para los thinking models (qwen): el ``text`` queda limpio y el pensamiento
-    # viaja acá. ``None`` cuando el modelo no expone canal de razonamiento o thinking
-    # estuvo apagado. Aditivo: los consumidores que lo ignoran no cambian.
+    # Razonamiento del modelo en su canal SEPARADO (``reasoning_content`` o
+    # ``reasoning`` del message OpenAI). Los proveedores que lo exponen lo mandan
+    # APARTE del ``content`` para los thinking models: el ``text`` queda limpio y el
+    # pensamiento viaja acá. ``None`` cuando el modelo no expone canal de
+    # razonamiento o thinking estuvo apagado. Aditivo: los consumidores que lo
+    # ignoran no cambian.
     reasoning: str | None = None
 
 
@@ -119,9 +120,9 @@ class CompletionChunk(BaseModel):
     delta_text: str
     tool_call_delta: dict[str, Any] | None = None
     finish_reason: str | None = None
-    # Canal de razonamiento separado (campo ``reasoning`` del delta OpenAI). Ollama
-    # y vLLM con reasoning-parser lo emiten APARTE del ``content`` para los modelos
-    # thinking (qwen): el texto de respuesta queda limpio y el razonamiento viaja
+    # Canal de razonamiento separado (``reasoning_content`` o ``reasoning`` del delta
+    # OpenAI). Los proveedores que lo exponen lo mandan APARTE del ``content`` para los
+    # modelos thinking: el texto de respuesta queda limpio y el razonamiento viaja
     # acá. ``None``/ausente cuando el modelo no expone un canal de razonamiento.
     reasoning_delta: str | None = None
 
