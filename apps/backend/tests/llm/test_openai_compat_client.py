@@ -432,7 +432,7 @@ def _resilient_pair(
         ([_raises(httpx.ReadTimeout)] * 3, 3, "LlmTimeoutError"),
         ([_raises(httpx.ConnectError)] * 3, 3, "LlmUnavailableError"),
     ],
-    ids=["401", "403", "404", "429-sin-presupuesto", "5xx", "timeout", "red"],
+    ids=["401", "403", "404", "429-espera-larga", "5xx", "timeout", "red"],
 )
 async def test_failover_to_backup_provider(
     principal_steps: list[Step],
@@ -449,7 +449,7 @@ async def test_failover_to_backup_provider(
 
     assert result.text == "Hola, en que te puedo ayudar?"
     assert calls == ["principal"] * principal_calls + ["respaldo"]
-    assert len(sleep.delays) == principal_calls - 1  # 401/403/404 y 429 sin presupuesto: 0
+    assert len(sleep.delays) == principal_calls - 1  # 401/403/404 y 429 con espera larga: 0
     assert f"llm: candidato principal descartado ({error_name})" in caplog.text
     assert _API_KEY not in caplog.text
     assert _BACKUP_KEY not in caplog.text
