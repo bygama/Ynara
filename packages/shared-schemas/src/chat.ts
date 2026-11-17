@@ -15,16 +15,22 @@ import { ModeSchema } from "./modes";
  * divergencia es detectable en code review.
  */
 
-/** Límite de longitud del mensaje (techo seguro vs `max_model_len` de Gemma). */
+/**
+ * Límite de longitud del mensaje, en caracteres. Mismo valor que
+ * `CHAT_TEXT_MAX_LENGTH` de `apps/backend/app/schemas/chat.py` (ADR-028 D9 no
+ * lo cambia). No se ata a un modelo: el presupuesto de contexto es por alias
+ * (`context_tokens` en `ynara.config.json[models]`) y 4000 caracteres entran
+ * holgados en el alias más chico.
+ */
 export const CHAT_TEXT_MAX_LENGTH = 4000;
 
 /**
  * Request a `POST /v1/chat` y `POST /v1/chat/stream`.
  *
- * `min(1)` y `max(CHAT_TEXT_MAX_LENGTH)` se adelantan al backend: el Pydantic
- * `ChatRequest.text` hoy es `str` pelado; el `max_length=4000` se cablea en M9
- * (accion #3 de RESPUESTAS-CONTRATO-CHAT). Validar client-side no tiene
- * contra: no mandamos texto vacio ni por encima del techo de Gemma.
+ * `min(1)` y `max(CHAT_TEXT_MAX_LENGTH)` espejan el Pydantic
+ * `ChatHttpRequest.text` (`apps/backend/app/schemas/chat.py`), que responde 422
+ * fuera de rango. Validar client-side ahorra el viaje: no mandamos texto vacío
+ * ni por encima del tope.
  */
 export const ChatRequestSchema = z.object({
   text: z.string().min(1).max(CHAT_TEXT_MAX_LENGTH),
@@ -51,11 +57,12 @@ export const ChatMessageSchema = z.object({
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 
 /**
- * Una acción ejecutada por el agente Qwen (tool call CON resultado).
+ * Una acción ejecutada por el agente (tool call CON resultado).
  *
  * `result` es el dict que devuelve `ToolRegistry.execute` (hoy stub
  * `{ status: "not_wired" }`) o `{ error: { code, message } }` si falló. Solo
- * los modos Qwen (productividad, memoria) producen acciones; Gemma → `[]`.
+ * los modos del alias `agente` (productividad, memoria) producen acciones; los
+ * del alias `conversacional` → `[]`.
  */
 export const ActionSchema = z.object({
   id: z.string(),
@@ -108,8 +115,9 @@ export type StreamToken = z.infer<typeof StreamTokenSchema>;
 
 /**
  * `event: reasoning` — un fragmento del razonamiento post-hoc del modelo
- * (Camino A). Llega ANTES de los `token` cuando el modelo razona (p. ej. modos
- * agente Qwen). Mismo shape que `token`: el front concatena los `delta` en un
+ * (Camino A). Llega ANTES de los `token` y solo si el proveedor devolvió
+ * razonamiento (ADR-028 D9): que el modo pida no razonar no garantiza que no
+ * llegue. Mismo shape que `token`: el front concatena los `delta` en un
  * campo aparte del mensaje y decide si renderizarlos según el toggle de
  * "Ver razonamiento" (display-only; el backend SIEMPRE lo emite cuando hay).
  */

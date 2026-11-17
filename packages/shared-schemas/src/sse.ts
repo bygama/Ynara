@@ -17,10 +17,10 @@ import {
  * wire SSE con eventos con nombre (`event: token\ndata: {...}\n\n`) es
  * idéntico, así que vive acá y se testea contra el contrato del endpoint.
  *
- * Nota: los fixtures `.sse` de `apps/backend/tests/` son el wire *interno* del
- * cliente vLLM (chunks OpenAI sin `event:`), que este parser ignora a
- * propósito. El endpoint M9 los re-emite como los eventos con nombre de abajo,
- * que es lo que este parser consume.
+ * Nota: los fixtures `.sse` de `apps/backend/tests/` son el wire *interno*
+ * entre el backend y los proveedores de IA (chunks de Chat Completions sin
+ * `event:`), que este parser ignora a propósito. El endpoint M9 los re-emite
+ * como los eventos con nombre de abajo, que es lo que este parser consume.
  *
  * Contrato del stream (cerrado en #61, ver `RESPUESTAS-CONTRATO-CHAT.md`):
  *
@@ -75,9 +75,10 @@ function isKnownEvent(name: string): name is KnownEventName {
  *
  * Devuelve `null` para bloques que se ignoran a propósito: comentarios SSE
  * (líneas que arrancan con `:`), heartbeats vacíos, o eventos sin nombre
- * conocido (p. ej. el `data: [DONE]` interno de vLLM, que el endpoint no
- * debería re-emitir pero toleramos por las dudas). Lanza `SseParseError` si
- * el bloque tiene un evento conocido pero su `data` está roto.
+ * conocido (p. ej. el `data: [DONE]` de Chat Completions, del wire interno con
+ * los proveedores, que el endpoint no debería re-emitir pero toleramos por las
+ * dudas). Lanza `SseParseError` si el bloque tiene un evento conocido pero su
+ * `data` está roto.
  */
 function parseBlock(block: string): ChatStreamEvent | null {
   let eventName: string | null = null;
