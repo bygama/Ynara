@@ -5,10 +5,10 @@ Este archivo NO duplica esa configuracion: la carga en runtime via
 ``load_llm_config()`` (cacheado a nivel de modulo).
 
 Reglas (M8 Ola 1 + Ola 2; enqueue movido en M10 Ola 0):
-- Gemma (conversacional) solo lee memoria: ``tools_enabled=[]`` -> sin tool loop
+- ``conversacional`` solo lee memoria: ``tools_enabled=[]`` -> sin tool loop
   real, una sola vuelta al modelo. ``writes_memory=False``: el turno NO se
   consolida.
-- Qwen (agent) lee memoria y puede llamar tools (calendar/reminder/memory).
+- ``agente`` lee memoria y puede llamar tools (calendar/reminder/memory).
   ``writes_memory=True``: el turno SE consolida en el worker Celery (no
   bloqueante, decision #2 ADR-010).
 - ``route()`` ya NO encola: el ``consolidate_turn.delay()`` vive en el service
@@ -21,16 +21,16 @@ Reglas (M8 Ola 1 + Ola 2; enqueue movido en M10 Ola 0):
   ``ChatSession.id`` real (ver nota (a)).
 
 Flujo de ``route()``:
-1. Carga la config del modo (``mode_cfg``), el modelo (``model_cfg``) y el
-   ``max_model_len`` del modelo desde ``ynara.config.json``.
+1. Carga la config del modo (``mode_cfg``), su alias de modelo (``model_cfg``) y
+   el ``context_tokens`` del alias desde ``ynara.config.json``.
 2. Carga el system prompt estatico del modo (``load_prompt``, cacheado).
 3. Construye el ``MemoryContext`` con SOLO los stores de las layers del modo
    y renderiza el bloque de contexto de memoria respetando un presupuesto de
-   tokens (``max_model_len`` - estimacion(system) - ``COMPLETION_RESERVE``).
+   tokens (``context_tokens`` - estimacion(system) - ``COMPLETION_RESERVE``).
 4. Concatena el bloque al system prompt en un STRING NUEVO (NO muta el prompt
    cacheado) si el bloque no esta vacio.
-5. Arma ``messages = [system, user]`` y corre ``run_tool_loop`` con el
-   ``served_name`` del modelo (NUNCA la key interna).
+5. Arma ``messages = [system, user]`` y corre ``run_tool_loop`` con el alias del
+   modelo; el cliente de cada proveedor lo traduce a su id de modelo.
 6. Devuelve un ``ChatResponse`` con el texto final, las ``actions`` ejecutadas
    y el ``session_id``. ``route()`` NO encola consolidacion: eso lo hace el
    endpoint despues del commit (M10 Ola 0; ver ``app.api.v1.chat``).
@@ -67,8 +67,8 @@ Decisiones de diseno documentadas (M8 Ola 1 + Ola 2):
     degrada por su cuenta los transitorios (reintento y respaldo) y los rechazos
     del proveedor (credencial o 4xx propio: respaldo sin reintento), pero RE-LANZA
     los errores del request (``LlmBadRequestError``/``LlmContextOverflowError`` y
-    ``ModelNotServedError``: sus ``REQUEST_ERRORS``); un ``VllmClient`` pelado
-    RE-LANZA todo. Asi la promesa "``route()`` nunca propaga un error
+    ``ModelNotServedError``: sus ``REQUEST_ERRORS``); un ``OpenAICompatClient``
+    pelado RE-LANZA todo. Asi la promesa "``route()`` nunca propaga un error
     transitorio/permanente del modelo al caller" se cumple con cualquier cliente, y
     un deploy roto sigue siendo ruidoso.
 
@@ -77,9 +77,9 @@ Decisiones de diseno documentadas (M8 Ola 1 + Ola 2):
     (``ChatService.run_turn`` en ``app.services.chat``), DESPUES del ``session.commit()``,
     para que la ``ChatSession`` este persistida antes de que el worker Celery
     (otro proceso) procese el turno. El enqueue sigue siendo no-bloqueante y
-    condicionado a ``writes_memory`` (Qwen=True, Gemma=False) + turno no-degradado;
-    la condicion se replica EXACTA en el endpoint. ``route()`` solo provee la
-    respuesta (incluido ``finish_reason``) que el endpoint usa para decidir.
+    condicionado a ``writes_memory`` (agente=True, conversacional=False) + turno
+    no-degradado; la condicion se replica EXACTA en el endpoint. ``route()`` solo
+    provee la respuesta (incluido ``finish_reason``) que el endpoint usa para decidir.
 """
 
 from __future__ import annotations
@@ -121,10 +121,10 @@ _FALLBACK_TEXT = (
 def _thinking_for_role(role: str) -> bool | None:
     """Modo de razonamiento por rol del modelo (ADR-012 D4).
 
-    - ``conversational`` -> ``False``: el modelo conversacional (Gemma 4) NUNCA
-      piensa. Con thinking activo Gemma devuelve ``content`` vacio (gotcha medido);
+    - ``conversational`` -> ``False``: el modelo conversacional NUNCA piensa. Con
+      thinking activo puede devolver ``content`` vacio (gotcha medido con Gemma);
       emitir ``False`` explicito garantiza OFF aunque cambie el default del server.
-    - ``agent`` -> ``True``: el agente (Qwen3) piensa para planificar tool calls;
+    - ``agent`` -> ``True``: el agente piensa para planificar tool calls;
       emitir ``True`` explicito asegura ON aunque cambie el default del server.
     - cualquier otro rol -> ``None``: no emitir la clave, usar el default del
       server. La config tipa ``role`` como ``Literal`` (solo los dos de arriba), asi
@@ -163,7 +163,7 @@ async def route(
             tiene). ChatRequest no lo trae: lo provee el endpoint (M9) desde la
             sesion autenticada.
         llm_client: Cliente de inferencia (real ``ResilientClient`` o
-            ``FakeLlmClient``). Se le pasa el ``served_name`` del modelo.
+            ``FakeLlmClient``). Se le pasa el alias del modelo del modo.
         embedder: Cliente de embeddings para semantic/episodic.
         reranker: Cliente de reranking para semantic/episodic.
         config: Config de runtime ya cargada; si es ``None`` usa
@@ -190,10 +190,10 @@ async def route(
     mode_key = request.mode.value
     mode_cfg = cfg.modes[mode_key]
     model_cfg = cfg.model_for_mode(mode_key)
-    context_tokens = cfg.serving.max_model_len[model_cfg.key]
+    context_tokens = model_cfg.context_tokens
 
     # Modo de razonamiento por rol (ADR-012 D4): conversacional NUNCA piensa
-    # (Gemma -> content vacio con thinking ON), agente SI (Qwen planifica tool
+    # (content vacio con thinking ON, medido con Gemma), agente SI (planifica tool
     # calls). Se hila por el tool loop hasta el cliente; ``None`` deja el default.
     thinking = _thinking_for_role(model_cfg.role)
 
@@ -214,7 +214,7 @@ async def route(
     # en el huso del usuario); NO se cachea porque cambia cada minuto. Se arma ANTES del
     # budget a proposito: el bloque de memoria debe dimensionarse reservando tambien los
     # tokens del preambulo (si se calculaba el budget con el prompt pelado, el bloque
-    # quedaba sobre-asignado y final_system podia excederse de max_model_len). ``tz`` baja
+    # quedaba sobre-asignado y final_system podia excederse de context_tokens). ``tz`` baja
     # del huso del usuario (``users.time_zone``, resuelto en ``ChatService.run_turn``);
     # default ``APP_TIMEZONE`` para callers directos / tests.
     now_preamble = build_now_preamble(current_now(tz), tz_label=tz)
@@ -240,8 +240,8 @@ async def route(
     # mensaje actual y trataba cada turno como una persona nueva (nota (b), ahora resuelta).
     # El caller (``ChatService.run_turn``) carga los turnos descifrados desde
     # ``conversation_turns``; acá se recortan al presupuesto de la ventana (más recientes
-    # primero, turnos completos, orden cronológico) para no desbordar ``max_model_len`` —
-    # crítico en Gemma (ventana servida 8192). ``final_system`` ya incluye preámbulo +
+    # primero, turnos completos, orden cronológico) para no desbordar ``context_tokens`` —
+    # crítico en ``conversacional`` (8192). ``final_system`` ya incluye preámbulo +
     # bloque de memoria, así que el recorte reserva ese tamaño + el mensaje actual + la
     # completion. messages = [system, *historial_recortado, user_actual].
     budgeted_history = trim_history_to_budget(
@@ -267,13 +267,13 @@ async def route(
     # parse/exec) significa "el turno no se pudo completar" -> fallback degradado. El
     # ResilientClient degrada solo los transitorios y los rechazos del proveedor
     # (credencial o 4xx propio), pero RE-LANZA los errores del request
-    # (bad-request/overflow y ModelNotServedError: sus REQUEST_ERRORS) y un VllmClient
-    # pelado RE-LANZA todo: este except es la red real. Se loguea SOLO
+    # (bad-request/overflow y ModelNotServedError: sus REQUEST_ERRORS) y un
+    # OpenAICompatClient pelado RE-LANZA todo: este except es la red real. Se loguea SOLO
     # type(exc).__name__ (regla #4) para no degradar a ciegas.
     try:
         loop_result = await run_tool_loop(
             llm_client=llm_client,
-            model=model_cfg.served_name,
+            model=model_cfg.alias,
             messages=messages,
             specs=specs,
             registries=mem_ctx.registries,

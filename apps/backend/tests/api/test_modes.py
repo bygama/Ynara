@@ -2,11 +2,12 @@
 
 100% en memoria (sin DB, sin auth, sin Redis): el endpoint solo lee la config de
 modos, que en los tests se inyecta vía override de ``get_available_modes`` para no
-depender del loader del LLM (que valida ``LLM_SERVING``). Cubre:
+depender del loader del LLM. Cubre:
 
 1. ``build_modes_response`` (pura): shape + orden + id validado contra ``Mode``.
 2. ``GET /v1/modes`` → 200 con el catálogo, en orden, sin requerir token.
 3. id desconocido en la config → ``ValueError`` (fail-fast; ``Mode(id)`` levanta).
+4. Con la config real, ``model`` es el alias de cada modo (ADR-028 D9).
 """
 
 from __future__ import annotations
@@ -32,19 +33,19 @@ def _mode(name: str, model: str, layers: list[str], tools: list[str], tone: str)
 _FAKE_MODES: dict[str, ModeConfig] = {
     "productividad": _mode(
         "productividad",
-        "qwen-3.5-9b",
+        "agente",
         ["semantic", "episodic"],
         ["calendar", "reminder", "memory"],
         "neutro-eficaz",
     ),
-    "estudio": _mode("estudio", "gemma-4-12b", ["episodic", "procedural"], [], "encouragement"),
+    "estudio": _mode("estudio", "conversacional", ["episodic", "procedural"], [], "encouragement"),
     "bienestar": _mode(
-        "bienestar", "gemma-4-12b", ["procedural", "semantic"], [], "casual-empatico"
+        "bienestar", "conversacional", ["procedural", "semantic"], [], "casual-empatico"
     ),
-    "vida": _mode("vida", "gemma-4-12b", ["procedural"], [], "casual-rioplatense"),
+    "vida": _mode("vida", "conversacional", ["procedural"], [], "casual-rioplatense"),
     "memoria": _mode(
         "memoria",
-        "qwen-3.5-9b",
+        "agente",
         ["episodic", "semantic", "procedural"],
         ["memory"],
         "neutro-eficaz",
@@ -62,11 +63,11 @@ def test_build_modes_response_preserves_order_and_shape() -> None:
 
     prod = resp.modes[0]
     assert prod.id == Mode.PRODUCTIVIDAD
-    assert prod.model == "qwen-3.5-9b"
+    assert prod.model == "agente"
     assert prod.memory_layers == ["semantic", "episodic"]
     assert prod.tools_enabled == ["calendar", "reminder", "memory"]
     assert prod.tone == "neutro-eficaz"
-    # Gemma (estudio) no ejecuta tools → tools_enabled vacío (ADR-002).
+    # conversacional (estudio) no ejecuta tools → tools_enabled vacío (ADR-002).
     assert resp.modes[1].tools_enabled == []
 
 
@@ -76,7 +77,7 @@ def test_build_modes_response_accepts_all_mode_members() -> None:
 
 
 def test_build_modes_response_rejects_unknown_mode() -> None:
-    bad = {"inexistente": _mode("inexistente", "qwen-3.5-9b", ["semantic"], [], "x")}
+    bad = {"inexistente": _mode("inexistente", "agente", ["semantic"], [], "x")}
     with pytest.raises(ValueError):
         build_modes_response(bad)
 
@@ -105,10 +106,27 @@ async def test_get_modes_returns_catalog() -> None:
     assert ids == ["productividad", "estudio", "bienestar", "vida", "memoria"]
     assert body["modes"][0] == {
         "id": "productividad",
-        "model": "qwen-3.5-9b",
+        "model": "agente",
         "memory_layers": ["semantic", "episodic"],
         "tools_enabled": ["calendar", "reminder", "memory"],
         "tone": "neutro-eficaz",
+    }
+
+
+async def test_get_modes_real_config_returns_aliases() -> None:
+    """Sin override, ``model`` sale de ``ynara.config.json``: el alias de cada modo."""
+    transport = ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/v1/modes")
+
+    assert resp.status_code == 200
+    models = {m["id"]: m["model"] for m in resp.json()["modes"]}
+    assert models == {
+        "productividad": "agente",
+        "estudio": "conversacional",
+        "bienestar": "conversacional",
+        "vida": "conversacional",
+        "memoria": "agente",
     }
 
 

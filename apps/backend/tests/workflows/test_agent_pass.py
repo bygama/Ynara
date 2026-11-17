@@ -32,9 +32,9 @@ from app.models.user import User
 from app.schemas.calendar_event import EventCreate
 from app.workflows.agent_pass import _async_agent_pass, agent_turn_pass
 
-# Modo real con 'calendar' en tools_enabled (ynara.config.json): productividad (qwen).
+# Modo real con 'calendar' en tools_enabled (ynara.config.json): productividad (agente).
 MODE_WITH_CALENDAR = "productividad"
-# Modo sin calendar en tools_enabled: vida (gemma, tools_enabled=[]).
+# Modo sin calendar en tools_enabled: vida (conversacional, tools_enabled=[]).
 MODE_WITHOUT_CALENDAR = "vida"
 
 USER_ID = str(uuid.uuid4())
@@ -59,7 +59,7 @@ def _make_llm_with_create_event(
     Reproduce el flujo del tool loop: el modelo pide la tool, el loop la ejecuta, y
     el modelo cierra con un ``stop`` (sin más tool_calls).
     """
-    client = FakeLlmClient(models=frozenset({"qwen"}))
+    client = FakeLlmClient(models=frozenset({"agente"}))
     tc = ToolCall(
         id="tc-1",
         name="calendar.create_event",
@@ -278,7 +278,7 @@ class TestAsyncAgentPassUnit:
 
     async def test_no_tool_call_means_zero_actions(self) -> None:
         """Si el modelo no llama ninguna tool (nada para agendar), 0 acciones."""
-        client = FakeLlmClient(models=frozenset({"qwen"}))
+        client = FakeLlmClient(models=frozenset({"agente"}))
         client.queue_result(
             CompletionResult(
                 text="nada para agendar",

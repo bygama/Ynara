@@ -92,7 +92,7 @@ MODE = "vida"
 
 def _make_llm_with_ops(ops_json: str) -> FakeLlmClient:
     """FakeLlmClient con un resultado ya encolado cuyo text es ops_json."""
-    client = FakeLlmClient(models=frozenset({"qwen"}))
+    client = FakeLlmClient(models=frozenset({"agente"}))
     client.queue_result(
         CompletionResult(
             text=ops_json,
@@ -328,7 +328,7 @@ class TestAsyncConsolidateUnit:
 
     async def test_invalid_json_from_llm_returns_zero(self) -> None:
         """JSON invalido de Qwen -> parseo defensivo -> 0 ops aplicadas, sin crash."""
-        client = FakeLlmClient(models=frozenset({"qwen"}))
+        client = FakeLlmClient(models=frozenset({"agente"}))
         client.queue_result(
             CompletionResult(
                 text="esto no es JSON { invalido",
@@ -723,7 +723,7 @@ class TestAsyncConsolidateIntegration:
     async def test_invalid_json_no_db_writes(self, db_session: AsyncSession) -> None:
         """JSON invalido del LLM no escribe nada en la DB (parseo defensivo)."""
         user_id = await _seed_user(db_session)
-        client = FakeLlmClient(models=frozenset({"qwen"}))
+        client = FakeLlmClient(models=frozenset({"agente"}))
         client.queue_result(
             CompletionResult(
                 text="no soy json :((",

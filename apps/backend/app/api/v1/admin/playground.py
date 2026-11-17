@@ -5,8 +5,8 @@ datos reales. Gate ``CurrentAdmin``.
 
 Privacidad (regla #4) — invariantes NO re-litigables:
 (1) NUNCA se expone ``base_url`` ni connection strings del serving (host/creds):
-    ``ServingOut`` ni siquiera tiene el campo. Solo backend (fake/vllm), served_names,
-    role, quant, etc.
+    ``ServingOut`` ni siquiera tiene el campo. Solo backend (fake/api), alias, role,
+    etc.
 (2) El playground NO persiste nada (sin ``DbSession`` en la firma -> cero
     ``ChatSession``/``conversation_turns``/``episodic``/``consolidate_turn``).
 (3) NUNCA se ecoa el body crudo de un ``LlmError``: el mapeo de errores usa solo
@@ -85,7 +85,7 @@ def _resolve_playground_request(body: PlaygroundIn) -> _ResolvedPlayground:
     """Centraliza los pasos 1-5 compartidos por los 3 handlers (DRY, behavior-preserving).
 
     Mismos chequeos y MISMO orden que tenía cada handler inline:
-    (1) lookup del ``served_name`` en el catálogo -> 422 "modelo no servido";
+    (1) lookup del alias en el catálogo -> 422 "modelo no servido";
     (2) backend fake sin serving real -> 409 "serving real no disponible";
     (3) thinking efectivo: override del body > default por role (True solo si ``agent``);
     (4) preset low_perf: pisa max_tokens/temp/thinking + fija timeout (el agente solo
@@ -98,9 +98,8 @@ def _resolve_playground_request(body: PlaygroundIn) -> _ResolvedPlayground:
     settings = get_settings()
     cfg = load_llm_config()
 
-    # 1) Validar el modelo elegido contra el catálogo de served_names.
-    models_by_served = {m.served_name: m for m in cfg.models.values()}
-    model_cfg = models_by_served.get(body.model)
+    # 1) Validar el alias elegido contra el catálogo de ynara.config.json.
+    model_cfg = cfg.models.get(body.model)
     if model_cfg is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="modelo no servido"
@@ -161,7 +160,7 @@ async def admin_serving(
 
     Combina ``load_llm_config()`` + ``settings`` con una sola ``llm_client.health()``.
     NUNCA expone ``base_url`` ni connection strings (regla #4): solo backend
-    (fake/vllm), served_names, role, quant, tool_parser, etc. Con backend fake el
+    (fake/api), alias, role, presupuesto de contexto, etc. Con backend fake el
     Fake reporta sano (``serving_healthy=True``) pero ``is_real``/``low_perf_available``
     son ``False`` para que la UI advierta que no hay generación real.
     """
@@ -174,15 +173,11 @@ async def admin_serving(
 
     models = [
         ServingModelOut(
-            key=model.key,
-            served_name=model.served_name,
+            alias=model.alias,
             role=model.role,
             writes_memory=model.writes_memory,
-            context_window=model.context_window,
-            max_model_len=cfg.serving.max_model_len[model.key],
-            quantization=cfg.serving.quantization,
-            tool_parser=cfg.serving.tool_parsers[model.key],
-            healthy=health.healthy and llm_client.serves_model(model.served_name),
+            context_tokens=model.context_tokens,
+            healthy=health.healthy and llm_client.serves_model(model.alias),
             default_thinking=model.role == "agent",
         )
         for model in cfg.models.values()
@@ -227,7 +222,7 @@ async def admin_playground(
     """Completion ad-hoc aislada contra un modelo elegido (F1 ADR-018).
 
     Llama ``llm_client.complete()`` DIRECTO (sin ``route()``/``run_tool_loop()``, sin
-    ``DbSession``): cero sesión/memoria/tools. Valida el ``served_name`` contra el
+    ``DbSession``): cero sesión/memoria/tools. Valida el alias contra el
     catálogo (422 si no se sirve), rechaza el backend fake (409, evita la
     ``AssertionError`` del Fake del lifespan), aplica el preset low_perf si se pidió y
     mapea la familia ``LlmError`` a status sin ecoar el payload (regla #4).
@@ -242,7 +237,7 @@ async def admin_playground(
     # 6) Llamada directa al cliente; 7) mapear LlmError a status sin ecoar payload.
     try:
         result = await llm_client.complete(
-            model=model_cfg.served_name,
+            model=model_cfg.alias,
             messages=resolved.messages,
             tools=None,
             max_tokens=max_tokens,
@@ -266,7 +261,7 @@ async def admin_playground(
     trace = [
         TraceStep(
             name="request",
-            detail=f"{model_cfg.served_name} · max_tokens={max_tokens} · temp={temperature}"
+            detail=f"{model_cfg.alias} · max_tokens={max_tokens} · temp={temperature}"
             + (" · preset low_perf" if body.params.low_perf else ""),
         ),
         TraceStep(name="thinking", detail="on" if thinking else "off"),
@@ -341,7 +336,7 @@ async def admin_playground_stream(
     messages = resolved.messages
     # Snapshot a primitivos: el generator cierra sobre valores ya resueltos (no
     # sobre el request/Depends), mismo cuidado que /chat/stream.
-    served_name = resolved.model_cfg.served_name
+    alias = resolved.model_cfg.alias
     effective_thinking = resolved.thinking
 
     async def _gen() -> AsyncIterator[bytes]:
@@ -352,7 +347,7 @@ async def admin_playground_stream(
         finish_reason = "stop"
         try:
             async for chunk in llm_client.stream(
-                model=served_name,
+                model=alias,
                 messages=messages,
                 tools=None,
                 max_tokens=max_tokens,
@@ -390,7 +385,7 @@ async def admin_playground_stream(
             "done",
             {
                 "finish_reason": finish_reason,
-                "model_name": served_name,
+                "model_name": alias,
                 "completion_tokens": completion_tokens,
                 "latency_ms": latency_ms,
                 "tokens_per_second": tps,
@@ -466,7 +461,7 @@ async def admin_playground_agent(
     try:
         loop_result = await run_tool_loop(
             llm_client=llm_client,
-            model=model_cfg.served_name,
+            model=model_cfg.alias,
             messages=messages,
             specs=specs,
             registries=(default_reg, None),  # None = SIN memory_registry = imposible escribir DB
@@ -492,6 +487,6 @@ async def admin_playground_agent(
     return PlaygroundAgentOut(
         text=loop_result.text,
         finish_reason=loop_result.finish_reason,
-        model_name=model_cfg.served_name,
+        model_name=model_cfg.alias,
         actions=observed,
     )

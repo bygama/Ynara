@@ -31,15 +31,7 @@ from app.llm.clients.fakes import FakeLlmClient
 from app.llm.clients.providers.openai_compat import OpenAICompatClient
 from app.llm.clients.reranker import FakeReranker, VllmReranker
 from app.llm.clients.resilient import ResilientClient
-from app.llm.config import (
-    LlmRuntimeConfig,
-    ModeConfig,
-    ModelConfig,
-    ServingConfig,
-)
-
-_QWEN = "qwen-3.5-9b"
-_GEMMA = "gemma-4-12b"
+from app.llm.config import LlmRuntimeConfig, ModeConfig, ModelConfig
 
 # Proveedores de prueba (ADR-028): el principal acepta reasoning_effort, el respaldo no.
 _PROVIDERS = [
@@ -99,40 +91,31 @@ def _settings(
 
 
 def _config() -> LlmRuntimeConfig:
-    """``LlmRuntimeConfig`` minimo coherente (gemma + qwen)."""
-    serving = ServingConfig(
-        tool_parsers={_QWEN: "hermes", _GEMMA: "gemma4"},
-        quantization="awq_marlin",
-        kv_cache_dtype="fp8",
-        max_model_len={_QWEN: 32768, _GEMMA: 8192},
-        request_timeout_s=120,
-    )
+    """``LlmRuntimeConfig`` minimo coherente (los dos alias de modelo)."""
     models = {
-        _QWEN: ModelConfig(
-            key=_QWEN,
-            role="agent",
-            writes_memory=True,
-            served_name="qwen",
-            context_window=262144,
-        ),
-        _GEMMA: ModelConfig(
-            key=_GEMMA,
+        "conversacional": ModelConfig(
+            alias="conversacional",
             role="conversational",
             writes_memory=False,
-            served_name="gemma4",
-            context_window=128000,
+            context_tokens=8192,
+        ),
+        "agente": ModelConfig(
+            alias="agente",
+            role="agent",
+            writes_memory=True,
+            context_tokens=32768,
         ),
     }
     modes = {
         "productividad": ModeConfig(
             name="productividad",
-            model=_QWEN,
+            model="agente",
             memory_layers=["semantic"],
             tools_enabled=["memory"],
             tone="neutro",
         )
     }
-    return LlmRuntimeConfig(serving=serving, models=models, modes=modes)
+    return LlmRuntimeConfig(models=models, modes=modes)
 
 
 def _provider_clients(client: object) -> list[OpenAICompatClient]:
@@ -159,9 +142,10 @@ def test_llm_client_is_fake_by_default(environment: str) -> None:
     """Sin ``LLM_BACKEND`` la factory devuelve el ``FakeLlmClient`` (sin red)."""
     client = build_llm_client(_settings(environment=environment), _config())
     assert isinstance(client, FakeLlmClient)
-    # El fake sirve todos los modelos de la config.
-    assert client.serves_model("qwen")
-    assert client.serves_model("gemma4")
+    # El fake sirve los alias de la config, no ids de modelo.
+    assert client.serves_model("conversacional")
+    assert client.serves_model("agente")
+    assert not client.serves_model("qwen")
 
 
 def test_llm_client_api_builds_one_client_per_provider_in_priority_order() -> None:

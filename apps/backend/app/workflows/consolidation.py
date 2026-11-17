@@ -35,6 +35,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
+from app.core.constants import MODEL_ALIAS_AGENT
 from app.enums import AuditOperation, LlmModel, MemoryLayer, Mode
 from app.llm.clients.base import LLMClient
 from app.llm.clients.embedding import EmbeddingClient
@@ -74,14 +75,13 @@ def _build_embedder(settings: Settings) -> EmbeddingClient:
 
 
 def _build_consolidation_llm(settings: Settings) -> LLMClient:
-    """Construye el cliente LLM para consolidacion (Qwen).
+    """Construye el cliente LLM para consolidacion (alias ``agente``).
 
     Delega en la factory (``build_llm_client``): en dev/test devuelve el
     ``FakeLlmClient`` (sin resultados encolados -> el ``QwenMemoryEngine``
-    aplica 0 ops y commitea sin efectos, comportamiento historico de M8); en
-    production devuelve el ``ResilientClient`` real contra el servidor
-    Ollama/GGUF local (ADR-014; vLLM en 24GB+). El served set sale de
-    ``ynara.config.json`` (incluye 'qwen', el modelo de consolidacion).
+    aplica 0 ops y commitea sin efectos, comportamiento historico de M8); con
+    ``LLM_BACKEND=api`` devuelve el ``ResilientClient`` sobre los proveedores de
+    ``LLM_PROVIDERS`` (ADR-028). El fake sirve los alias de ``ynara.config.json``.
     """
     return build_llm_client(settings, load_llm_config())
 
@@ -214,7 +214,7 @@ async def _async_consolidate(
         proc_store = ProceduralMemoryStore(session, uid)
         audit_store = AuditStore(session, uid)
 
-        mem_engine = QwenMemoryEngine(effective_llm)
+        mem_engine = QwenMemoryEngine(effective_llm, model=MODEL_ALIAS_AGENT)
         ops = await mem_engine.consolidate(
             user_msg=user_msg,
             model_response=model_response,
@@ -238,7 +238,7 @@ async def _async_consolidate(
         proc_store = ProceduralMemoryStore(db_session, uid)
         audit_store = AuditStore(db_session, uid)
 
-        mem_engine = QwenMemoryEngine(effective_llm)
+        mem_engine = QwenMemoryEngine(effective_llm, model=MODEL_ALIAS_AGENT)
         ops = await mem_engine.consolidate(
             user_msg=user_msg,
             model_response=model_response,
@@ -412,7 +412,7 @@ async def _consolidate_session_in_db(
         return 0
 
     transcript = _build_transcript(turns)
-    mem_engine = QwenMemoryEngine(llm_client)
+    mem_engine = QwenMemoryEngine(llm_client, model=MODEL_ALIAS_AGENT)
     summary = await mem_engine.summarize(transcript=transcript, mode=mode)
     if not summary.summary:
         # Resumen vacio (LLM degradado / JSON corrupto): NO se persiste un episodio
