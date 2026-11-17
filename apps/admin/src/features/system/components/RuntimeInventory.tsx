@@ -5,7 +5,7 @@ import { MODE_BY_ID, type ModeId } from "@/components/ui/modes";
 import { cn } from "@/lib/cn";
 
 type Props = {
-  /** Modelos LLM cargados (p.ej. `["gemma", "qwen"]`). */
+  /** Alias de modelo del catálogo (`["agente", "conversacional"]`). */
   models: string[];
   /** Modos del enum `Mode` del backend (strings; se chipean si son válidos). */
   modes: string[];
