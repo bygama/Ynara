@@ -205,8 +205,8 @@ async def test_permanent_error_reraised_without_fallback() -> None:
 
 
 async def test_unclassified_llm_error_degrades() -> None:
-    # LlmError base (4xx no mapeado / "respuesta sin choices" del VllmClient
-    # real) no es permanente: debe ser fallback-able y terminar degradado,
+    # LlmError base (408/425 / "respuesta sin choices" del cliente de un
+    # proveedor) no es permanente: debe ser fallback-able y terminar degradado,
     # nunca escaparse cruda al caller (contrato central de M3 + regla #4).
     client = _fake()
     for _ in range(3):
@@ -413,7 +413,7 @@ async def test_global_budget_does_not_swallow_permanent_error() -> None:
 
 
 class _ClosableClient:
-    """Cliente minimo que registra su cierre (proxy del VllmClient real)."""
+    """Cliente minimo que registra su cierre (proxy del OpenAICompatClient real)."""
 
     def __init__(self) -> None:
         self.closed = False

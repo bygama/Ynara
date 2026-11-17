@@ -9,7 +9,7 @@ expone a sus callers — ni más ni menos. Tras esto ``core/deps.py`` no importa
 ``app.llm`` en runtime. Los wrappers de memoria (``app/memory/``) siguen importando
 las clases concretas: eso es ``feature → feature`` (permitido), no ``core → feature``.
 
-Las implementaciones concretas (``VllmClient``/``FakeLlmClient``, los embedders y
+Las implementaciones concretas (``OpenAICompatClient``/``FakeLlmClient``, los embedders y
 rerankers Fake/Vllm) y los ``Protocol`` canónicos de ``app.llm.clients.*`` satisfacen
 ESTOS protocolos **estructuralmente** (sin herencia): mismas firmas, mismos tipos. No
 se duplica lógica, sólo la forma.
