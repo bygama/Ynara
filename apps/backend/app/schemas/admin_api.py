@@ -57,28 +57,24 @@ class AdminAuditPage(YnaraBaseModel):
 # ---------------------------------------------------------------------------
 #
 # Privacidad (regla #4): el inventario de serving NUNCA expone ``base_url`` ni
-# connection strings — solo ``backend`` (fake/vllm), ``served_names``, ``role``,
-# ``quant``, etc. El playground no persiste nada y nunca ecoa el payload crudo de
+# connection strings — solo ``backend`` (fake/api), el alias, ``role``,
+# ``context_tokens``, etc. El playground no persiste nada y nunca ecoa el payload crudo de
 # un ``LlmError`` (el mapeo de errores usa solo ``type(exc).__name__``).
 
 
 class ServingModelOut(YnaraBaseModel):
     """Estado read-only de un modelo del catálogo de serving (F1 ADR-018).
 
-    Combina el contrato de producto (``ynara.config.json`` -> ``ModelConfig`` +
-    ``ServingConfig``) con la salud runtime agregada del cliente LLM. NUNCA lleva
-    ``base_url`` ni nada que filtre la topología del serving (regla #4).
+    Combina el contrato de producto (``ynara.config.json`` -> ``ModelConfig``) con la
+    salud runtime agregada del cliente LLM. NUNCA lleva ``base_url`` ni el id de
+    modelo de los proveedores (regla #4).
     """
 
-    key: str  # key interna ("gemma-4-12b" | "qwen-3.5-9b")
-    served_name: str  # alias que se pasa a complete() ("gemma4" | "qwen")
+    alias: str  # alias que se pasa a complete() ("conversacional" | "agente")
     role: str  # "conversational" | "agent"
     writes_memory: bool
-    context_window: int
-    max_model_len: int  # cfg.serving.max_model_len[key]
-    quantization: str  # perfil de serving ("awq_marlin")
-    tool_parser: str  # "gemma4" | "hermes"
-    healthy: bool  # serves_model(served_name) ∧ health agregada
+    context_tokens: int  # presupuesto de contexto del alias (ynara.config.json)
+    healthy: bool  # serves_model(alias) ∧ health agregada
     default_thinking: bool  # False conversational, True agent (gotcha Gemma, ADR-012 D4)
 
 
@@ -90,10 +86,10 @@ class ServingOut(YnaraBaseModel):
     advertir "serving real no disponible" cuando el backend es el Fake.
     """
 
-    backend: str  # settings.llm_backend: "fake" | "vllm"
+    backend: str  # settings.llm_backend: "fake" | "api"
     is_real: bool  # _wants_real_llm(settings)
     serving_healthy: bool  # await llm_client.health().healthy
-    request_timeout_s: float  # cfg.serving.request_timeout_s (120)
+    request_timeout_s: float  # PROVIDER_REQUEST_TIMEOUT_S de la factory (20)
     low_perf_available: bool  # True con serving real (preset per-request); False si fake
     models: list[ServingModelOut]
     embedder: str  # settings.embedding_model ("bge-m3")
@@ -112,7 +108,7 @@ class PlaygroundParams(YnaraBaseModel):
 class PlaygroundIn(YnaraBaseModel):
     """Body de ``POST /v1/admin/playground``: completion ad-hoc aislada (F1 ADR-018).
 
-    ``model`` es el ``served_name`` ("gemma4"|"qwen"), validado contra el catálogo.
+    ``model`` es el alias ("conversacional"|"agente"), validado contra el catálogo.
     ``mode`` opcional: si viene (y no hay ``system_prompt`` crudo) se usa
     ``load_prompt(mode)`` como system. ``thinking`` ``None`` -> default por role.
     """

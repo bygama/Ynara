@@ -115,11 +115,11 @@ _FALLBACK_TEXT = "(agente: sin acción)"
 
 
 def _build_agent_llm(settings: Settings) -> LLMClient:
-    """Construye el cliente LLM para la pasada del agente (qwen).
+    """Construye el cliente LLM para la pasada del agente (alias ``agente``).
 
     Delega en la factory (``build_llm_client``), igual que la consolidación: respeta
-    ``LLM_BACKEND`` (dev/test -> ``FakeLlmClient``; ``vllm``/prod -> cliente real
-    contra Ollama/vLLM). El gate fake-vs-real vive en un solo lugar (la factory); la
+    ``LLM_BACKEND`` (dev/test -> ``FakeLlmClient``; ``api``/prod -> los proveedores
+    de ``LLM_PROVIDERS``). El gate fake-vs-real vive en un solo lugar (la factory); la
     pasada no lo re-chequea.
     """
     return build_llm_client(settings, load_llm_config())
@@ -216,9 +216,9 @@ async def _async_agent_pass(
     prod), se construye el engine con ``NullPool`` (decisión #4), se abre la sesión,
     se commitea y se dispone el engine.
 
-    El ``served_name`` del modelo del modo (NUNCA la key interna) se resuelve de la
-    config; ``thinking`` se fuerza ``True`` (el agente planifica tool calls — el rol
-    de qwen es ``agent``, mismo criterio que el router).
+    El alias del modelo del modo se resuelve de la config; ``thinking`` se fuerza
+    ``True`` (el agente planifica tool calls — el alias ``agente`` tiene rol
+    ``agent``, mismo criterio que el router).
     """
     cfg = settings or get_settings()
     runtime = load_llm_config()
@@ -246,7 +246,7 @@ async def _async_agent_pass(
             session=session,
             user_id=uid,
             enabled_namespaces=enabled_namespaces,
-            model=model_cfg.served_name,
+            model=model_cfg.alias,
             user_msg=user_msg,
             model_response=model_response,
             thinking=thinking,
@@ -260,7 +260,7 @@ async def _async_agent_pass(
             session=db_session,
             user_id=uid,
             enabled_namespaces=enabled_namespaces,
-            model=model_cfg.served_name,
+            model=model_cfg.alias,
             user_msg=user_msg,
             model_response=model_response,
             thinking=thinking,

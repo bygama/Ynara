@@ -529,7 +529,7 @@ def test_build_memory_context_vida_only_procedural() -> None:
     """Modo 'vida': solo procedural layer -> solo ProceduralMemoryStore."""
     mode_cfg = ModeConfig(
         name="vida",
-        model="gemma-4-12b",
+        model="conversacional",
         memory_layers=["procedural"],
         tools_enabled=[],
         tone="casual-rioplatense",
@@ -559,7 +559,7 @@ def test_build_memory_context_productividad_semantic_episodic() -> None:
     """Modo 'productividad': semantic + episodic (sin procedural en config real)."""
     mode_cfg = ModeConfig(
         name="productividad",
-        model="qwen-3.5-9b",
+        model="agente",
         memory_layers=["semantic", "episodic"],
         tools_enabled=["calendar", "reminder", "memory"],
         tone="neutro-eficaz",
@@ -589,7 +589,7 @@ def test_build_memory_context_memoria_all_layers() -> None:
     """Modo 'memoria': los 3 stores activos."""
     mode_cfg = ModeConfig(
         name="memoria",
-        model="qwen-3.5-9b",
+        model="agente",
         memory_layers=["episodic", "semantic", "procedural"],
         tools_enabled=["memory"],
         tone="neutro-eficaz",
@@ -632,7 +632,7 @@ def _build_ctx_for_tools(tools_enabled: list[str]) -> MemoryContext:
 
     mode_cfg = ModeConfig(
         name="probe",
-        model="qwen-3.5-9b",
+        model="agente",
         memory_layers=[],
         tools_enabled=tools_enabled,
         tone="neutro-eficaz",
@@ -748,7 +748,7 @@ async def test_integration_vida_only_procedural(db_session: Any) -> None:
 
     mode_cfg = ModeConfig(
         name="vida",
-        model="gemma-4-12b",
+        model="conversacional",
         memory_layers=["procedural"],
         tools_enabled=[],
         tone="casual-rioplatense",
@@ -800,7 +800,7 @@ async def test_integration_productividad_semantic_episodic(db_session: Any) -> N
 
     mode_cfg = ModeConfig(
         name="productividad",
-        model="qwen-3.5-9b",
+        model="agente",
         memory_layers=["semantic", "episodic"],
         tools_enabled=["calendar", "reminder", "memory"],
         tone="neutro-eficaz",
@@ -858,7 +858,7 @@ async def test_integration_usuario_nuevo_sin_memorias(db_session: Any) -> None:
 
     mode_cfg = ModeConfig(
         name="productividad",
-        model="qwen-3.5-9b",
+        model="agente",
         memory_layers=["semantic", "episodic"],
         tools_enabled=["calendar", "reminder", "memory"],
         tone="neutro-eficaz",
@@ -895,7 +895,7 @@ async def test_integration_procedural_filters_stale_and_orders_confidence(
 
     mode_cfg = ModeConfig(
         name="vida",
-        model="gemma-4-12b",
+        model="conversacional",
         memory_layers=["procedural"],
         tools_enabled=[],
         tone="casual-rioplatense",

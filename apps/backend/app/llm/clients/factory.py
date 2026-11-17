@@ -120,12 +120,11 @@ def build_llm_client(settings: Settings, config: LlmRuntimeConfig) -> LLMClient:
     ``ResilientClient``. ``Settings`` ya valido que haya proveedores y que cada uno
     tenga su credencial.
 
-    ``fake`` (default dev/test): ``FakeLlmClient`` que sirve todos los modelos de la
-    config. No abre red.
+    ``fake`` (default dev/test): ``FakeLlmClient`` que sirve los alias de la config.
+    No abre red.
     """
     if not _wants_real_llm(settings):
-        models = frozenset(m.served_name for m in config.models.values())
-        return FakeLlmClient(models=models)
+        return FakeLlmClient(models=frozenset(config.models))
 
     check_resilience_budget()
     # httpx loguea cada request en INFO con la URL del proveedor: el proceso que habla

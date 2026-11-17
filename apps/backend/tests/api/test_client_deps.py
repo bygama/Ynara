@@ -53,16 +53,16 @@ def test_lifespan_sets_fake_reranker() -> None:
 
 
 def test_lifespan_llm_client_models_match_config() -> None:
-    """FakeLlmClient recibe los served_name del config (no las keys del dict)."""
+    """FakeLlmClient sirve los alias de modelo del config."""
     from app.main import app
 
     with TestClient(app, raise_server_exceptions=True):
         cfg = load_llm_config()
-        expected = frozenset(m.served_name for m in cfg.models.values())
+        assert set(cfg.models) == {"conversacional", "agente"}
         client: FakeLlmClient = app.state.llm_client
         # Probamos serves_model para no acoplar al atributo privado.
-        for served_name in expected:
-            assert client.serves_model(served_name), f"FakeLlmClient deberia servir '{served_name}'"
+        for alias in cfg.models:
+            assert client.serves_model(alias), f"FakeLlmClient deberia servir '{alias}'"
 
 
 # ---------------------------------------------------------------------------
@@ -72,7 +72,7 @@ def test_lifespan_llm_client_models_match_config() -> None:
 
 
 _mini = FastAPI()
-_sentinel_llm = FakeLlmClient(models=frozenset({"qwen", "gemma4"}))
+_sentinel_llm = FakeLlmClient(models=frozenset({"agente", "conversacional"}))
 _sentinel_emb = FakeEmbeddingClient()
 _sentinel_rer = FakeReranker()
 _mini.state.llm_client = _sentinel_llm

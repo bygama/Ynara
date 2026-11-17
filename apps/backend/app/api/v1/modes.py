@@ -77,8 +77,8 @@ def build_modes_response(modes: dict[str, ModeConfig]) -> ModesResponse:
 def get_available_modes() -> dict[str, ModeConfig]:
     """Dependencia: los modos de la config de runtime (cacheada).
 
-    Inyectable: los tests la overridean para no depender del loader del LLM (que
-    valida ``LLM_SERVING`` y demás infra ajena al catálogo de modos).
+    Inyectable: los tests la overridean para no depender del ``ynara.config.json``
+    real.
     """
     return load_llm_config().modes
 

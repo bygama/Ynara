@@ -111,17 +111,19 @@ def test_parse_summary_topics_not_dict_coerced_to_empty() -> None:
 
 
 async def test_summarize_returns_parsed_summary() -> None:
-    client = FakeLlmClient(models=frozenset({"qwen"}))
+    client = FakeLlmClient(models=frozenset({"agente"}))
     client.queue_result(_result(json.dumps({"summary": "Resumen de la sesion.", "topics": {}})))
     engine = QwenMemoryEngine(client)
 
     out = await engine.summarize(transcript="Usuario: hola\nAsistente: hola", mode="vida")
     assert out.summary == "Resumen de la sesion."
+    # Sin ``model`` explícito, el engine le pide al cliente el alias ``agente``.
+    assert client.complete_calls[0]["model"] == "agente"
 
 
 async def test_summarize_llm_failure_returns_empty() -> None:
     """Si el LLM lanza, ``summarize`` devuelve un ``SessionSummary`` vacio (no propaga)."""
-    client = FakeLlmClient(models=frozenset({"qwen"}))
+    client = FakeLlmClient(models=frozenset({"agente"}))
     client.queue_error(RuntimeError("LLM caido"))
     engine = QwenMemoryEngine(client)
 
@@ -130,7 +132,7 @@ async def test_summarize_llm_failure_returns_empty() -> None:
 
 
 async def test_summarize_corrupt_json_returns_empty() -> None:
-    client = FakeLlmClient(models=frozenset({"qwen"}))
+    client = FakeLlmClient(models=frozenset({"agente"}))
     client.queue_result(_result("esto no es json {"))
     engine = QwenMemoryEngine(client)
 
