@@ -13,7 +13,8 @@ Reglas no negociables (ADR-010 + critica adversarial M8):
    ``ondelete=SET NULL``) en el ADD semantic (M10 Ola 1). El enqueue es
    post-commit (Ola 0), asi que la fila de ``sessions`` ya existe -> sin race FK.
 4. Serializacion 100% JSON: la firma de la task es solo strings/primitivos.
-   El worker RECONSTRUYE todas sus deps in-process desde ``get_settings()``.
+   El worker RECONSTRUYE todas sus deps in-process desde ``get_settings()`` y
+   cierra los clientes que armo al terminar cada intento (``_aclose_quietly``).
    El engine de DB usa ``NullPool`` obligatorio (sin el, reusar conexiones
    entre event loops distintos da 'Future attached to a different loop').
 5. Parseo defensivo heredado de ``QwenMemoryEngine._parse_ops``: JSON
@@ -37,6 +38,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import AsyncExitStack
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -111,6 +113,29 @@ def _build_reranker() -> Reranker:
     reranker de todos los entornos (ADR-028 D5).
     """
     return build_reranker()
+
+
+async def _aclose_quietly(client: object) -> None:
+    """Cierra un cliente que armo la task (su ``httpx.AsyncClient``), sin propagar.
+
+    Cada intento corre en su propio event loop (``asyncio.run``) y arma clientes
+    nuevos: sin cerrarlos, cada intento dejaria conexiones abiertas hasta que el GC las
+    junte. Un cliente sin ``aclose`` (los fakes) se saltea. Un fallo al cerrar no
+    cambia el resultado del intento: se loguea solo el tipo.
+    """
+    aclose = getattr(client, "aclose", None)
+    if aclose is None:
+        return
+    try:
+        await aclose()
+    except Exception as exc:
+        logger.warning("consolidation: no se pudo cerrar un cliente: %s", type(exc).__name__)
+
+
+def _owned[ClientT](stack: AsyncExitStack, client: ClientT) -> ClientT:
+    """Anota ``client`` (armado por la task) para cerrarlo al salir de ``stack``."""
+    stack.push_async_callback(_aclose_quietly, client)
+    return client
 
 
 def _load_retention_config_safe() -> RetentionConfig:
@@ -289,41 +314,44 @@ async def _async_consolidate(
     """
     cfg = settings or get_settings()
 
-    # --- Dependencias inyectadas o construidas ---
-    effective_llm = llm_client or _build_consolidation_llm(cfg)
-    effective_embedder = embedder or _build_embedder(cfg)
-    effective_reranker = reranker or _build_reranker()
-
     uid = UUID(user_id)
     # Parse defensivo del session_id: UUID valido -> FK; basura -> None (sin crash).
     source_session_id = _parse_source_session_id(session_id)
     # Parse defensivo del mode -> origin_mode de audit_log (nullable, best-effort).
     origin_mode = _parse_origin_mode(mode)
 
-    async def _run(db_session: AsyncSession) -> int:
-        return await _consolidate_turn_in_db(
-            session=db_session,
-            user_id=uid,
-            source_session_id=source_session_id,
-            turn_seq=turn_seq,
-            user_msg=user_msg,
-            model_response=model_response,
-            mode=mode,
-            origin_mode=origin_mode,
-            llm_client=effective_llm,
-            embedder=effective_embedder,
-            reranker=effective_reranker,
-        )
+    # --- Dependencias inyectadas o construidas ---
+    # Las que arma la task se cierran al salir del bloque, ande o no el intento; las
+    # inyectadas son del caller y no se tocan.
+    async with AsyncExitStack() as owned:
+        effective_llm = llm_client or _owned(owned, _build_consolidation_llm(cfg))
+        effective_embedder = embedder or _owned(owned, _build_embedder(cfg))
+        effective_reranker = reranker or _owned(owned, _build_reranker())
 
-    if session is not None:
-        # Modo test: usar la sesion inyectada, no crear engine ni commitear
-        # (el fixture controla el rollback).
-        return await _run(session)
+        async def _run(db_session: AsyncSession) -> int:
+            return await _consolidate_turn_in_db(
+                session=db_session,
+                user_id=uid,
+                source_session_id=source_session_id,
+                turn_seq=turn_seq,
+                user_msg=user_msg,
+                model_response=model_response,
+                mode=mode,
+                origin_mode=origin_mode,
+                llm_client=effective_llm,
+                embedder=effective_embedder,
+                reranker=effective_reranker,
+            )
 
-    # Modo produccion: engine NullPool efimero; worker_session commitea al salir
-    # del bloque y dispone el engine (decision #4 centralizada en _engine.py).
-    async with worker_session(cfg) as db_session:
-        return await _run(db_session)
+        if session is not None:
+            # Modo test: usar la sesion inyectada, no crear engine ni commitear
+            # (el fixture controla el rollback).
+            return await _run(session)
+
+        # Modo produccion: engine NullPool efimero; worker_session commitea al salir
+        # del bloque y dispone el engine (decision #4 centralizada en _engine.py).
+        async with worker_session(cfg) as db_session:
+            return await _run(db_session)
 
 
 # ---------------------------------------------------------------------------
@@ -666,9 +694,12 @@ async def _async_consolidate_session(
     """
     cfg = settings or get_settings()
 
-    effective_llm = llm_client or _build_consolidation_llm(cfg)
-    effective_embedder = embedder or _build_embedder(cfg)
-    effective_reranker = reranker or _build_reranker()
+    uid = UUID(user_id)
+    source_session_id = _parse_source_session_id(session_id)
+    if source_session_id is None:
+        # session_id no-UUID: el episodio requiere una FK real -> no-op sin crash.
+        return 0
+    origin_mode = _parse_origin_mode(mode)
     # Retention config-driven (ADR-007 D2): inyectado en tests, o cargado de
     # ``ynara.config.json[memory]`` en prod. Fallback defensivo: si el config es
     # ilegible/invalido NO se tumba el worker (regla del modulo: un fallo de config
@@ -676,41 +707,34 @@ async def _async_consolidate_session(
     # valores historicos). El ``try/except`` del task sigue siendo la red final.
     effective_retention = retention_config or _load_retention_config_safe()
 
-    uid = UUID(user_id)
-    source_session_id = _parse_source_session_id(session_id)
-    if source_session_id is None:
-        # session_id no-UUID: el episodio requiere una FK real -> no-op sin crash.
-        return 0
-    origin_mode = _parse_origin_mode(mode)
+    # Los clientes que arma la task se cierran al salir del bloque, ande o no el
+    # intento; los inyectados son del caller y no se tocan.
+    async with AsyncExitStack() as owned:
+        effective_llm = llm_client or _owned(owned, _build_consolidation_llm(cfg))
+        effective_embedder = embedder or _owned(owned, _build_embedder(cfg))
+        effective_reranker = reranker or _owned(owned, _build_reranker())
 
-    if session is not None:
-        # Modo test: usar la sesion inyectada, no crear engine ni commitear.
-        return await _consolidate_session_in_db(
-            session=session,
-            user_id=uid,
-            source_session_id=source_session_id,
-            mode=mode,
-            origin_mode=origin_mode,
-            llm_client=effective_llm,
-            embedder=effective_embedder,
-            reranker=effective_reranker,
-            retention_config=effective_retention,
-        )
+        async def _run(db_session: AsyncSession) -> int:
+            return await _consolidate_session_in_db(
+                session=db_session,
+                user_id=uid,
+                source_session_id=source_session_id,
+                mode=mode,
+                origin_mode=origin_mode,
+                llm_client=effective_llm,
+                embedder=effective_embedder,
+                reranker=effective_reranker,
+                retention_config=effective_retention,
+            )
 
-    # Modo produccion: engine NullPool efimero; worker_session commitea al salir
-    # del bloque y dispone el engine (decision #4 centralizada en _engine.py).
-    async with worker_session(cfg) as db_session:
-        return await _consolidate_session_in_db(
-            session=db_session,
-            user_id=uid,
-            source_session_id=source_session_id,
-            mode=mode,
-            origin_mode=origin_mode,
-            llm_client=effective_llm,
-            embedder=effective_embedder,
-            reranker=effective_reranker,
-            retention_config=effective_retention,
-        )
+        if session is not None:
+            # Modo test: usar la sesion inyectada, no crear engine ni commitear.
+            return await _run(session)
+
+        # Modo produccion: engine NullPool efimero; worker_session commitea al salir
+        # del bloque y dispone el engine (decision #4 centralizada en _engine.py).
+        async with worker_session(cfg) as db_session:
+            return await _run(db_session)
 
 
 @celery_app.task(bind=True, name="workflows.consolidate_session", **_CONSOLIDATION_TASK_OPTIONS)
