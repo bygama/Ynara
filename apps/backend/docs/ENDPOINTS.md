@@ -20,9 +20,9 @@
 
 - **GET** `/v1/modes` — catálogo de modos declarados en `ynara.config.json[modes]`.
   - Request: ninguno.
-  - Response 200: `{ "modes": [ { "id": "productividad", "model": "agente", "memory_layers": ["semantic", "episodic"], "tools_enabled": ["calendar", "reminder", "memory"], "tone": "neutro-eficaz" }, … ] }`. Los modos vienen en **orden de declaración** de la config (el orden del Mode Switcher). `id` es uno de `productividad | estudio | bienestar | vida | memoria`. `model` es el alias de modelo del modo (ADR-028 D9): `agente` para productividad y memoria, `conversacional` para estudio, bienestar y vida.
+  - Response 200: `{ "modes": [ { "id": "productividad", "model": "agente", "memory_layers": ["semantic", "episodic"], "tools_enabled": ["calendar", "reminder", "memory", "task"], "tone": "neutro-eficaz" }, … ] }`. Los modos vienen en **orden de declaración** de la config (el orden del Mode Switcher). `id` es uno de `productividad | estudio | bienestar | vida | memoria`. `model` es el alias de modelo del modo (ADR-028 D9): `agente` para productividad y memoria, `conversacional` para estudio, bienestar y vida. Sigue siendo un `string` (mismo tipo que cuando traía el modelo concreto): el contrato no fija la lista de valores, y nunca trae el id de modelo del proveedor.
   - Permisos: **público** (mismo tier que `/health`). Es metadata de producto, no datos de usuario; los mismos campos ya viajan en el bundle del front. Sin rate-limit.
-  - Uso: fuente **server-driven** del Mode Switcher del front (cambiar los modos no requiere rebuild). El front mapea cada `id` a su label/gradiente local.
+  - Uso: pensado como fuente **server-driven** del Mode Switcher del front (cambiar los modos sin rebuild); el front mapea cada `id` a su label/gradiente local. Hoy ningún cliente lo consume: web lee `ynara.config.json` en build (`apps/web/src/lib/modes.ts`, con `model: z.string()`).
 
 ## /v1/auth
 
@@ -144,13 +144,19 @@ Dos endpoints: uno no-streaming (JSON) y uno SSE. Contrato + justificación en
 [`../../../docs/planning/RESPUESTAS-CONTRATO-CHAT.md`](../../../docs/planning/RESPUESTAS-CONTRATO-CHAT.md).
 
 - **POST** `/v1/chat` (no-streaming):
-  - Request: `{ text: string (límite ~4000 chars), mode: Mode, session_id?: UUID }`
+  - Request: `{ text: string (1..4000 chars), mode: Mode, session_id?: UUID }`. Un `text` vacío o de más de 4000 caracteres → 422.
+    - El tope es `CHAT_TEXT_MAX_LENGTH`, con el mismo valor en `app/schemas/chat.py` y en `packages/shared-schemas/src/chat.ts` (ADR-028 D9: no cambia). No sale de un modelo concreto: el presupuesto de contexto es por alias (`context_tokens` de `ynara.config.json[models]`) y el router recorta el historial para que entren el system, el mensaje y la reserva de la respuesta. 4000 caracteres (unos 1.333 tokens con la estimación `len // 3`) entran holgados en el alias más chico (`conversacional`, 8192).
   - Response: `{ text: string, actions: Action[], session_id: UUID, finish_reason: string | null }`
     - `actions` **siempre presente** (lista vacía si no hubo acciones; los modos
       del alias `conversacional` nunca ejecutan tools). El Pydantic es
       `actions = []`, no opcional.
     - `Action = { id, name, arguments, result }` — `result` es el resultado
       ejecutado de la tool (o `{ error: { code, message } }`).
+    - **Qué modos pueden traer `actions`**: los del alias `agente` (`productividad`
+      y `memoria`). El front lo espeja en `AGENT_MODES`
+      (`packages/core/src/features/chat/constants.ts`) con los mismos valores
+      (ADR-028 D9); si un modo cambia de alias en `ynara.config.json[modes]`, se
+      actualiza ahí en el mismo PR.
     - **Tools de agente REALES (ADR-022)**: en `productividad`, las tools
       `calendar.create_event` / `task.create_task` se ejecutan **síncronas en el turno**
       y ESCRIBEN de verdad (`calendar_events` / `tasks`), atómicas con el commit del
@@ -159,8 +165,15 @@ Dos endpoints: uno no-streaming (JSON) y uno SSE. Contrato + justificación en
       sigue siendo stub `not_wired` (sin backend real). Los modos del alias
       `conversacional` (`tools_enabled=[]`) no exponen ni ejecutan tools.
 - **POST** `/v1/chat/stream` (SSE, `text/event-stream`):
-  - Mismo request. Eventos con nombre: `token` `{ delta }`, `done`
-    `{ session_id, actions, finish_reason }`, `error` `{ code, message }`.
+  - Mismo request. Eventos con nombre, en este orden: `reasoning` `{ delta }` (0..N),
+    `token` `{ delta }` (0..N) y `done` `{ session_id, actions, finish_reason }`;
+    `error` `{ code, message }` corta el stream si algo falla al emitirlo.
+  - `reasoning` es el canal de razonamiento separado del modelo, troceado igual que
+    los `token`. Se emite solo si el proveedor devolvió razonamiento y el turno no
+    degradó (ADR-028 D9: sin cambio de schema). Es display-only: el front decide si
+    lo muestra, no viaja en `/v1/chat` (JSON) y no se guarda en el historial. Que el
+    alias del modo pida no razonar (`conversacional`) no garantiza que no llegue:
+    depende del proveedor y del modelo.
   - Sin fallback mid-stream (M3); la infra caída se sirve como respuesta
     degradada (texto degradado por `token` + `done`), no como `error`.
 - **`finish_reason="degraded"` = IA no disponible (ADR-027).** Cuando el LLM está
@@ -616,7 +629,7 @@ lógica del handler en el docstring de
 `type(exc).__name__`).
 
 - **GET** `/v1/admin/serving` — estado read-only del serving: config estática (`ynara.config.json` + settings) + salud runtime agregada (`await llm_client.health()`). **Sin** `range`.
-  - Response 200: `ServingOut = { backend: "fake"|"api", is_real, serving_healthy, request_timeout_s, low_perf_available, models: ServingModelOut[], embedder, reranker }` donde `ServingModelOut = { alias, role, writes_memory, context_tokens, healthy, default_thinking }`: un elemento por alias de `ynara.config.json[models]` (`conversacional` | `agente`), con su presupuesto de contexto en `context_tokens`. `request_timeout_s` es el timeout por request de la factory (`PROVIDER_REQUEST_TIMEOUT_S`, 20 s). **SIN `base_url`, ids de modelo de los proveedores ni credenciales** (regla #4). Con `backend=fake`: `serving_healthy=true` (el Fake reporta sano) pero `is_real=false` y `low_perf_available=false` (la UI usa `is_real` para advertir "serving real no disponible"). `healthy` por modelo = `health().healthy` ∧ `serves_model(alias)`. `default_thinking` = `false` conversational / `true` agent (gotcha Gemma+thinking, ADR-012 D4).
+  - Response 200: `ServingOut = { backend: "fake"|"api", is_real, serving_healthy, request_timeout_s, low_perf_available, models: ServingModelOut[], embedder, reranker }` donde `ServingModelOut = { alias, role, writes_memory, context_tokens, healthy, default_thinking }`: un elemento por alias de `ynara.config.json[models]` (`conversacional` | `agente`), con su presupuesto de contexto en `context_tokens`. `request_timeout_s` es el timeout por request de la factory (`PROVIDER_REQUEST_TIMEOUT_S`, 20 s). **SIN `base_url`, ids de modelo de los proveedores ni credenciales** (regla #4). Con `backend=fake`: `serving_healthy=true` (el Fake reporta sano) pero `is_real=false` y `low_perf_available=false` (la UI usa `is_real` para advertir "serving real no disponible"). `healthy` por modelo = `health().healthy` ∧ `serves_model(alias)`. `default_thinking` = `false` conversational / `true` agent: es la intención por rol (ADR-028 D3); el cliente pide `reasoning_effort` solo para `true` y solo si el proveedor lo soporta.
 - **POST** `/v1/admin/playground` — completion ad-hoc **sync** contra un modelo elegido, llamando `llm_client.complete()` **directo** (sin `route()`/`run_tool_loop()`, sin `DbSession`): cero sesión/memoria/tools/consolidación. **Aislamiento total**.
   - Request: `PlaygroundIn = { model: string (alias "conversacional"|"agente"), mode?: string|null, message: string (1..4000), system_prompt?: string|null, params: PlaygroundParams, thinking?: bool|null }` donde `PlaygroundParams = { max_tokens: int (1..4096, default 1024), temperature: float (0..2, default 0.7), low_perf: bool (default false) }`. System prompt = `system_prompt` > `load_prompt(mode)` (si hay `mode`) > default neutro. `thinking` `null` → default por role (`false` conversational / `true` agent).
   - **Preset "bajo rendimiento"** (`params.low_perf=true`): pisa `max_tokens=min(256, …)`, `temperature=min(0.2, …)`, `thinking=false`, `timeout_s=10`. El timeout del preset nunca pasa el de la política (`PROVIDER_REQUEST_TIMEOUT_S`, 20 s): el `ResilientClient` lo aplica a cada intento, y uno más largo agotaría el presupuesto antes de probar el respaldo. Es un preset **per-request** (no muta el serving global, F1 vs F2).
