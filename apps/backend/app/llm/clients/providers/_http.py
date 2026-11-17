@@ -32,6 +32,7 @@ from app.llm.errors import (
     LlmBadRequestError,
     LlmContextOverflowError,
     LlmError,
+    LlmProviderRejectedError,
     LlmRateLimitError,
     LlmTimeoutError,
     LlmUnavailableError,
@@ -49,6 +50,10 @@ _CONTEXT_OVERFLOW_SIGNATURES: tuple[str, ...] = (
     "context window",
     "reduce the length of the messages",
 )
+
+# 4xx que piden repetir el mismo request más tarde (408 Request Timeout, 425 Too Early):
+# quedan como ``LlmError`` genérico, que el ``ResilientClient`` reintenta con backoff.
+_RETRYABLE_CLIENT_STATUSES = frozenset({httpx.codes.REQUEST_TIMEOUT, httpx.codes.TOO_EARLY})
 
 
 class BearerAuth(httpx.Auth):
@@ -78,7 +83,12 @@ def raise_for_provider_status(response: httpx.Response) -> None:
     - 400 con contexto excedido -> ``LlmContextOverflowError``
     - otro 400, o 422           -> ``LlmBadRequestError``
     - >= 500                    -> ``LlmUnavailableError``
-    - otro >= 400               -> ``LlmError`` genérico
+    - 408 / 425                 -> ``LlmError`` genérico (piden repetir el request)
+    - otro 4xx (404, 413, ...)  -> ``LlmProviderRejectedError`` (propio de ese proveedor)
+
+    Un 400 o un 422 dicen que el request no sirve: el respaldo fallaría igual. Los otros
+    4xx dependen del proveedor (un id de modelo que no tiene, su límite de tamaño, su
+    crédito), así que otro de la lista puede aceptar el mismo request.
 
     Para detectar el contexto excedido mira el body: en streaming hay que leerlo antes
     (``await response.aread()``); si no está leído, el 400 queda como request inválido.
@@ -100,7 +110,9 @@ def raise_for_provider_status(response: httpx.Response) -> None:
         raise LlmBadRequestError(label)
     if status >= httpx.codes.INTERNAL_SERVER_ERROR:
         raise LlmUnavailableError(label)
-    raise LlmError(label)
+    if status in _RETRYABLE_CLIENT_STATUSES:
+        raise LlmError(label)
+    raise LlmProviderRejectedError(label)
 
 
 def parse_retry_after(value: str | None, *, now: datetime | None = None) -> float | None:

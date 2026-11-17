@@ -5,9 +5,11 @@ Tres familias:
 - **Transitorios** (reintentables): timeout, instancia caida, sobrecarga o
   limite de tasa del proveedor (429, con la espera de ``Retry-After``).
 - **Permanentes** (no reintentar): request mal formado, contexto excedido,
-  modelo no servido y credencial rechazada por el proveedor (401/403). La
-  credencial es del proveedor, no del request: no se reintenta contra el
-  mismo, pero el respaldo de la lista tiene la suya (ver ``ResilientClient``).
+  modelo no servido, credencial rechazada por el proveedor (401/403) y request
+  que ese proveedor no acepta (un 4xx sin mapeo propio, como un 404 por un id
+  de modelo que no tiene). La credencial y esos rechazos son del proveedor, no
+  del request: no se reintenta contra el mismo, pero el respaldo de la lista
+  puede aceptarlo (ver ``ResilientClient``).
 - **Semanticos**: fallas de parseo / ejecucion de tools y de recuperacion
   de memoria.
 
@@ -117,6 +119,20 @@ class LlmAuthError(LlmError):
     """
 
     message = "credencial rechazada por el proveedor LLM"
+
+
+class LlmProviderRejectedError(LlmError):
+    """El proveedor rechazo el request por algo propio de el (un 4xx sin mapeo propio).
+
+    Por ejemplo un 404 (el id del modelo o la ruta no existen en ese proveedor), un
+    402 (sin credito), un 405 o un 413 (el body supera su limite). Permanente para
+    ESE proveedor, como ``LlmAuthError``: reintentar contra el mismo da lo mismo,
+    pero otro proveedor de la lista puede aceptar el mismo request. No hereda de
+    ``LlmBadRequestError``: si heredara, el ``ResilientClient`` lo re-lanzaria sin
+    probar el respaldo. Regla #4a: el detail es el status, nunca el body.
+    """
+
+    message = "request rechazado por el proveedor LLM"
 
 
 # ---------- Semanticos ----------
