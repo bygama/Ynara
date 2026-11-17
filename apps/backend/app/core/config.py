@@ -98,14 +98,6 @@ class Settings(BaseSettings):
     # suyo de PROVIDER_REQUEST_TIMEOUT_S (app/llm/clients/factory.py).
     embedding_timeout_s: float = Field(30.0, gt=0, alias="EMBEDDING_TIMEOUT_S")
 
-    # Conexión / Compartir (control plane del admin, /v1/admin/connectivity): puertos
-    # de los servicios que se exponen a otra máquina por el tailnet de Tailscale. El
-    # panel arma las URLs para compartir con el IP del tailnet + estos puertos. Defaults:
-    # panel admin 3002, app web 3000. Se setean por env si corrés esos servicios en otro
-    # puerto.
-    admin_port: int = Field(3002, gt=0, le=65535, alias="ADMIN_PORT")
-    web_port: int = Field(3000, gt=0, le=65535, alias="WEB_PORT")
-
     # Cifrado de memoria a nivel campo (ADR-007 D3). Base64 de 32 bytes random
     # (`openssl rand -base64 32`). Vacío => el helper de crypto falla al primer
     # uso (no se importa la key al boot). NUNCA commitear (regla #2).
