@@ -15,13 +15,12 @@ los 3 portadores (`LivingField`, `YnaraMark`, `YnaraOrb`).
 |---|---|
 | `AdminShell` | Grid raíz `248px 1fr` (rail 64px en < lg). Monta Sidebar + Topbar + `LivingField` de fondo + `<main>` con `max-w` editorial. |
 | `Sidebar` | Nav agrupada (3 grupos con separadores caption). Item activo = barra de acento izquierda + `bg-bg-soft`. Lee `usePathname()`. |
-| `Topbar` | Glass sticky `z-topbar`. Wordmark + breadcrumb + `PerimeterBadge compact` + `RangeSelector` + `ThemeToggle` + `AdminMenu`. |
+| `Topbar` | Glass sticky `z-topbar`. Wordmark + breadcrumb + `RangeSelector` + `ThemeToggle` + `AdminMenu`. |
 | `nav-items.ts` | IA de navegación (data): grupos Overview / Producto / El Moat / Soberanía, con `IconName` del registry de `@ynara/ui`. |
 | `RangeSelector` | Segmented control `24h·7d·30d·90d` → `useRangeStore`. |
 | `ThemeToggle` | Toggle Noche/marfil → `useThemeStore` (default `theme-dark`). |
 | `AdminMenu` | Identidad admin (Diamond + `display_name`) como disclosure → popover con "Cerrar sesión" (`useLogout`). Cierre por click afuera + Escape. |
 | `AuthGuard` | Guard del grupo `(panel)`: rebota a `/login` si no hay token (post-mount, SSR-safe). Ver [`AUTH.md`](./AUTH.md). |
-| `PerimeterBadge` | **Firma de soberanía.** `Diamond` + label. Estados `intact`/`attention`/`verifying`. Variantes `compact`/`hero`. Tooltip explica el perímetro. **Nunca gradiente.** |
 | `ApiStatusFooter` | Dot de estado + "API" + latencia (`tabular-nums`) + build version. |
 
 ## `components/ui/` — primitivos portados de `apps/web`
@@ -60,12 +59,12 @@ geométrico que no pinte dígitos puede marcar `// tabular-nums-guard: n/a`.
 
 | Feature | Componentes |
 |---|---|
-| `overview/` | `StatusHero`, `KpiStrip`, `KpiCard`, `AuditPreview` |
+| `overview/` | `KpiStrip`, `KpiCard`, `AuditPreview` |
 | `users/` | `ActivityKpis`, `ConversionFunnel`, `SignupsTable` |
 | `modes/` | `ModeMix`, `ModeDuration`, `ModeCardStrip` |
 | `moat/` | `MoatHealthHero`, `MoatTower`, `LayerGrowth`, `ProceduralHealth`, `ConsolidationHeartbeat` |
 | `audit/` | `AuditFilters`, `AuditTable`, `AuditRow` |
-| `system/` | `ProdGuardBanner`, `StatusCard`, `RuntimeInventory` |
+| `system/` | `ProdGuardBanner`, `StatusCard`, `AiProviders`, `RuntimeInventory` |
 | `auth/` | (sin componentes; `hooks/useLogin.ts` + `hooks/useLogout.ts` + `schemas.ts`). UI en `app/login/page.tsx`. Ver [`AUTH.md`](./AUTH.md). |
 
 Cada feature también tiene `hooks/use<Feature>.ts` (TanStack Query + `Schema.parse`)
