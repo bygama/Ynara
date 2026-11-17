@@ -29,10 +29,35 @@ con un PR.
 
 ## Modelos
 
-- **Gemma** — Gemma 4 12B. Modelo conversacional. Solo lee
-  memoria.
-- **Qwen** — Qwen 3.5 9B. Modelo agente. Lee y escribe memoria,
-  llama tools.
+- **Alias de modelo** — nombre con que el código pide un modelo sin
+  atarse a uno concreto: `conversacional` o `agente` (ADR-028 D3). Cada
+  modo de `ynara.config.json[modes]` apunta a uno, y cada proveedor de
+  `LLM_PROVIDERS` lo traduce a su id de modelo.
+- **`conversacional`** — alias de estudio, bienestar y vida. Solo lee
+  memoria y no llama tools.
+- **`agente`** — alias de productividad, memoria y la consolidación de
+  memoria. Lee y escribe memoria y llama tools.
+- **Proveedor de IA** — servicio externo que sirve los modelos con una
+  API compatible con OpenAI (ADR-028). Los del chat van en
+  `LLM_PROVIDERS`, en orden de prioridad, con la credencial en
+  `LLM_API_KEY_<NAME>`; el de embeddings, en las `EMBEDDING_*`. Solo se
+  usan los aprobados por la regla #4b, y hasta cerrar las compuertas
+  reciben solo datos sintéticos.
+- **Principal / respaldo** — el primer proveedor de `LLM_PROVIDERS` es
+  el principal y los siguientes, el respaldo. El `ResilientClient` pasa
+  al siguiente cuando uno falla (timeout, caída, 429 largo o credencial
+  rechazada).
+- **Respuesta degradada** — mensaje fijo que recibe el chat cuando se
+  agota la cadena de proveedores, en vez de un error
+  (`finish_reason: "degraded"`). Un turno degradado no se consolida.
+- **Compuertas** — las cinco condiciones de ADR-028 (legal, crisis,
+  costo, respaldo probado y latencia) que se cierran antes de mandarle
+  datos reales a un proveedor.
+- **Gemma / Qwen** — los modelos propios de antes de ADR-028 (Gemma 4
+  12B conversacional, Qwen 3.5 9B agente), hoy reemplazados por los
+  alias. Quedan en nombres históricos: el enum `llm_model_enum`
+  (`gemma` / `qwen`) de `audit_log.origin_model` y la clase
+  `QwenMemoryEngine`.
 - **bge-m3** — modelo de embeddings, 1024 dimensiones. Lo sirve un
   proveedor por API (`EMBEDDING_MODEL`, default `BAAI/bge-m3`; ADR-028
   D4) a través de `ApiEmbeddingClient`.
@@ -42,20 +67,18 @@ con un PR.
   passthrough en todos los entornos, production incluida: el
   `FakeReranker` deja el orden del ANN (ADR-028 D5). Un rerank real por
   API queda como palanca futura.
-- **vLLM** — motor de serving reservado para GPU de 24 GB+ (ADR-014).
-  `LLM_BACKEND=vllm` es el nombre legacy del cliente HTTP, no implica que
-  vLLM sea el motor local. En dev se usan Fakes
-  (FakeLlmClient/FakeEmbeddingClient/FakeReranker).
-- **Ollama** — motor de serving local en 16 GB (RTX 4080 Super), elegido
-  en ADR-014: es el único que sostiene el dual-stack completo
-  (Gemma 12B + Qwen 9B + bge-m3 co-residentes).
+- **Clientes fake** — `FakeLlmClient` y `FakeEmbeddingClient`:
+  deterministas y sin red. El `FakeLlmClient` contesta solo lo que le
+  programa un test, así que en el servidor de dev el chat no contesta.
+  Son el default de dev y CI (`LLM_BACKEND=fake`,
+  `EMBEDDING_BACKEND=fake`); production no arranca con ellos.
 
 ## Stack
 
-- **Router LLM** — `apps/backend/app/llm/router.py`. Decide modelo
-  según modo activo.
-- **Tool** — función que el agente Qwen puede invocar (calendar,
-  reminder, memory, etc.). Definidas en
+- **Router LLM** — `apps/backend/app/llm/router.py`. Toma el alias del
+  modo activo, arma el contexto de memoria y corre el tool loop.
+- **Tool** — función que el alias `agente` puede invocar (calendar,
+  task, reminder, memory). Definidas en
   `apps/backend/docs/TOOLS.md`.
 - **Tabla operativa** — cualquier tabla que no sea de memoria
   sagrada (users, sessions, audit_log, etc.).
@@ -80,8 +103,10 @@ con un PR.
 
 - **Fase MVP** — etapa actual. DB sobre Supabase como Postgres
   gestionado.
-- **Fase V2** — etapa post-validación. DB Postgres self-hosted,
-  toda la stack on-prem.
+- **Fase V2** — etapa post-validación. DB Postgres self-hosted
+  (ADR-005); la IA sigue por API (ADR-028).
+- **VPS** — servidor en Argentina / LATAM, sin GPU, donde corren el API
+  y los workers de Celery. No sirve modelos (ADR-028 D8).
 - **Cutover** — momento de la migración Supabase → self-hosted.
 - **R2** — Cloudflare R2, storage de objetos.
 - **Cloudflare Tunnel** — túnel desde la VPS al edge de Cloudflare,
