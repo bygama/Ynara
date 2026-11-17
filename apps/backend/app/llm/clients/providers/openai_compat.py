@@ -44,6 +44,7 @@ from app.llm.clients.providers._http import (
     BearerAuth,
     raise_for_provider_status,
     transport_errors,
+    validated_base_url,
 )
 from app.llm.clients.providers._stream import SSE_DONE, StreamDecoder, sse_data
 from app.llm.clients.providers._think import split_inline_thinking
@@ -91,6 +92,8 @@ class OpenAICompatClient:
 
         - ``name``: nombre del proveedor en la config (``"principal"``, ``"respaldo"``);
           sale en ``repr``, en los logs del ``ResilientClient`` y en ``health()``.
+        - ``base_url``: URL base del proveedor (``https://.../v1``); ``http`` solo
+          contra la propia máquina (ver ``validated_base_url``).
         - ``model_map``: ``{alias: id del modelo en el proveedor}``.
         - ``reasoning_effort_on`` / ``reasoning_effort_off``: valor de
           ``reasoning_effort`` para ``thinking=True`` / ``False``. ``None`` = el
@@ -103,8 +106,7 @@ class OpenAICompatClient:
         """
         if not name.strip():
             raise ValueError("el proveedor necesita un nombre")
-        if not base_url.strip():
-            raise ValueError("el proveedor necesita una URL base")
+        base_url = validated_base_url(base_url)
         if not api_key.get_secret_value().strip():
             raise ValueError("el proveedor necesita una credencial")
         if not model_map or not all(alias and model_id for alias, model_id in model_map.items()):
@@ -113,7 +115,7 @@ class OpenAICompatClient:
             if effort is not None and not effort.strip():
                 raise ValueError("reasoning_effort vacío: usá None para no mandarlo")
         self._name = name
-        self._base_url = base_url.strip().rstrip("/")
+        self._base_url = base_url
         self._auth = BearerAuth(api_key)
         self._model_map = dict(model_map)
         self._http = http_client
