@@ -27,7 +27,7 @@ from app.core.config import get_settings
 from app.core.deps import CurrentAdmin, get_llm_client
 from app.core.llm_protocol import LLMClientProtocol
 from app.enums import Mode
-from app.llm.clients.factory import _wants_real_llm
+from app.llm.clients.factory import PROVIDER_REQUEST_TIMEOUT_S, _wants_real_llm
 from app.llm.config import ModelConfig, load_llm_config
 from app.llm.errors import (
     LlmBadRequestError,
@@ -192,7 +192,7 @@ async def admin_serving(
         backend=settings.llm_backend,
         is_real=is_real,
         serving_healthy=health.healthy,
-        request_timeout_s=float(cfg.serving.request_timeout_s),
+        request_timeout_s=PROVIDER_REQUEST_TIMEOUT_S,
         low_perf_available=is_real,
         models=models,
         embedder=settings.embedding_model,

@@ -1,24 +1,19 @@
-"""Factory de clientes LLM / embedder / reranker (P2 — mata el dead-code de runtime).
+"""Factory de clientes LLM / embedder / reranker.
 
-Hasta P2, ``ResilientClient`` / ``ClientPool`` / ``build_pool`` / ``VllmClient``
-estaban implementados y testeados pero NINGUN path de prod los instanciaba: el
-lifespan (``app/main.py``) y los helpers de ``consolidation`` HARDCODEABAN los
-Fakes incluso en la rama de serving real. Esta factory centraliza la decision:
+Centraliza la decision entre los clientes fake y los reales, por settings:
 
-- En dev/test (default, sin GPU) -> los Fakes deterministas (sin red, sin boot
-  roto, sin intentos de conexion a vLLM).
-- Cuando la config pide serving real (``llm_backend == "vllm"`` o
-  ``environment == "production"`` para el LLM; ``embedding_backend == "vllm"``
-  para el embedder; ``reranker_backend == "vllm"`` para el reranker) -> los
-  clientes REALES (``ResilientClient(build_pool(VllmClient...))``,
-  ``VllmEmbeddingClient``, ``VllmReranker``).
+- ``LLM_BACKEND=fake`` (el default: dev y CI) -> ``FakeLlmClient`` determinista, sin
+  red.
+- ``LLM_BACKEND=api`` -> un ``OpenAICompatClient`` por entrada de ``LLM_PROVIDERS``, en
+  orden de prioridad, reunidos en un pool y envueltos en un ``ResilientClient`` (retry,
+  breaker por proveedor y respaldo, ADR-028 D2). En production es el unico valor que
+  arranca (``Settings._require_llm_api``).
+- ``embedding_backend`` / ``reranker_backend`` gatean el embedder y el reranker.
 
-Los Fakes quedan DETRAS de la condicion, NO hardcodeados: cambiar a serving real
-es flippear settings, no editar el lifespan. La factory NO abre conexiones de red
-al construirse (``httpx.AsyncClient`` con un transport perezoso no disca hasta el
-primer request), asi que es seguro instanciarla en el arranque aunque vLLM no este
-levantado todavia; el ``ResilientClient`` degrada por diseno si las instancias no
-responden (regla #4: fallback SIEMPRE on-prem, cero APIs externas).
+Los fakes quedan DETRAS de la condicion, no hardcodeados en el lifespan: pasar a los
+clientes reales es cambiar settings. La factory no abre conexiones al construir
+(``httpx.AsyncClient`` no disca hasta el primer request), asi que es seguro llamarla
+en el arranque.
 
 No importa FastAPI (regla de capas): solo ``Settings`` + ``LlmRuntimeConfig`` +
 ``httpx`` + los clientes de ``app.llm.clients``.
@@ -26,9 +21,11 @@ No importa FastAPI (regla de capas): solo ``Settings`` + ``LlmRuntimeConfig`` +
 
 from __future__ import annotations
 
+import logging
+
 import httpx
 
-from app.core.config import Settings
+from app.core.config import LlmProvider, Settings
 from app.llm.clients.base import LLMClient
 from app.llm.clients.embedding import (
     EmbeddingClient,
@@ -37,63 +34,114 @@ from app.llm.clients.embedding import (
 )
 from app.llm.clients.fakes import FakeLlmClient
 from app.llm.clients.parsers import OpenAIToolCallParser
-from app.llm.clients.pool import build_pool
+from app.llm.clients.pool import build_provider_pool
+from app.llm.clients.providers.openai_compat import OpenAICompatClient
 from app.llm.clients.reranker import FakeReranker, Reranker, VllmReranker
 from app.llm.clients.resilient import ResilientClient
-from app.llm.clients.vllm import VllmClient
 from app.llm.config import LlmRuntimeConfig
+
+# Politica de resiliencia del LLM por API. Para que un proveedor colgado deje lugar al
+# respaldo, el peor caso del principal (todos sus intentos con timeout, mas el backoff
+# entre ellos) mas un request al respaldo tiene que entrar en el presupuesto total del
+# ``ResilientClient``: 3 x 20 s + 2,5 s + 20 s = 82,5 s < 90 s
+# (``check_resilience_budget``). El timeout cubre la generacion entera: el chat usa
+# ``complete``, que espera la respuesta completa.
+PROVIDER_REQUEST_TIMEOUT_S = 20.0
+PROVIDER_MAX_ATTEMPTS = 3
+PROVIDER_BASE_BACKOFF_S = 0.5
+PROVIDER_MAX_BACKOFF_S = 8.0
+PROVIDER_TOTAL_BUDGET_S = 90.0
+
+# ``reasoning_effort`` que se pide cuando el rol piensa (``thinking=True``) a un
+# proveedor con ``supports_reasoning_effort``. Para ``thinking=False`` no se manda nada:
+# el valor que lo apaga cambia de proveedor a proveedor.
+_REASONING_EFFORT_ON = "medium"
+
+
+def check_resilience_budget(
+    *,
+    timeout_s: float = PROVIDER_REQUEST_TIMEOUT_S,
+    max_attempts: int = PROVIDER_MAX_ATTEMPTS,
+    base_backoff_s: float = PROVIDER_BASE_BACKOFF_S,
+    max_backoff_s: float = PROVIDER_MAX_BACKOFF_S,
+    total_budget_s: float = PROVIDER_TOTAL_BUDGET_S,
+) -> None:
+    """``ValueError`` si el respaldo no entra en el presupuesto despues del peor caso.
+
+    El peor caso del principal son ``max_attempts`` requests cortados por timeout mas
+    el backoff maximo entre ellos (exponencial con jitter, con techo, como
+    ``RetryPolicy.backoff``). Despues tiene que quedar lugar para un request al
+    respaldo; si no, el presupuesto corta antes y la respuesta degrada aunque el
+    respaldo este sano.
+    """
+    backoff_s = sum(
+        min(min(base_backoff_s * 2**attempt, max_backoff_s) + base_backoff_s, max_backoff_s)
+        for attempt in range(max_attempts - 1)
+    )
+    worst_case_s = max_attempts * timeout_s + backoff_s + timeout_s
+    if worst_case_s >= total_budget_s:
+        raise ValueError(
+            f"el timeout por request ({timeout_s} s) no deja lugar al respaldo: "
+            f"{max_attempts} intentos + backoff + respaldo suman {worst_case_s} s, "
+            f"y el presupuesto es {total_budget_s} s"
+        )
 
 
 def _wants_real_llm(settings: Settings) -> bool:
-    """Decide si construir el LLM real (vLLM) o el Fake determinista.
+    """``True`` si el LLM es el de los proveedores por API (``LLM_BACKEND=api``).
 
-    Serving real cuando ``LLM_BACKEND=vllm`` (opt-in explicito: dev contra Ollama
-    o un vLLM local) o en ``production`` (siempre real). dev/staging/test sin el
-    flag corren con los Fakes (sin discar a vLLM). El flag desacopla "serving
-    real" de "soy prod" para no mentir ``environment`` (que dispara los fail-fast
-    de prod: JWT fuerte, CORS no-localhost, master key).
+    En production es siempre asi: ``Settings`` no arranca con el fake.
     """
-    return settings.llm_backend == "vllm" or settings.environment == "production"
+    return settings.llm_backend == "api"
+
+
+def _build_provider_client(
+    provider: LlmProvider, settings: Settings, parser: OpenAIToolCallParser
+) -> OpenAICompatClient:
+    """Un ``OpenAICompatClient`` para una entrada de ``LLM_PROVIDERS``."""
+    return OpenAICompatClient(
+        name=provider.name,
+        base_url=provider.base_url,
+        api_key=settings.llm_api_keys[provider.name],
+        model_map=provider.models,
+        http_client=httpx.AsyncClient(),
+        reasoning_effort_on=_REASONING_EFFORT_ON if provider.supports_reasoning_effort else None,
+        reasoning_effort_off=None,
+        parser=parser,
+        default_timeout_s=PROVIDER_REQUEST_TIMEOUT_S,
+    )
 
 
 def build_llm_client(settings: Settings, config: LlmRuntimeConfig) -> LLMClient:
-    """Construye el cliente LLM segun la config: ``ResilientClient`` real o Fake.
+    """Construye el cliente LLM segun ``LLM_BACKEND``: el de los proveedores o el fake.
 
-    Camino real (``_wants_real_llm``): un ``VllmClient`` por entrada de
-    ``config.serving_endpoints`` (cada entrada = un proceso vLLM, ADR-013),
-    anunciando SOLO los ``served_models`` de su entrada. Esto cierra #206: cada
-    client dice servir solo sus modelos, asi el ``ClientPool`` rutea cada modelo
-    al proceso correcto. Se arman en el pool via ``build_pool`` (en el orden de la
-    lista = orden de preferencia) y se envuelven en un ``ResilientClient`` (retry
-    + breaker + fallback on-prem).
+    ``api``: un ``OpenAICompatClient`` por proveedor, en el orden de ``LLM_PROVIDERS``
+    (el primero es el principal), en un pool con respaldo y envuelto en un
+    ``ResilientClient``. ``Settings`` ya valido que haya proveedores y que cada uno
+    tenga su credencial.
 
-    Camino Fake (default dev/test): ``FakeLlmClient`` con TODOS los ``served_name``
-    de la config, igual que el comportamiento historico del lifespan. No abre red.
+    ``fake`` (default dev/test): ``FakeLlmClient`` que sirve todos los modelos de la
+    config. No abre red.
     """
     if not _wants_real_llm(settings):
         models = frozenset(m.served_name for m in config.models.values())
         return FakeLlmClient(models=models)
 
-    # Serving real (ADR-013): un VllmClient por entrada de LLM_SERVING, cada uno
-    # anunciando solo SUS served_names (entry.models). El pool reune todos en el
-    # orden de la lista; candidates(model) filtra por serves_model -> ruteo correcto.
+    check_resilience_budget()
+    # httpx loguea cada request en INFO con la URL del proveedor: el proceso que habla
+    # con los proveedores lo deja en WARNING.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     parser = OpenAIToolCallParser()
-    timeout_s = float(config.serving.request_timeout_s)
-    clients_by_base_url: dict[str, LLMClient] = {
-        ep.base_url: VllmClient(
-            base_url=ep.base_url,
-            served_models=frozenset(ep.models),
-            http_client=httpx.AsyncClient(),
-            parser=parser,
-            default_timeout_s=timeout_s,
-            # Motor del endpoint (ADR-014 D4): "ollama" rutea el thinking por la API
-            # nativa /api/chat; "vllm" (default) usa el OpenAI-compat. Ver ServingEndpoint.
-            engine=ep.engine,
-        )
-        for ep in config.serving_endpoints
-    }
-    pool = build_pool(config, clients_by_base_url)
-    return ResilientClient(pool)
+    clients: list[LLMClient] = [
+        _build_provider_client(provider, settings, parser) for provider in settings.llm_providers
+    ]
+    return ResilientClient(
+        build_provider_pool(clients),
+        max_attempts=PROVIDER_MAX_ATTEMPTS,
+        base_backoff_s=PROVIDER_BASE_BACKOFF_S,
+        max_backoff_s=PROVIDER_MAX_BACKOFF_S,
+        total_budget_s=PROVIDER_TOTAL_BUDGET_S,
+    )
 
 
 def build_embedder(settings: Settings) -> EmbeddingClient:

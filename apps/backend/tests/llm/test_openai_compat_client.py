@@ -331,7 +331,9 @@ async def test_key_never_reaches_logs_repr_or_errors(caplog: pytest.LogCaptureFi
         ]
     )
     client = _client(lambda request: next(responses))
-    with caplog.at_level(logging.DEBUG):
+    # El logger de httpx puede venir en WARNING (``build_llm_client`` lo sube con
+    # ``LLM_BACKEND=api``): se baja a DEBUG junto con el root para capturar cada request.
+    with caplog.at_level(logging.DEBUG), caplog.at_level(logging.DEBUG, logger="httpx"):
         await _complete(client)
         with pytest.raises(LlmAuthError) as excinfo:
             await _complete(client)

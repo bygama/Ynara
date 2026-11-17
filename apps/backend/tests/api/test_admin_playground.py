@@ -14,7 +14,7 @@ Cubre los dos endpoints aditivos del control plane:
 Setup espejado de ``tests/api/test_admin_auth.py`` / ``test_chat.py``: ``httpx.AsyncClient``
 + ``ASGITransport(app=app)``, override de ``get_db`` con el ``db_session`` del fixture
 (el gate admin carga el ``User``), override de ``get_llm_client`` con un ``FakeLlmClient``
-programado, y patch de ``get_settings`` para forzar ``LLM_BACKEND=vllm`` (serving real)
+programado, y patch de ``get_settings`` para forzar ``LLM_BACKEND=api`` (serving real)
 salvo en el test del guard 409. Ningún endpoint commitea: el rollback del fixture limpia.
 """
 
@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 from app.core.deps import get_db, get_llm_client
 from app.core.security import create_access_token
+from app.llm.clients.factory import PROVIDER_REQUEST_TIMEOUT_S
 from app.llm.clients.fakes import FakeLlmClient
 from app.llm.errors import (
     LlmBadRequestError,
@@ -55,17 +56,29 @@ _SERVED = frozenset({"gemma4", "qwen"})
 
 
 def _real_settings() -> Settings:
-    """Settings con ``LLM_BACKEND=vllm`` -> ``_wants_real_llm`` True (serving real).
+    """Settings con ``LLM_BACKEND=api`` -> ``_wants_real_llm`` True (proveedores reales).
 
     El playground guardea el backend fake con un 409; para ejercitar el camino real
     (happy-path + mapeo de errores) hay que forzar el flag SIN mentir ``environment``.
+    Con ``api`` hace falta un proveedor con su credencial (ADR-028); el cliente que
+    responde igual es el ``FakeLlmClient`` del override de ``get_llm_client``.
     """
     return Settings(
         _env_file=None,  # type: ignore[call-arg]
         DATABASE_URL="postgresql://test:test@localhost/test",
         REDIS_URL="redis://localhost:6379/0",
         JWT_SECRET="test-secret-no-usar-en-prod-min-32b",
-        LLM_BACKEND="vllm",
+        LLM_BACKEND="api",
+        LLM_PROVIDERS=json.dumps(
+            [
+                {
+                    "name": "principal",
+                    "base_url": "https://api.proveedor.test/v1",
+                    "models": {"conversacional": "org/chat", "agente": "org/agent"},
+                }
+            ]
+        ),
+        llm_api_keys={"principal": "sk-test-principal-0123"},
     )
 
 
@@ -136,7 +149,7 @@ def _patch_settings(settings: Settings) -> Iterator[None]:
 
 
 async def test_serving_real_backend_inventory(db_session: AsyncSession) -> None:
-    """Con LLM_BACKEND=vllm: is_real=True, low_perf_available=True, ambos modelos sanos."""
+    """Con LLM_BACKEND=api: is_real=True, low_perf_available=True, ambos modelos sanos."""
     admin = await _seed_admin(db_session)
     fake = FakeLlmClient(models=_SERVED)
 
@@ -148,11 +161,11 @@ async def test_serving_real_backend_inventory(db_session: AsyncSession) -> None:
 
         assert resp.status_code == 200
         body = resp.json()
-        assert body["backend"] == "vllm"
+        assert body["backend"] == "api"
         assert body["is_real"] is True
         assert body["serving_healthy"] is True
         assert body["low_perf_available"] is True
-        assert body["request_timeout_s"] == 120.0
+        assert body["request_timeout_s"] == PROVIDER_REQUEST_TIMEOUT_S
         assert body["embedder"] == "bge-m3"
         assert body["reranker"] == "bge-reranker-v2-m3"
 

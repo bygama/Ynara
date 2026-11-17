@@ -1,27 +1,36 @@
-"""Tests de la factory de clientes LLM / embedder / reranker (P2).
+"""Tests de la factory de clientes LLM / embedder / reranker.
 
-Verifican el gate Fakes (dev/test, default) vs. clientes REALES
-(``ResilientClient`` / ``VllmClient`` en production) SIN abrir red: solo asserts
-de tipo. ``httpx.AsyncClient`` no disca hasta el primer request, asi que
-construir un ``VllmClient`` real es seguro sin un servidor vLLM levantado.
-
-Tambien cubren el gate del embedder (``embedding_backend``) y el reranker.
+Verifican el gate entre el fake (default de dev y test) y los clientes reales
+(``ResilientClient`` sobre un ``OpenAICompatClient`` por proveedor con
+``LLM_BACKEND=api``) SIN abrir red: ``httpx.AsyncClient`` no disca hasta el primer
+request. Tambien cubren el presupuesto de resiliencia y los gates del embedder
+(``embedding_backend``) y del reranker.
 """
 
 from __future__ import annotations
 
-from app.core.config import ServingEndpoint, Settings
+import json
+import logging
+from collections.abc import Iterator
+
+import pytest
+
+from app.core.config import Settings
 from app.llm.clients.embedding import FakeEmbeddingClient, VllmEmbeddingClient
 from app.llm.clients.factory import (
+    PROVIDER_MAX_ATTEMPTS,
+    PROVIDER_REQUEST_TIMEOUT_S,
+    PROVIDER_TOTAL_BUDGET_S,
     build_embedder,
     build_llm_client,
     build_llm_clients,
     build_reranker,
+    check_resilience_budget,
 )
 from app.llm.clients.fakes import FakeLlmClient
+from app.llm.clients.providers.openai_compat import OpenAICompatClient
 from app.llm.clients.reranker import FakeReranker, VllmReranker
 from app.llm.clients.resilient import ResilientClient
-from app.llm.clients.vllm import VllmClient
 from app.llm.config import (
     LlmRuntimeConfig,
     ModeConfig,
@@ -31,8 +40,22 @@ from app.llm.config import (
 
 _QWEN = "qwen-3.5-9b"
 _GEMMA = "gemma-4-12b"
-_GEMMA_URL = "http://gemma:8001/v1"
-_QWEN_URL = "http://qwen:8002/v1"
+
+# Proveedores de prueba (ADR-028): el principal acepta reasoning_effort, el respaldo no.
+_PROVIDERS = [
+    {
+        "name": "principal",
+        "base_url": "https://api.principal.test/v1",
+        "models": {"conversacional": "org/chat", "agente": "org/agent"},
+        "supports_reasoning_effort": True,
+    },
+    {
+        "name": "respaldo",
+        "base_url": "https://api.respaldo.test/v1",
+        "models": {"conversacional": "otro/chat", "agente": "otro/agent"},
+    },
+]
+_API_KEYS = {"principal": "sk-test-principal-0123", "respaldo": "sk-test-respaldo-4567"}
 
 # JWT secret >= 32 chars: production rechaza un secret debil (ver Settings).
 _PROD_JWT_SECRET = "x" * 48
@@ -48,9 +71,8 @@ def _settings(
 ) -> Settings:
     """Settings aislado de cualquier .env. ``production`` exige config no-dev.
 
-    ``LLM_SERVING`` no afecta la factory (que arma los clients desde
-    ``config.serving_endpoints``), pero se deja en su default para no acoplar
-    estos tests al esquema de .env.
+    Con ``llm_backend='api'`` se cargan los dos proveedores de prueba y sus
+    credenciales (por nombre de campo: ``llm_api_keys``).
     """
     kwargs: dict[str, object] = {
         "_env_file": None,
@@ -62,6 +84,9 @@ def _settings(
         "RERANKER_BACKEND": reranker_backend,
         "LLM_BACKEND": llm_backend,
     }
+    if llm_backend == "api":
+        kwargs["LLM_PROVIDERS"] = json.dumps(_PROVIDERS)
+        kwargs["llm_api_keys"] = dict(_API_KEYS)
     if environment == "production":
         # production fail-fast: secret fuerte, CORS no-localhost, master key.
         # ``cors_origins`` no tiene alias: se setea por nombre de campo.
@@ -73,17 +98,8 @@ def _settings(
     return Settings(**kwargs)  # type: ignore[arg-type]
 
 
-def _config(serving_endpoints: list[ServingEndpoint] | None = None) -> LlmRuntimeConfig:
-    """``LlmRuntimeConfig`` minimo coherente (gemma + qwen).
-
-    Default ``serving_endpoints``: co-residente (ADR-013/012), gemma en una url
-    y qwen en otra, cada proceso anunciando solo su served_name.
-    """
-    if serving_endpoints is None:
-        serving_endpoints = [
-            ServingEndpoint(base_url=_GEMMA_URL, models=["gemma4"]),
-            ServingEndpoint(base_url=_QWEN_URL, models=["qwen"]),
-        ]
+def _config() -> LlmRuntimeConfig:
+    """``LlmRuntimeConfig`` minimo coherente (gemma + qwen)."""
     serving = ServingConfig(
         tool_parsers={_QWEN: "hermes", _GEMMA: "gemma4"},
         quantization="awq_marlin",
@@ -116,86 +132,108 @@ def _config(serving_endpoints: list[ServingEndpoint] | None = None) -> LlmRuntim
             tone="neutro",
         )
     }
-    return LlmRuntimeConfig(
-        serving_endpoints=serving_endpoints,
-        serving=serving,
-        models=models,
-        modes=modes,
-    )
+    return LlmRuntimeConfig(serving_endpoints=[], serving=serving, models=models, modes=modes)
+
+
+def _provider_clients(client: object) -> list[OpenAICompatClient]:
+    assert isinstance(client, ResilientClient)
+    clients = client._pool.clients
+    assert all(isinstance(c, OpenAICompatClient) for c in clients)
+    return clients  # type: ignore[return-value]
 
 
 # ---------- build_llm_client ----------
 
 
-def test_llm_client_is_fake_in_dev() -> None:
-    """En development (default) la factory devuelve el ``FakeLlmClient``."""
-    client = build_llm_client(_settings(environment="development"), _config())
+@pytest.fixture(autouse=True)
+def _restore_httpx_log_level() -> Iterator[None]:
+    """``build_llm_client`` con ``api`` sube el logger de httpx: se restaura al salir."""
+    logger = logging.getLogger("httpx")
+    level = logger.level
+    yield
+    logger.setLevel(level)
+
+
+@pytest.mark.parametrize("environment", ["development", "staging"])
+def test_llm_client_is_fake_by_default(environment: str) -> None:
+    """Sin ``LLM_BACKEND`` la factory devuelve el ``FakeLlmClient`` (sin red)."""
+    client = build_llm_client(_settings(environment=environment), _config())
     assert isinstance(client, FakeLlmClient)
-    # El Fake sirve TODOS los served_name de la config (gemma4 + qwen).
+    # El fake sirve todos los modelos de la config.
     assert client.serves_model("qwen")
     assert client.serves_model("gemma4")
 
 
-def test_llm_client_is_fake_in_staging() -> None:
-    """staging tampoco tiene GPU: serving real solo en production."""
-    client = build_llm_client(_settings(environment="staging"), _config())
-    assert isinstance(client, FakeLlmClient)
+def test_llm_client_api_builds_one_client_per_provider_in_priority_order() -> None:
+    """``LLM_BACKEND=api``: un cliente por proveedor, el principal primero."""
+    clients = _provider_clients(build_llm_client(_settings(llm_backend="api"), _config()))
+    assert [c.name for c in clients] == ["principal", "respaldo"]
+    for provider_client in clients:
+        assert provider_client.serves_model("conversacional")
+        assert provider_client.serves_model("agente")
+        assert provider_client._default_timeout_s == PROVIDER_REQUEST_TIMEOUT_S
+
+
+def test_llm_client_api_maps_reasoning_effort_per_provider() -> None:
+    """``supports_reasoning_effort`` pide ``medium`` al pensar; apagado no se manda."""
+    principal, respaldo = _provider_clients(
+        build_llm_client(_settings(llm_backend="api"), _config())
+    )
+    assert principal._reasoning_effort == {True: "medium", False: None}
+    assert respaldo._reasoning_effort == {True: None, False: None}
+
+
+def test_llm_client_api_takes_each_credential_by_provider_name() -> None:
+    principal, respaldo = _provider_clients(
+        build_llm_client(_settings(llm_backend="api"), _config())
+    )
+    assert principal._auth._api_key.get_secret_value() == _API_KEYS["principal"]
+    assert respaldo._auth._api_key.get_secret_value() == _API_KEYS["respaldo"]
+
+
+def test_llm_client_api_quiets_the_httpx_request_logs() -> None:
+    """httpx loguea cada request en INFO con la URL del proveedor: queda en WARNING."""
+    logging.getLogger("httpx").setLevel(logging.NOTSET)
+    build_llm_client(_settings(llm_backend="api"), _config())
+    assert logging.getLogger("httpx").level == logging.WARNING
+
+
+def test_llm_client_fake_leaves_the_httpx_logs_alone() -> None:
+    logging.getLogger("httpx").setLevel(logging.NOTSET)
+    build_llm_client(_settings(), _config())
+    assert logging.getLogger("httpx").level == logging.NOTSET
+
+
+def test_llm_client_api_uses_the_resilience_policy() -> None:
+    client = build_llm_client(_settings(llm_backend="api"), _config())
+    assert isinstance(client, ResilientClient)
+    assert client._policy.max_attempts == PROVIDER_MAX_ATTEMPTS
+    assert client._total_budget_s == PROVIDER_TOTAL_BUDGET_S
 
 
 def test_llm_client_is_resilient_in_production() -> None:
-    """En production la factory devuelve el ``ResilientClient`` real (sin red)."""
-    client = build_llm_client(_settings(environment="production"), _config())
-    assert isinstance(client, ResilientClient)
-    # El pool real sirve ambos served_name de la config (routing por modelo).
-    assert client.serves_model("qwen")
-    assert client.serves_model("gemma4")
+    """En production (``LLM_BACKEND=api`` obligatorio) el cliente es el real."""
+    client = build_llm_client(_settings(environment="production", llm_backend="api"), _config())
+    assert [c.name for c in _provider_clients(client)] == ["principal", "respaldo"]
 
 
-def test_llm_client_production_single_entry_one_client() -> None:
-    """Una sola entrada (Ollama dev) = un solo VllmClient en el pool real."""
-    settings = _settings(environment="production")
-    cfg = _config([ServingEndpoint(base_url=_QWEN_URL, models=["gemma4", "qwen"])])
-    client = build_llm_client(settings, cfg)
-    assert isinstance(client, ResilientClient)
-    pool_clients = client._pool.clients
-    assert len(pool_clients) == 1
-    # El unico client sirve ambos modelos (un endpoint que los sirve a los dos).
-    assert pool_clients[0].serves_model("qwen")
-    assert pool_clients[0].serves_model("gemma4")
+# ---------- presupuesto de resiliencia ----------
 
 
-def test_llm_client_real_clients_advertise_only_their_models() -> None:
-    """Regression #206: cada VllmClient real recibe SOLO los served_models de su entrada.
-
-    Con gemma en una url y qwen en otra, el client de gemma NO debe anunciar qwen
-    (antes de ADR-013 ambos recibian el set completo -> ruteo a 404).
-    """
-    settings = _settings(environment="production")
-    cfg = _config(
-        [
-            ServingEndpoint(base_url=_GEMMA_URL, models=["gemma4"]),
-            ServingEndpoint(base_url=_QWEN_URL, models=["qwen"]),
-        ]
-    )
-    client = build_llm_client(settings, cfg)
-    assert isinstance(client, ResilientClient)
-    pool_clients = client._pool.clients
-    assert len(pool_clients) == 2
-    for vllm_client in pool_clients:
-        assert isinstance(vllm_client, VllmClient)
-    gemma_client, qwen_client = pool_clients
-    assert gemma_client.serves_model("gemma4")
-    assert not gemma_client.serves_model("qwen")
-    assert qwen_client.serves_model("qwen")
-    assert not qwen_client.serves_model("gemma4")
+def test_resilience_budget_leaves_room_for_the_backup() -> None:
+    """Con la politica por default, el respaldo entra despues del peor caso."""
+    check_resilience_budget()
 
 
-def test_llm_client_is_real_when_backend_vllm_in_dev() -> None:
-    """LLM_BACKEND=vllm prende el serving real en dev sin tocar environment."""
-    client = build_llm_client(_settings(environment="development", llm_backend="vllm"), _config())
-    assert isinstance(client, ResilientClient)
-    assert client.serves_model("qwen")
-    assert client.serves_model("gemma4")
+@pytest.mark.parametrize(
+    ("timeout_s", "max_attempts"),
+    [(30.0, 3), (22.0, 3), (45.0, 1)],
+)
+def test_resilience_budget_rejects_a_timeout_that_starves_the_backup(
+    timeout_s: float, max_attempts: int
+) -> None:
+    with pytest.raises(ValueError, match="no deja lugar al respaldo"):
+        check_resilience_budget(timeout_s=timeout_s, max_attempts=max_attempts)
 
 
 # ---------- build_embedder ----------
@@ -253,7 +291,7 @@ def test_build_llm_clients_returns_trio_of_fakes_in_dev() -> None:
 
 
 def test_build_llm_clients_returns_real_llm_in_production() -> None:
-    settings = _settings(environment="production")
+    settings = _settings(environment="production", llm_backend="api")
     llm, embedder, reranker = build_llm_clients(settings, _config())
     assert isinstance(llm, ResilientClient)
     # embedder/reranker reales aun no existen: siguen siendo Fakes detras del gate.
