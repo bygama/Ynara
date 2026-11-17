@@ -11,9 +11,9 @@ type Props = {
   modes: string[];
   /** Revisión de Alembic en cabeza (último migrado), p.ej. `20260615_0200`. */
   schemaHead: string;
-  /** Modelo de embeddings cargado, p.ej. `bge-m3 (1024d)`. */
+  /** Modelo de embeddings en uso (`EMBEDDING_MODEL`), p.ej. `BAAI/bge-m3`. */
   embedder: string;
-  /** Reranker cargado, p.ej. `bge-reranker-v2-m3`. */
+  /** Reranker en uso: `passthrough`, que deja el orden de la búsqueda. */
   reranker: string;
   /** Versión de build del panel (`admin@0.1.0`). */
   buildVersion: string;
