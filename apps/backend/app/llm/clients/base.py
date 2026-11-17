@@ -62,9 +62,11 @@ class LLMClient(Protocol):
         ``timeout_s=None`` deja que la implementacion use su default (el
         ``OpenAICompatClient`` usa el ``PROVIDER_REQUEST_TIMEOUT_S`` de la factory).
 
-        ``thinking`` controla el modo de razonamiento del modelo (ADR-012 D4):
-        ``None`` = no emitir la clave -> usa el default del server (preserva el
-        comportamiento exacto previo). ``True``/``False`` = forzar ON/OFF.
+        ``thinking`` es la intencion de razonamiento del caller (ADR-028 D3):
+        ``True`` = razonar, ``False`` = no razonar, ``None`` = sin preferencia. La
+        implementacion la traduce a lo que entienda su proveedor; el cliente por API
+        manda ``reasoning_effort`` solo si tiene un valor configurado para ella y, si
+        no, no manda nada y el modelo razona segun su default.
         """
         ...
 
@@ -83,8 +85,7 @@ class LLMClient(Protocol):
 
         ``timeout_s=None`` -> default de la implementacion (ver ``complete``).
 
-        ``thinking`` controla el modo de razonamiento del modelo (ADR-012 D4):
-        ``None`` = no emitir la clave -> default del server (ver ``complete``).
+        ``thinking`` es la intencion de razonamiento del caller (ver ``complete``).
         """
         ...
 

@@ -122,17 +122,21 @@ _FALLBACK_TEXT = (
 
 
 def _thinking_for_role(role: str) -> bool | None:
-    """Modo de razonamiento por rol del modelo (ADR-012 D4).
+    """Intencion de razonamiento por rol del modelo (ADR-028 D3, que sigue a ADR-012 D4).
 
-    - ``conversational`` -> ``False``: el modelo conversacional NUNCA piensa. Con
-      thinking activo puede devolver ``content`` vacio (gotcha medido con Gemma);
-      emitir ``False`` explicito garantiza OFF aunque cambie el default del server.
-    - ``agent`` -> ``True``: el agente piensa para planificar tool calls;
-      emitir ``True`` explicito asegura ON aunque cambie el default del server.
-    - cualquier otro rol -> ``None``: no emitir la clave, usar el default del
-      server. La config tipa ``role`` como ``Literal`` (solo los dos de arriba), asi
-      que esta rama es inalcanzable en runtime; existe como fail-safe que NO rompe el
-      turno ante un rol desconocido (preserva el comportamiento previo exacto).
+    - ``conversational`` -> ``False``: el modelo conversacional no razona, responde
+      directo (un modelo que razona puede gastar el turno en el razonamiento y dejar
+      el ``content`` vacio).
+    - ``agent`` -> ``True``: el agente razona para planificar tool calls.
+    - cualquier otro rol -> ``None``: sin intencion. La config tipa ``role`` como
+      ``Literal`` (solo los dos de arriba), asi que esta rama es inalcanzable en
+      runtime; existe como fail-safe que NO rompe el turno ante un rol desconocido.
+
+    Es intencion, no un switch del motor: el cliente del proveedor la traduce a
+    ``reasoning_effort`` solo si tiene un valor para ella. Hoy la factory pide
+    esfuerzo para ``True`` si el proveedor declara ``supports_reasoning_effort``, y
+    para ``False`` o ``None`` no manda nada (el valor que apaga el razonamiento cambia
+    de proveedor a proveedor): ahi el modelo razona segun su default.
     """
     if role == "conversational":
         return False
@@ -195,9 +199,9 @@ async def route(
     model_cfg = cfg.model_for_mode(mode_key)
     context_tokens = model_cfg.context_tokens
 
-    # Modo de razonamiento por rol (ADR-012 D4): conversacional NUNCA piensa
-    # (content vacio con thinking ON, medido con Gemma), agente SI (planifica tool
-    # calls). Se hila por el tool loop hasta el cliente; ``None`` deja el default.
+    # Intencion de razonamiento por rol (ADR-028 D3): conversacional no razona, agente
+    # si (planifica tool calls). Se hila por el tool loop hasta el cliente, que la
+    # traduce a ``reasoning_effort`` solo si el proveedor lo soporta.
     thinking = _thinking_for_role(model_cfg.role)
 
     # System prompt estatico del modo (cacheado, NO mutar).

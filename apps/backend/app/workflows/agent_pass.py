@@ -218,9 +218,10 @@ async def _async_agent_pass(
     prod), se construye el engine con ``NullPool`` (decisión #4), se abre la sesión,
     se commitea y se dispone el engine.
 
-    El alias del modelo del modo se resuelve de la config; ``thinking`` se fuerza
-    ``True`` (el agente planifica tool calls — el alias ``agente`` tiene rol
-    ``agent``, mismo criterio que el router).
+    El alias del modelo del modo se resuelve de la config; ``thinking`` pide razonar
+    (``True``) porque el agente planifica tool calls — el alias ``agente`` tiene rol
+    ``agent``, mismo criterio que el router. Es intencion (ADR-028 D3): el cliente
+    pide esfuerzo de razonamiento solo si el proveedor lo soporta.
     """
     cfg = settings or get_settings()
     runtime = load_llm_config()
