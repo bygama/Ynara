@@ -65,6 +65,7 @@ from app.llm.clients._resilience import (
     ChainOutcome,
     RetryPolicy,
     client_label,
+    probe_health,
 )
 from app.llm.clients.base import LLMClient
 from app.llm.clients.circuit import CircuitBreaker
@@ -192,6 +193,17 @@ class ResilientClient:
             if health.healthy:
                 return ModelHealth(model_name=health.model_name, healthy=True)
         return ModelHealth(model_name=first_name, healthy=False)
+
+    async def provider_health(self) -> list[ModelHealth]:
+        """Salud de cada cliente del pool, en el orden del pool (el principal primero).
+
+        A diferencia de ``health()``, que corta en el primer sano, sondea a todos a la
+        vez: el panel admin muestra el estado de cada proveedor por separado. El
+        ``model_name`` de cada uno es el nombre del proveedor (la clase del cliente si no
+        tiene ``name``). Un cliente que rompe en ``health()`` cuenta como no-sano y no
+        tumba al resto.
+        """
+        return list(await asyncio.gather(*(probe_health(c) for c in self._pool.clients)))
 
     async def complete(
         self,
