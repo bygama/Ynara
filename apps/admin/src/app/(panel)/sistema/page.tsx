@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "System Health" };
  * Server component: header editorial estático + `metadata`, delega la
  * composición de datos a `<SystemView/>` (client, consume `useSystem()`). NO
  * lleva `range` —es runtime/config, foto única—: guard anti-prod prominente,
- * estado de Postgres/Redis con latencias, e inventario de runtime.
+ * estado de Postgres/Redis con latencias, proveedores de IA e inventario de runtime.
  *
  * Mapeo de estado (decisión de marca): OK = azul plano, down = `--color-error`.
  * Sin verde.
@@ -21,8 +21,8 @@ export default function SistemaPage() {
         <p className="text-caption text-[var(--color-ink-soft)]">Soberanía</p>
         <h1 className="text-display text-[var(--color-ink-deep)]">System Health</h1>
         <p className="max-w-[var(--measure-prose)] text-body text-[var(--color-ink-soft)]">
-          Guard anti-prod, estado de Postgres y Redis con latencias, e inventario de runtime
-          (modelos, modos, schema head, embedder/reranker).
+          Guard anti-prod, estado de Postgres y Redis con latencias, proveedores de IA (LLM y
+          embeddings) e inventario de runtime (modelos, modos, schema head, build).
         </p>
       </header>
 

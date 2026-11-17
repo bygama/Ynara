@@ -4,6 +4,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { EmptyStateCard } from "@/components/ui/EmptyStateCard";
 import { cn } from "@/lib/cn";
 import { useSystem } from "../hooks/useSystem";
+import { AiProviders } from "./AiProviders";
 import { ProdGuardBanner } from "./ProdGuardBanner";
 import { RuntimeInventory } from "./RuntimeInventory";
 import { StatusCard } from "./StatusCard";
@@ -19,7 +20,8 @@ import { StatusCard } from "./StatusCard";
  * `--stagger-index` por banda:
  *  1. `ProdGuardBanner` (`col-span-12`) — lo primero que ve el operador.
  *  2. Dos `StatusCard` (`col-span-6` c/u) — Postgres + Redis.
- *  3. `RuntimeInventory` (`col-span-12`) — config no sensible.
+ *  3. `AiProviders` (`col-span-12`) — proveedores de IA: LLM y embeddings.
+ *  4. `RuntimeInventory` (`col-span-12`) — config no sensible.
  *
  * Estados cuidados: skeleton de page-load, error editorial y empty (sin datos).
  */
@@ -55,7 +57,7 @@ export function SystemView() {
     );
   }
 
-  const { guard, services, runtime } = data;
+  const { guard, services, runtime, ai } = data;
 
   return (
     <div className="grid grid-cols-12 gap-8">
@@ -88,12 +90,14 @@ export function SystemView() {
       </Band>
 
       <Band span={12} index={3}>
+        <AiProviders ai={ai} />
+      </Band>
+
+      <Band span={12} index={4}>
         <RuntimeInventory
           models={runtime.models}
           modes={runtime.modes}
           schemaHead={runtime.schema_head}
-          embedder={runtime.embedder}
-          reranker={runtime.reranker}
           buildVersion={runtime.build_version}
         />
       </Band>
@@ -125,9 +129,9 @@ function Band({ span, index, children }: { span: 6 | 12; index: number; children
 
 /**
  * Skeleton de carga con la misma topología que la pantalla (banner + 2 cards +
- * inventario), para que el layout no salte al llegar el dato. Bloques planos en
- * `--color-bg-soft` con un fade-in suave (sin pulso para no competir con los
- * latidos de estado).
+ * proveedores de IA + inventario), para que el layout no salte al llegar el
+ * dato. Bloques planos en `--color-bg-soft` con un fade-in suave (sin pulso para
+ * no competir con los latidos de estado).
  */
 function SystemSkeleton() {
   return (
@@ -135,6 +139,7 @@ function SystemSkeleton() {
       <div className="anim-fade-in col-span-12 h-24 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-soft)]" />
       <div className="anim-fade-in col-span-12 h-48 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-soft)] lg:col-span-6" />
       <div className="anim-fade-in col-span-12 h-48 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-soft)] lg:col-span-6" />
+      <div className="anim-fade-in col-span-12 h-96 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-soft)]" />
       <div className="anim-fade-in col-span-12 h-72 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-soft)]" />
     </div>
   );
