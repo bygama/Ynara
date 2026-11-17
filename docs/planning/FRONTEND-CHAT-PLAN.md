@@ -132,7 +132,7 @@ POST /v1/chat/stream     (SSE, text/event-stream)
   Modos:    todos
 ```
 
-> **Sin fallback mid-stream**: el `ResilientClient` (M3) solo hace fallback en `complete()`, no en `stream()`. La infra caída se sirve como **respuesta degradada** (texto degradado vía `token` + `done`), **no** como evento `error`.
+> **Sin fallback mid-stream**: el `ResilientClient` hace fallback en `complete()`; en `stream()`, solo si el candidato falla antes del primer chunk (una vez que el stream arrancó, no hay fallback). La infra caída se sirve como **respuesta degradada** (texto degradado vía `token` + `done`), **no** como evento `error`.
 
 ### 2.2 Shapes a espejar en Zod (`packages/shared-schemas/src/chat.ts`)
 
