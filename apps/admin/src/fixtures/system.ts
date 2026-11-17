@@ -5,7 +5,7 @@ import { FIXTURE_NOW, minutesBack } from "./seed";
  * Fixture de `GET /v1/admin/system` (blueprint §4.7).
  *
  * guard active=true / isProdInDev=false (estado sano: dev apunta a la DB de dev),
- * Postgres up 3.2ms, Redis up 0.8ms, runtime con modelos gemma/qwen, 5 modos,
+ * Postgres up 3.2ms, Redis up 0.8ms, runtime con los alias agente/conversacional, 5 modos,
  * schema head Alembic, embedder/reranker cargados, buildVersion.
  *
  * No lleva `range`: es runtime/config, una sola foto.
@@ -33,7 +33,7 @@ export function systemFixture(now: Date = FIXTURE_NOW): AdminSystemOutT {
       },
     },
     runtime: {
-      models: ["gemma", "qwen"],
+      models: ["agente", "conversacional"],
       modes: ["productividad", "estudio", "bienestar", "vida", "memoria"],
       schema_head: "20260615_0200",
       embedder: "bge-m3 (1024d)",
