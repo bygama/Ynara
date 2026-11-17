@@ -38,13 +38,13 @@ from typing import Any
 import httpx
 from pydantic import SecretStr
 
+from app.core.urls import validated_base_url
 from app.llm.clients.base import ToolCallParser
 from app.llm.clients.parsers import OpenAIToolCallParser
 from app.llm.clients.providers._http import (
     BearerAuth,
     raise_for_provider_status,
     transport_errors,
-    validated_base_url,
 )
 from app.llm.clients.providers._stream import SSE_DONE, StreamDecoder, sse_data
 from app.llm.clients.providers._think import split_inline_thinking
