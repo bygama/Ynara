@@ -4,19 +4,14 @@
 
 ## MVP (fase actual)
 
-> **NOTA — Estado actual:** el motor de inferencia real todavía NO corre
-> en ningún entorno. El backend usa Fakes (`FakeLlmClient`,
-> `FakeEmbeddingClient`, `FakeReranker`) en su lugar. El nodo `OLLAMA` del
-> diagrama representa el estado objetivo; su activación es un track de
-> infra aparte, pendiente.
->
-> **Motor de serving (ADR-014):** en la 4080 Super 16 GB el serving local
-> es **Ollama/GGUF**, un solo proceso con Gemma 4 12B + Qwen 3.5 9B + bge-m3
-> co-residentes (~14,55 GiB). `LLM_BACKEND=vllm` en `.env` es el **nombre
-> legacy** del cliente OpenAI-compatible (apunta a Ollama hoy). vLLM
-> multi-proceso (3 procesos :8001/:8002/:8003 + systemd por modelo en
-> `infra/prod/`, levantados por `infra/vllm/start-vllm.sh`) es la ruta para
-> GPU de 24 GB+, no la de la 4080.
+> **IA por API ([ADR-028](../adrs/ADR-028-inferencia-por-api.md)).** La VPS no
+> tiene GPU ni sirve modelos. El chat, el agente y la consolidación de memoria van
+> contra los proveedores de `LLM_PROVIDERS`, en orden de prioridad (principal →
+> respaldo), y los embeddings (bge-m3, 1024 dimensiones) contra el proveedor de
+> `EMBEDDING_BASE_URL`. La única HTTP a proveedores sale de
+> `apps/backend/app/llm/clients/providers/` (regla #4b), y hasta cerrar las
+> compuertas de ADR-028 reciben solo datos sintéticos. En dev y CI corren los
+> clientes fake, sin red.
 
 ```mermaid
 flowchart TB
@@ -33,17 +28,20 @@ flowchart TB
       MOB[apps/mobile<br/>iOS + Android builds]
     end
 
-    subgraph VPS[VPS Argentina / LATAM]
+    subgraph VPS["VPS Argentina / LATAM (sin GPU)"]
       direction TB
       API[FastAPI<br/>gunicorn + uvicorn]
       WORK[Celery workers]
       REDIS[Redis<br/>Docker o Upstash]
-      OLLAMA[Ollama/GGUF<br/>1 proceso :11434<br/>Gemma 4 12B + Qwen 3.5 9B + bge-m3<br/>co-residentes ~14,55 GiB]
-      GPU[RTX 4080 Super 16GB]
     end
 
     subgraph SB[Supabase]
       PG[Postgres 16<br/>+ pgvector]
+    end
+
+    subgraph IA[Proveedores de IA por API]
+      LLM["LLM_PROVIDERS<br/>principal → respaldo"]
+      EMB["Embeddings<br/>bge-m3, 1024 dim"]
     end
 
     USER([Usuario]) -->|HTTPS| WEB
@@ -53,33 +51,35 @@ flowchart TB
     CFT --> API
     API --> REDIS
     API --> PG
-    API --> OLLAMA
+    API -->|HTTPS| LLM
+    API -->|HTTPS| EMB
     API -.->|enqueue| WORK
     WORK --> PG
-    WORK --> OLLAMA
-    OLLAMA --- GPU
+    WORK -->|HTTPS| LLM
+    WORK -->|HTTPS| EMB
     API --> CFR2
 ```
 
 ## V2 (post-validación)
 
 Mismo diagrama pero `SB` (Supabase) reemplazado por un Postgres
-self-hosted en la misma VPS o en VPS dedicada. Detalle del cutover en
+self-hosted en la misma VPS o en VPS dedicada (ADR-005). La IA sigue
+por API. Detalle del cutover en
 `docs/operations/MIGRATION-SUPABASE-TO-SELFHOSTED.md`.
 
 ## Notas
 
-- La 4080 Super tiene 16 GB de VRAM. Gemma 4 12B (dense) cuantizado
-  + Qwen 3.5 9B cuantizado + bge-m3 co-residen dentro de los 16 GB
-  (confirmado por medición — ADR-012). En 16 GB el motor es **Ollama/GGUF**:
-  un solo proceso (:11434) sirve los tres modelos co-residentes (~14,55 GiB,
-  ADR-014). `LLM_BACKEND=vllm` es el **nombre legacy** del cliente
-  OpenAI-compatible, no implica que corra vLLM. El Gemma 4 26B-A4B original
-  no entraba; el cambio a 12B cerró esa restricción de VRAM.
-- **vLLM = ruta 24 GB+** (ADR-014 D2): 3 procesos en puertos distintos
-  (:8001 gemma, :8002 qwen, :8003 bge), una entrada por modelo en
-  `LLM_SERVING` (ADR-013), levantados por `infra/vllm/start-vllm.sh` con
-  systemd units por modelo en `infra/prod/`. No es la ruta de la 4080.
+- El API usa la IA en el path del chat (el alias del modo, y los embeddings
+  para buscar en memoria y para las tools `memory.*`) y los workers en la
+  consolidación (el alias `agente` y los embeddings de lo que se guarda).
+  Variables, credenciales y fail-fast de production en
+  [`infra/prod/README.md`](../../../infra/prod/README.md#proveedores-de-ia).
+- Si el principal falla, el chat pasa al respaldo y, agotada la cadena,
+  responde degradado; la consolidación reintenta desde Celery. Los
+  embeddings no tienen respaldo. Qué hacer en cada caso:
+  [`RUNBOOK.md`](../../operations/RUNBOOK.md#proveedor-de-ia-lento-o-caído).
+- El reranker no es un servicio: es un passthrough en todos los entornos
+  (ADR-028 D5).
 - Cloudflare Tunnel evita abrir puertos en la VPS y oculta IP real.
 - R2 para storage de exports de usuario, backups cifrados, assets
   estáticos pesados.
