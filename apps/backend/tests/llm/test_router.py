@@ -140,17 +140,18 @@ async def test_route_uses_context_budget_for_render(monkeypatch: pytest.MonkeyPa
     from app.llm.prompts.datetime_context import build_now_preamble
     from app.llm.prompts.loader import load_prompt
 
-    # El budget reserva el preambulo de fecha + el prompt del modo (route() lo arma ANTES
-    # del budget para no sobre-asignar el bloque de memoria). Se fija current_now para que
-    # el preambulo sea determinista y el expected coincida con lo que recibe render.
+    # El budget reserva el prompt del modo + el preambulo de fecha (route() arma la base
+    # ANTES del budget para no sobre-asignar el bloque de memoria). Se fija current_now para
+    # que el preambulo sea determinista y el expected coincida con lo que recibe render.
     fixed = datetime(2026, 7, 22, 18, 30, tzinfo=ZoneInfo("America/Argentina/Buenos_Aires"))
     # ``current_now`` ahora acepta ``tz``: el stub ignora el arg y devuelve el fijo.
     monkeypatch.setattr(router_mod, "current_now", lambda *_a, **_k: fixed)
     # route() ahora nombra el huso (``tz_label=tz``, default APP_TIMEZONE): el budget se
-    # mide contra el MISMO preámbulo que arma route, así que el expected lo replica.
+    # mide contra la MISMA base que arma route (prompt fijo primero, preámbulo después),
+    # así que el expected la replica.
     base_system = (
-        f"{build_now_preamble(fixed, tz_label='America/Argentina/Buenos_Aires')}"
-        f"\n\n{load_prompt(Mode.VIDA)}"
+        f"{load_prompt(Mode.VIDA)}"
+        f"\n\n{build_now_preamble(fixed, tz_label='America/Argentina/Buenos_Aires')}"
     )
     expected = context_budget(context_tokens=context_tokens, system_prompt=base_system)
 
@@ -272,17 +273,19 @@ async def test_route_agent_mode_enables_thinking() -> None:
 
 @pytest.mark.asyncio
 async def test_route_injects_datetime_preamble_in_system() -> None:
-    """``route()`` antepone el preambulo de fecha/hora actual al system prompt.
+    """``route()`` suma el preambulo de fecha/hora actual al system prompt.
 
     Cierra el gap E2E: sin esto el modelo no podia resolver "mañana"/"el lunes" al
     agendar. Se parchea ``current_now`` a una fecha fija para verificar el string
-    determinista que llega al complete().
+    determinista que llega al complete(). El preambulo va despues del prompt del modo
+    (lo fijo primero, por la cache de prefijos del proveedor).
     """
     from datetime import datetime
     from zoneinfo import ZoneInfo
 
     from app.llm import router as router_mod
     from app.llm.context import MemoryContext
+    from app.llm.prompts.loader import load_prompt
     from app.llm.tools.registry import default_registry
 
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
@@ -316,8 +319,8 @@ async def test_route_injects_datetime_preamble_in_system() -> None:
 
     system_msg = fake.complete_calls[0]["messages"][0]
     assert system_msg.role == "system"
-    # El preambulo va al inicio del system (ancla la fecha antes del resto).
-    assert system_msg.content.startswith("Fecha y hora actual: ")
+    # El prompt del modo abre el system y el preambulo va justo despues.
+    assert system_msg.content.startswith(f"{load_prompt(Mode.VIDA)}\n\nFecha y hora actual: ")
     # 2026-07-22 cae miércoles (el dia se deriva con weekday(), no se hardcodea). El
     # preámbulo ahora nombra el huso (``tz_label``) en vez de la frase genérica "hora local".
     assert (
@@ -325,6 +328,70 @@ async def test_route_injects_datetime_preamble_in_system() -> None:
         "(hora de America/Argentina/Buenos_Aires, offset UTC-03:00)" in system_msg.content
     )
     assert "resolver fechas relativas" in system_msg.content
+
+
+@pytest.mark.asyncio
+async def test_route_system_keeps_fixed_prefix_for_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    """El system va de lo fijo a lo variable: prompt del modo, fecha y memoria.
+
+    Es lo que aprovecha la cache de prefijos del proveedor: dos turnos con distinta hora
+    y distinto bloque de memoria comparten entero el prefijo del prompt del modo. Si la
+    fecha volviera adelante, el prefijo cambiaria cada minuto.
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from app.llm import router as router_mod
+    from app.llm.context import MemoryContext
+    from app.llm.prompts.loader import load_prompt
+    from app.llm.tools.registry import default_registry
+
+    empty_ctx = MemoryContext(
+        semantic_store=None,
+        episodic_store=None,
+        procedural_store=None,
+        _default_reg=default_registry(),
+        _memory_reg=None,
+    )
+
+    async def _fake_render(_ctx: Any, *, query: str, budget_tokens: int) -> str:
+        return f"## Contexto de memoria\n- recuerdo sobre {query}"
+
+    monkeypatch.setattr(router_mod, "build_memory_context", lambda **_kw: empty_ctx)
+    monkeypatch.setattr(router_mod, "render_context_block", _fake_render)
+
+    tz = ZoneInfo("America/Argentina/Buenos_Aires")
+    turns = [
+        (datetime(2026, 7, 22, 18, 30, tzinfo=tz), "primer mensaje"),
+        (datetime(2026, 7, 22, 18, 31, tzinfo=tz), "segundo mensaje"),
+    ]
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
+    systems: list[str] = []
+    for now, text in turns:
+        fake.queue_result(_result(text="ok", finish_reason="stop", model_name="gemma4"))
+        monkeypatch.setattr(router_mod, "current_now", lambda *_a, _now=now, **_k: _now)
+        await route(
+            ChatRequest(text=text, mode=Mode.VIDA, session_id="s-cache"),
+            session=MagicMock(),
+            user_id=uuid.uuid4(),
+            llm_client=fake,
+            embedder=FakeEmbeddingClient(),
+            reranker=FakeReranker(),
+            config=_cfg(),
+        )
+        systems.append(fake.complete_calls[-1]["messages"][0].content)
+
+    prompt = load_prompt(Mode.VIDA)
+    for system, (_now, text) in zip(systems, turns, strict=True):
+        # Orden: prompt del modo -> preambulo de fecha -> bloque de memoria (cierra).
+        assert system.startswith(f"{prompt}\n\n")
+        date_at = system.index("Fecha y hora actual: ")
+        memory_at = system.index("## Contexto de memoria")
+        assert len(prompt) < date_at < memory_at
+        assert system.endswith(f"recuerdo sobre {text}")
+    # Lo variable cambia entre turnos; el prefijo fijo (el prompt del modo) no.
+    assert systems[0] != systems[1]
+    assert systems[0][: len(prompt)] == systems[1][: len(prompt)] == prompt
 
 
 @pytest.mark.asyncio

@@ -91,7 +91,7 @@ __all__ = ["_AGENT_TOOL_BUILDERS", "_build_agent_registry", "agent_turn_pass"]
 # conversacional del modo (ese lo usa gemma para hablar): este instruye a qwen a
 # OBSERVAR lo conversado y ACCIONAR las tools si corresponde, sin charlar. No depende
 # del usuario. El system REAL que llega al modelo se arma por-run en
-# ``_build_agent_pass_system`` anteponiendo el preámbulo de fecha/hora actual (para
+# ``_build_agent_pass_system`` agregando después el preámbulo de fecha/hora actual (para
 # resolver "mañana", "el lunes", etc.); por eso esto es el cuerpo, no el system final.
 # S105: NO es un secreto — es el system prompt del agente (el nombre contiene
 # "SYSTEM" y dispara el falso positivo de hardcoded-password).
@@ -134,15 +134,17 @@ def _build_turn_message(user_msg: str, model_response: str) -> str:
 
 
 def _build_agent_pass_system() -> str:
-    """Arma el system prompt REAL de la pasada: preámbulo de fecha/hora + cuerpo.
+    """Arma el system prompt REAL de la pasada: cuerpo + preámbulo de fecha/hora.
 
-    Se construye POR-RUN (no como constante estática) porque antepone el preámbulo de
+    Se construye POR-RUN (no como constante estática) porque suma el preámbulo de
     fecha/hora actual (``current_now()`` lee el reloj acá una sola vez). Sin esto, el
     agente NO podía resolver "mañana"/"el lunes" y pedía la fecha en vez de agendar
-    (gap E2E). El huso es el de la app (Argentina), el mismo que usa el router.
+    (gap E2E). El huso es el de la app (Argentina), el mismo que usa el router. Mismo
+    orden que el router: el cuerpo fijo primero y el preámbulo (cambia cada minuto) al
+    final, para que la cache de prefijos del proveedor reuse el cuerpo.
     """
     now_preamble = build_now_preamble(current_now())
-    return f"{now_preamble}\n\n{_AGENT_PASS_SYSTEM_BODY}"
+    return f"{_AGENT_PASS_SYSTEM_BODY}\n\n{now_preamble}"
 
 
 async def _run_agent_pass_in_db(

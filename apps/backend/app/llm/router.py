@@ -26,11 +26,14 @@ Flujo de ``route()``:
 2. Carga el system prompt estatico del modo (``load_prompt``, cacheado).
 3. Construye el ``MemoryContext`` con SOLO los stores de las layers del modo
    y renderiza el bloque de contexto de memoria respetando un presupuesto de
-   tokens (``context_tokens`` - estimacion(system) - ``COMPLETION_RESERVE``).
-4. Concatena el bloque al system prompt en un STRING NUEVO (NO muta el prompt
-   cacheado) si el bloque no esta vacio.
-5. Arma ``messages = [system, user]`` y corre ``run_tool_loop`` con el alias del
-   modelo; el cliente de cada proveedor lo traduce a su id de modelo.
+   tokens (``context_tokens`` - estimacion(prompt + preambulo) -
+   ``COMPLETION_RESERVE``).
+4. Arma el system en un STRING NUEVO (NO muta el prompt cacheado) con lo fijo
+   primero y lo variable al final: el prompt del modo, el preambulo de fecha y
+   hora, y el bloque de memoria si no esta vacio. Asi la cache de prefijos del
+   proveedor reusa la parte fija entre turnos.
+5. Arma ``messages = [system, *historial, user]`` y corre ``run_tool_loop`` con el
+   alias del modelo; el cliente de cada proveedor lo traduce a su id de modelo.
 6. Devuelve un ``ChatResponse`` con el texto final, las ``actions`` ejecutadas
    y el ``session_id``. ``route()`` NO encola consolidacion: eso lo hace el
    endpoint despues del commit (M10 Ola 0; ver ``app.api.v1.chat``).
@@ -219,15 +222,19 @@ async def route(
     # default ``APP_TIMEZONE`` para callers directos / tests.
     now_preamble = build_now_preamble(current_now(tz), tz_label=tz)
 
-    # Base del system para el budget: preambulo + prompt del modo (STRING NUEVO; decision
-    # #6: no mutar el prompt cacheado). El bloque de memoria se dimensiona contra ESTA base
-    # (reserva el preambulo) y final_system se arma sobre la misma base. El preambulo va al
-    # inicio para que el modelo ancle las fechas relativas antes de leer el resto.
-    base_system = f"{now_preamble}\n\n{system_prompt}"
+    # Orden del system: lo fijo primero y lo variable al final, para la cache de prefijos
+    # del proveedor, que reusa entre requests el prefijo identico (las tools del modo, que
+    # viajan aparte en ``tools``, y el prompt del modo: identidad, voz y reglas). Con el
+    # preambulo adelante, el prompt quedaba afuera de ese prefijo porque la fecha cambia
+    # cada minuto; ahora el preambulo va despues del prompt y el bloque de memoria (cambia
+    # con cada mensaje) cierra el system. La base es un STRING NUEVO (decision #6: no
+    # mutar el prompt cacheado): el bloque de memoria se dimensiona contra ESTA base
+    # (reserva el preambulo) y final_system se arma sobre la misma base.
+    base_system = f"{system_prompt}\n\n{now_preamble}"
     budget = context_budget(context_tokens=context_tokens, system_prompt=base_system)
     context_block = await render_context_block(mem_ctx, query=request.text, budget_tokens=budget)
 
-    # Si el bloque de memoria esta vacio, final_system es solo la base (preambulo + prompt).
+    # Si el bloque de memoria esta vacio, final_system es solo la base (prompt + preambulo).
     if context_block:
         final_system = f"{base_system}\n\n{context_block}"
     else:
@@ -241,9 +248,11 @@ async def route(
     # El caller (``ChatService.run_turn``) carga los turnos descifrados desde
     # ``conversation_turns``; acá se recortan al presupuesto de la ventana (más recientes
     # primero, turnos completos, orden cronológico) para no desbordar ``context_tokens`` —
-    # crítico en ``conversacional`` (8192). ``final_system`` ya incluye preámbulo +
+    # crítico en ``conversacional`` (8192). ``final_system`` ya incluye prompt + preámbulo +
     # bloque de memoria, así que el recorte reserva ese tamaño + el mensaje actual + la
-    # completion. messages = [system, *historial_recortado, user_actual].
+    # completion. messages = [system, *historial_recortado, user_actual]: el historial va
+    # después del system, así que la cache de prefijos no lo alcanza (el system termina
+    # en lo variable).
     budgeted_history = trim_history_to_budget(
         history or [],
         context_tokens=context_tokens,
