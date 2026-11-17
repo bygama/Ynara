@@ -15,7 +15,7 @@ import type { IconName } from "@ynara/ui";
  *  - `nota` → Audit Log: el registro escrito de operaciones.
  *  - `conexion` → System Health: el enlace con la infra (DB/Redis).
  *  - `dialogo` → Playground: el probe conversacional crudo del modelo.
- *  - `enviar` → Compartir: exponer el serving (API + chat) a otra máquina del tailnet.
+ *  - `enviar` → Compartir: exponer el panel admin y la app web a otra máquina del tailnet.
  */
 export type NavItem = {
   href: string;
