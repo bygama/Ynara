@@ -72,8 +72,8 @@ export function MessageBubble({ message, mode, onRetry }: Props) {
   }
 
   // assistant — mientras streamea: cursor al final + live region. Las acciones
-  // (modos Qwen) se renderizan debajo del texto cuando el turno cierra con
-  // `actions`; Gemma no trae acciones.
+  // (modos del alias agente) se renderizan debajo del texto cuando el turno
+  // cierra con `actions`; los del alias conversacional no traen acciones.
   const streaming = message.status === "streaming";
   const actions = message.actions ?? [];
   // Fila ancho-completo con gutter a la derecha (`pr-12`): en RN un hijo `flex-1`
