@@ -7,13 +7,25 @@ se agrega acá + en ``apps/backend/.env.example``.
 from __future__ import annotations
 
 import ipaddress
+import json
+import re
 import uuid
+from collections.abc import Mapping
 from functools import lru_cache
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
+from pydantic.fields import FieldInfo
+from pydantic_settings import (
+    BaseSettings,
+    NoDecode,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
+
+from app.core.constants import MODEL_ALIASES
+from app.core.urls import validated_base_url
 
 
 class ServingEndpoint(BaseModel):
@@ -70,6 +82,99 @@ class ServingEndpoint(BaseModel):
         return data
 
 
+# Prefijo de la credencial de cada proveedor de IA: ``LLM_API_KEY_<NAME>`` (ADR-028 D2).
+LLM_API_KEY_PREFIX = "LLM_API_KEY_"
+
+# ``name`` de un proveedor: nombra su variable de credencial, así que va en minúsculas,
+# empieza con una letra y sigue con letras, dígitos o ``_``.
+_PROVIDER_NAME = re.compile(r"[a-z][a-z0-9_]{0,39}")
+
+
+class LlmProvider(BaseModel):
+    """Un proveedor de IA de ``LLM_PROVIDERS`` (ADR-028 D2).
+
+    - ``name``: identifica al proveedor en los logs y nombra su credencial,
+      ``LLM_API_KEY_<NAME>`` (el ``name`` en mayúsculas).
+    - ``base_url``: URL base de su API compatible con OpenAI, con el ``/v1``
+      (``https``; ver ``validated_base_url``).
+    - ``models``: ``{alias: id del modelo en el proveedor}``. Tiene que cubrir los dos
+      alias de Ynara (``conversacional`` y ``agente``).
+    - ``supports_reasoning_effort``: si el proveedor acepta ``reasoning_effort``.
+
+    La credencial no va acá ni en el JSON: se lee aparte, como secreto
+    (``Settings.llm_api_keys``).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+
+    name: str
+    base_url: str
+    models: dict[str, str]
+    supports_reasoning_effort: bool = False
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value: str) -> str:
+        if not _PROVIDER_NAME.fullmatch(value):
+            raise ValueError(
+                "el name del proveedor va en minúsculas, con letras, dígitos o '_' "
+                "(nombra su variable LLM_API_KEY_<NAME>)"
+            )
+        return value
+
+    @field_validator("base_url")
+    @classmethod
+    def _validate_base_url(cls, value: str) -> str:
+        return validated_base_url(value)
+
+    @field_validator("models")
+    @classmethod
+    def _require_both_aliases(cls, value: dict[str, str]) -> dict[str, str]:
+        if not all(alias.strip() and model_id.strip() for alias, model_id in value.items()):
+            raise ValueError("models del proveedor tiene un alias o un id de modelo vacío")
+        missing = [alias for alias in MODEL_ALIASES if alias not in value]
+        if missing:
+            raise ValueError(f"models del proveedor no cubre el alias: {', '.join(missing)}")
+        return value
+
+    @property
+    def api_key_env(self) -> str:
+        """Variable de entorno con la credencial del proveedor."""
+        return f"{LLM_API_KEY_PREFIX}{self.name.upper()}"
+
+
+class _LlmApiKeysSource(PydanticBaseSettingsSource):
+    """Junta las credenciales ``LLM_API_KEY_<NAME>`` en ``Settings.llm_api_keys``.
+
+    El nombre de cada variable depende de ``LLM_PROVIDERS``, así que ningún campo fijo
+    la declara: esta fuente las busca por prefijo entre las variables que ya leyeron las
+    fuentes del ``.env`` y del entorno, en ese orden (el entorno pisa al ``.env``, como
+    en el resto de los campos). Cada valor se envuelve en ``SecretStr`` acá mismo, y uno
+    vacío cuenta como faltante.
+    """
+
+    def __init__(
+        self, settings_cls: type[BaseSettings], *sources: PydanticBaseSettingsSource
+    ) -> None:
+        super().__init__(settings_cls)
+        self._sources = sources
+
+    def get_field_value(self, field: FieldInfo, field_name: str) -> tuple[Any, str, bool]:
+        # Sin uso: ``__call__`` arma el valor del campo entero.
+        return None, field_name, False
+
+    def __call__(self) -> dict[str, Any]:
+        prefix = LLM_API_KEY_PREFIX.lower()
+        keys: dict[str, SecretStr] = {}
+        for source in self._sources:
+            env_vars: Mapping[str, str | None] = getattr(source, "env_vars", {})
+            for env_name, value in env_vars.items():
+                name = env_name.lower()
+                if name.startswith(prefix) and value and value.strip():
+                    keys[name.removeprefix(prefix)] = SecretStr(value.strip())
+        return {"llm_api_keys": keys} if keys else {}
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -80,6 +185,9 @@ class Settings(BaseSettings):
         # un campo con alias env (p.ej. cors_origins/CORS_ORIGINS) se puede setear por
         # cualquiera de los dos. Los tests setean varios campos por nombre de campo.
         populate_by_name=True,
+        # Un error de validación no repite los valores recibidos: entre ellos hay
+        # secretos (JWT_SECRET, credenciales de los proveedores de IA).
+        hide_input_in_errors=True,
     )
 
     environment: Literal["development", "staging", "production"] = "development"
@@ -123,6 +231,16 @@ class Settings(BaseSettings):
     # implica vLLM, es compatible tanto con el motor local de 16GB (Ollama/GGUF,
     # ADR-014) como con vLLM en 24GB+.
     llm_backend: Literal["fake", "vllm"] = Field("fake", alias="LLM_BACKEND")
+    # Proveedores en orden de prioridad: el primero es el principal y el resto, respaldo
+    # (ADR-028 D2). Lista JSON en el env; vacía (``LLM_PROVIDERS=``) es sin proveedores.
+    # ``NoDecode``: el string crudo llega a ``_parse_llm_providers``, que lo decodifica.
+    llm_providers: Annotated[list[LlmProvider], NoDecode] = Field(
+        default_factory=list, alias="LLM_PROVIDERS"
+    )
+    # Credencial de cada proveedor, por ``name``, de las variables ``LLM_API_KEY_<NAME>``
+    # (las junta ``_LlmApiKeysSource``). Secretas: nunca van en ``LLM_PROVIDERS``, en
+    # ``ynara.config.json`` ni en logs (regla #4b).
+    llm_api_keys: dict[str, SecretStr] = Field(default_factory=dict)
 
     # Embeddings (ADR-008: bge-m3 1024-dim on-prem). `embedding_backend` elige
     # entre el Fake determinista (default, sin GPU) y el cliente vLLM real
@@ -311,6 +429,57 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return [part.strip() for part in v.split(",") if part.strip()]
         return v
+
+    @field_validator("llm_providers", mode="before")
+    @classmethod
+    def _parse_llm_providers(cls, v: object) -> object:
+        """Decodifica el JSON de ``LLM_PROVIDERS``; vacío es sin proveedores.
+
+        Una lista ya parseada (kwargs, en los tests) pasa intacta. El error de un JSON
+        roto no repite el valor.
+        """
+        if not isinstance(v, str):
+            return v
+        if not v.strip():
+            return []
+        try:
+            return json.loads(v)
+        except json.JSONDecodeError:
+            raise ValueError(
+                "LLM_PROVIDERS no es JSON válido: va una lista de proveedores"
+            ) from None
+
+    @field_validator("llm_providers")
+    @classmethod
+    def _reject_repeated_providers(cls, providers: list[LlmProvider]) -> list[LlmProvider]:
+        """Fail-fast: dos proveedores con el mismo ``name`` compartirían credencial."""
+        names = [provider.name for provider in providers]
+        repeated = sorted({name for name in names if names.count(name) > 1})
+        if repeated:
+            raise ValueError(f"LLM_PROVIDERS repite el proveedor: {', '.join(repeated)}")
+        return providers
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Suma ``_LlmApiKeysSource`` (las credenciales ``LLM_API_KEY_<NAME>``).
+
+        El resto queda en el orden por default de pydantic-settings: kwargs, entorno,
+        ``.env`` y secretos de archivo.
+        """
+        return (
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            _LlmApiKeysSource(settings_cls, dotenv_settings, env_settings),
+            file_secret_settings,
+        )
 
     @model_validator(mode="after")
     def _default_celery_urls_to_redis(self) -> Settings:
