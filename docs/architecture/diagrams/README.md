@@ -11,8 +11,8 @@ necesite editor visual, exportar PNG/SVG y referenciar el archivo.
 - [`memoria-3-capas.md`](./memoria-3-capas.md) — modelo de memoria
   semántica + episódica + procedural y cómo interactúan.
 - [`deploy-topology.md`](./deploy-topology.md) — topología de
-  deploy: Cloudflare, Vercel, VPS, GPU, Supabase (MVP) → self-hosted
-  (V2).
+  deploy: Cloudflare, Vercel, VPS sin GPU, proveedores de IA por API,
+  Supabase (MVP) → self-hosted (V2).
 
 ## Convención
 
