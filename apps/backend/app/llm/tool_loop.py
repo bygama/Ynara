@@ -5,10 +5,10 @@ modelo termina (finish_reason in {'stop','length','degraded'}) o se agotan
 las iteraciones del guard (MAX_TOOL_ITERATIONS).
 
 Notas y limitaciones conocidas:
-- El ``ChatMessage`` de assistant SI preserva ``tool_calls`` (M9): es el
-  prerequisito para que el parser hermes de Qwen real correlacione la respuesta
-  ``role='tool'`` con su llamada en multi-turn. Con FakeLlmClient es inocuo; la
-  correlacion contra Qwen real todavia no esta validada E2E (infra-swap).
+- El ``ChatMessage`` de assistant SI preserva ``tool_calls`` (M9): Chat Completions
+  lo necesita para correlacionar cada respuesta ``role='tool'`` con su llamada
+  (``tool_call_id``) en multi-turn. Con FakeLlmClient es inocuo; la correlacion
+  contra cada proveedor real todavia no esta validada E2E.
 - No hay historial multi-turno persistido: cada llamada a ``run_tool_loop``
   parte de los mensajes que recibe (system + user). El historial vivo de la
   sesion sigue siendo trabajo posterior (no lo entrega M9).
@@ -140,7 +140,7 @@ async def run_tool_loop(
             turnos del tool loop; el caller puede pasar una copia si necesita
             preservar el original.
         specs: ``ToolSpec`` a pasar al modelo; ``None`` si la lista esta vacia
-            (Gemma conversacional no ve tools).
+            (el alias conversacional no ve tools).
         registries: Tupla ``(default_registry, memory_registry|None)`` de
             ``MemoryContext.registries``.
         max_iterations: Guard maximo de iteraciones (default ``MAX_TOOL_ITERATIONS``).
@@ -186,11 +186,11 @@ async def run_tool_loop(
 
         # Cap defensivo: ejecutar a lo sumo MAX_CALLS_PER_TURN por turno. Las
         # extra se descartan; el assistant message refleja SOLO las que se van a
-        # ejecutar para mantener la correlacion assistant/tool del parser hermes.
+        # ejecutar para mantener la correlacion assistant/tool (``tool_call_id``).
         calls_this_turn = list(result.tool_calls[:MAX_CALLS_PER_TURN])
 
         # Agregar turno del assistant al historial CON tool_calls preservado
-        # (necesario para multi-turno correcto con Qwen/hermes parser).
+        # (Chat Completions lo necesita para el multi-turno con tools).
         messages.append(
             ChatMessage(
                 role="assistant",
@@ -230,14 +230,15 @@ async def run_tool_loop(
             )
     else:
         # Guard agotado sin converger: el modelo nunca produjo una respuesta final en
-        # lenguaje natural (tipicamente loopeo llamando tools, p.ej. qwen reintentando un
-        # stub). Se marca el sentinel 'max_iterations' (honesto, no un 'stop' real). El
+        # lenguaje natural (tipicamente loopeo llamando tools, p.ej. el modelo reintentando
+        # un stub). Se marca el sentinel 'max_iterations' (honesto, no un 'stop' real). El
         # rescate del texto vacio se hace abajo, COMPARTIDO con el corte temprano.
         last_finish_reason = "max_iterations"
 
-    # Rescate de respuesta vacia tras accionar tools (gotcha MEDIDO con qwen real): el
-    # modelo puede cortar con finish_reason terminal ('stop') y content VACIO DESPUES de
-    # ejecutar una tool (p.ej. agendar) — o agotar el guard. En ambos casos hay acciones
+    # Rescate de respuesta vacia tras accionar tools (gotcha MEDIDO en E2E con el modelo
+    # local de antes de ADR-028; puede pasar con cualquier modelo): el modelo puede cortar
+    # con finish_reason terminal ('stop') y content VACIO DESPUES de ejecutar una tool
+    # (p.ej. agendar) — o agotar el guard. En ambos casos hay acciones
     # ejecutadas pero NO una confirmacion en lenguaje natural, y el usuario veria el
     # fallback generico (lee como error aunque la accion SI ocurrio). Forzamos UNA
     # completion final SIN tools (un unico shot, sin tools que llamar -> no loopea) para
