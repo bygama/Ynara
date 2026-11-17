@@ -21,6 +21,11 @@ Reglas no negociables (ADR-010 + critica adversarial M8):
 6. Ningun dato de usuario a logs (regla #4): el payload (turno del usuario)
    queda on-prem en Redis/worker. Solo se loguea el conteo de ops aplicadas
    y errores tecnicos SIN contenido.
+7. Idempotencia sin tocar ``app/memory/`` ni el schema sagrado: cada intento es
+   todo-o-nada (la marca del turno, las ops y su auditoria van en un SAVEPOINT) y,
+   con ``turn_seq``, el turno del usuario queda marcado como consolidado en la
+   MISMA transaccion (``_turn_marker.claim_turn``). Una re-entrega del mismo turno
+   encuentra la marca y no vuelve a escribir.
 """
 
 from __future__ import annotations
@@ -54,6 +59,7 @@ from app.models.memory import EpisodicMemory
 from app.schemas.memory import EpisodicMemoryCreate
 from app.workers.celery_app import celery_app
 from app.workflows._engine import worker_session
+from app.workflows._turn_marker import TurnClaim, claim_turn
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +168,75 @@ def _parse_origin_mode(mode: str) -> Mode | None:
 # ---------------------------------------------------------------------------
 
 
+async def _consolidate_turn_in_db(
+    *,
+    session: AsyncSession,
+    user_id: UUID,
+    source_session_id: UUID | None,
+    turn_seq: int | None,
+    user_msg: str,
+    model_response: str,
+    mode: str,
+    origin_mode: Mode | None,
+    llm_client: LLMClient,
+    embedder: EmbeddingClient,
+    reranker: Reranker,
+) -> int:
+    """Nucleo de la consolidacion de UN turno sobre una ``session`` ya abierta.
+
+    Retorna la cantidad de ops aplicadas (0 si el turno ya estaba consolidado). NO
+    commitea: el commit lo da el caller (``worker_session`` en prod, o el fixture en
+    tests).
+
+    INTENTO ATOMICO: la marca del turno, las ops y su auditoria van en un
+    SAVEPOINT. Si algo levanta en el medio (p.ej. una falla transitoria del embedder
+    en la segunda op), se revierte entero, tambien con la sesion inyectada de los
+    tests: el reintento arranca de cero, sin hechos ni auditoria a medias.
+
+    IDEMPOTENCIA: con ``turn_seq`` el turno del usuario queda marcado como consolidado
+    en esta misma transaccion (``claim_turn``); si otra entrega ya lo consolido, no se
+    escribe nada. Sin ``turn_seq`` (payload viejo, turno que no se pudo persistir) o
+    sin fila (los turnos ya se purgaron al cerrar la sesion) se consolida igual:
+    saltearlo perderia el turno. La extraccion con el LLM corre ANTES de tomar la fila,
+    asi el lock dura lo que tarda ``apply_ops`` y no la llamada al modelo.
+    """
+    mem_engine = QwenMemoryEngine(llm_client, model=MODEL_ALIAS_AGENT)
+    # Una falla transitoria del LLM (LlmTransientError) sale de aca, antes de tocar la DB.
+    ops = await mem_engine.consolidate(
+        user_msg=user_msg,
+        model_response=model_response,
+        mode=mode,
+    )
+    async with session.begin_nested():
+        if source_session_id is not None and turn_seq is not None:
+            claim = await claim_turn(
+                session, user_id=user_id, session_id=source_session_id, seq=turn_seq
+            )
+            if claim is TurnClaim.ALREADY_CONSOLIDATED:
+                logger.info(
+                    "consolidate_turn: turno ya consolidado session=%s seq=%d, no-op",
+                    source_session_id,
+                    turn_seq,
+                )
+                return 0
+            if claim is TurnClaim.MISSING:
+                logger.info(
+                    "consolidate_turn: turno sin fila session=%s seq=%d, se consolida sin marca",
+                    source_session_id,
+                    turn_seq,
+                )
+        return await apply_ops(
+            ops,
+            session=session,
+            semantic_store=SemanticMemoryStore(session, user_id, embedder, reranker),
+            procedural_store=ProceduralMemoryStore(session, user_id),
+            source_session_id=source_session_id,
+            audit_store=AuditStore(session, user_id),
+            origin_model=LlmModel.QWEN,
+            origin_mode=origin_mode,
+        )
+
+
 async def _async_consolidate(
     *,
     user_id: str,
@@ -169,6 +244,8 @@ async def _async_consolidate(
     user_msg: str,
     model_response: str,
     mode: str,
+    # seq del turno del usuario en conversation_turns (marca de idempotencia)
+    turn_seq: int | None = None,
     # Inyectables para tests (None => construir desde get_settings())
     settings: Settings | None = None,
     llm_client: LLMClient | None = None,
@@ -192,6 +269,10 @@ async def _async_consolidate(
     ya este persistida cuando el worker corre, asi que la FK no tiene race. Si
     el parse falla (payload corrupto en la cola), ``source_session_id`` queda
     ``None`` y el hecho se persiste igual (el worker no se cae).
+
+    ``turn_seq`` es el ``seq`` del turno del usuario en ``conversation_turns`` (lo
+    manda ``ChatService`` al encolar): con el, el turno se marca como consolidado y
+    una re-entrega no duplica (ver ``_consolidate_turn_in_db``).
     """
     cfg = settings or get_settings()
 
@@ -206,53 +287,30 @@ async def _async_consolidate(
     # Parse defensivo del mode -> origin_mode de audit_log (nullable, best-effort).
     origin_mode = _parse_origin_mode(mode)
 
-    if session is not None:
-        # Modo test: usar la sesion inyectada, no crear engine ni commitear
-        # (el fixture controla el rollback).
-        sem_store = SemanticMemoryStore(session, uid, effective_embedder, effective_reranker)
-        proc_store = ProceduralMemoryStore(session, uid)
-        audit_store = AuditStore(session, uid)
-
-        mem_engine = QwenMemoryEngine(effective_llm, model=MODEL_ALIAS_AGENT)
-        ops = await mem_engine.consolidate(
+    async def _run(db_session: AsyncSession) -> int:
+        return await _consolidate_turn_in_db(
+            session=db_session,
+            user_id=uid,
+            source_session_id=source_session_id,
+            turn_seq=turn_seq,
             user_msg=user_msg,
             model_response=model_response,
             mode=mode,
-        )
-        return await apply_ops(
-            ops,
-            session=session,
-            semantic_store=sem_store,
-            procedural_store=proc_store,
-            source_session_id=source_session_id,
-            audit_store=audit_store,
-            origin_model=LlmModel.QWEN,
             origin_mode=origin_mode,
+            llm_client=effective_llm,
+            embedder=effective_embedder,
+            reranker=effective_reranker,
         )
+
+    if session is not None:
+        # Modo test: usar la sesion inyectada, no crear engine ni commitear
+        # (el fixture controla el rollback).
+        return await _run(session)
 
     # Modo produccion: engine NullPool efimero; worker_session commitea al salir
     # del bloque y dispone el engine (decision #4 centralizada en _engine.py).
     async with worker_session(cfg) as db_session:
-        sem_store = SemanticMemoryStore(db_session, uid, effective_embedder, effective_reranker)
-        proc_store = ProceduralMemoryStore(db_session, uid)
-        audit_store = AuditStore(db_session, uid)
-
-        mem_engine = QwenMemoryEngine(effective_llm, model=MODEL_ALIAS_AGENT)
-        ops = await mem_engine.consolidate(
-            user_msg=user_msg,
-            model_response=model_response,
-            mode=mode,
-        )
-        return await apply_ops(
-            ops,
-            session=db_session,
-            semantic_store=sem_store,
-            procedural_store=proc_store,
-            source_session_id=source_session_id,
-            audit_store=audit_store,
-            origin_model=LlmModel.QWEN,
-            origin_mode=origin_mode,
-        )
+        return await _run(db_session)
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +327,7 @@ def consolidate_turn(
     user_msg: str,
     model_response: str,
     mode: str,
+    turn_seq: int | None = None,
 ) -> None:
     """Task Celery: consolida el turno del usuario en memoria semantica + procedural.
 
@@ -288,6 +347,9 @@ def consolidate_turn(
         user_msg: Mensaje del usuario (on-prem, NO se loguea).
         model_response: Respuesta del modelo (on-prem, NO se loguea).
         mode: Modo activo de la sesion (p.ej. 'vida', 'estudio').
+        turn_seq: ``seq`` del turno del usuario en ``conversation_turns``, para marcarlo
+            como consolidado (idempotencia). ``None`` si el turno no se persistio o el
+            mensaje se encolo antes de que existiera el campo: se consolida sin marca.
     """
     try:
         applied = asyncio.run(
@@ -297,6 +359,7 @@ def consolidate_turn(
                 user_msg=user_msg,
                 model_response=model_response,
                 mode=mode,
+                turn_seq=turn_seq,
             )
         )
         logger.info(

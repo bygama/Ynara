@@ -82,9 +82,11 @@ async def test_persist_turns_retries_on_seq_collision(
     resp = ChatResponse(text="respuesta", session_id=str(cs.id), finish_reason="stop")
 
     # NO debe lanzar (antes del fix: IntegrityError -> 500 + turno perdido).
-    await service._persist_turns(cs, body=body, resp=resp)
+    turn_seq = await service._persist_turns(cs, body=body, resp=resp)
 
-    # Reintentó con seq fresco: 3 turnos (previo en 0 + user en 1 + model en 2).
+    # Reintentó con seq fresco: 3 turnos (previo en 0 + user en 1 + model en 2). El seq
+    # devuelto es el del turno del usuario que quedó, el que se marca al consolidar.
+    assert turn_seq == 1
     total = await db_session.scalar(
         select(func.count())
         .select_from(ConversationTurn)
@@ -109,8 +111,9 @@ async def test_persist_turns_happy_path_no_collision(db_session: AsyncSession) -
     body = ChatHttpRequest(text="hola", mode=Mode.PRODUCTIVIDAD)
     resp = ChatResponse(text="respuesta", session_id=str(cs.id), finish_reason="stop")
 
-    await service._persist_turns(cs, body=body, resp=resp)
+    turn_seq = await service._persist_turns(cs, body=body, resp=resp)
 
+    assert turn_seq == 0
     rows = (
         await db_session.execute(
             select(ConversationTurn.seq, ConversationTurn.role)

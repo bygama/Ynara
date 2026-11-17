@@ -6,11 +6,13 @@ turnos crudos (user/modelo) de una sesión, la **fuente** que el worker episódi
 ``episodic_memory`` (sagrada). Una vez consolidados, los turnos se **purgan**
 (``ConversationTurnStore.purge_session``): no son almacenamiento de largo plazo.
 
-Append-only: un turno se inserta una vez y nunca se modifica (se consolida y se
-purga, no se edita). Por eso ``updated_at`` (heredado del ``TimestampMixin``)
-siempre iguala a ``created_at``; se conserva por uniformidad con los ``*Out`` de
-las 3 capas de memoria —todos exponen ``updated_at``—, no porque los turnos se
-actualicen.
+Append-only en el contenido: un turno se inserta una vez y su ``content`` nunca se
+edita (se consolida y se purga). ``updated_at`` (heredado del ``TimestampMixin``) nace
+igual a ``created_at`` y es la marca de idempotencia de la consolidación semántica: el
+worker ``consolidate_turn`` lo pisa en el turno del usuario, en la misma transacción
+que escribe la memoria, y una re-entrega del mensaje que lo encuentra distinto de
+``created_at`` no vuelve a escribir (``app/workflows/_turn_marker.py``). Sin
+migración: es una columna que ya existía.
 
 A pesar de ser operativa, el ``content`` viaja **cifrado AES-256-GCM per-user**
 (``BYTEA``) vía ``app/core/crypto.py``, igual que ``semantic_memory.content`` /

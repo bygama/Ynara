@@ -314,7 +314,8 @@ async def test_stream_enqueues_consolidate_post_commit(db_session: AsyncSession)
 
         # /chat/stream encola exactamente una vez (hereda de ChatService.run_turn).
         mock_task.delay.assert_called_once()
-        # Kwargs identicos a los que pasaba route(): todos str.
+        # Kwargs primitivos JSON: los str que pasaba route() mas el ``turn_seq`` del
+        # turno del usuario (0: primer turno de la sesion), para la idempotencia.
         call_kwargs = mock_task.delay.call_args.kwargs
         assert call_kwargs == {
             "user_id": str(user.id),
@@ -322,6 +323,7 @@ async def test_stream_enqueues_consolidate_post_commit(db_session: AsyncSession)
             "user_msg": "recorda esto",
             "model_response": "Hecho",
             "mode": "productividad",
+            "turn_seq": 0,
         }
         # POST-COMMIT: la ChatSession ya esta persistida cuando se encola. El
         # session_id encolado es el de la fila real (no un id opaco del router).

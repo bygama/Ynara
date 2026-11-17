@@ -135,7 +135,26 @@ class TestConsolidateTurnWrapper:
                 user_msg="hola",
                 model_response="chau",
                 mode=MODE,
+                turn_seq=None,
             )
+
+    def test_passes_turn_seq_through(self) -> None:
+        """El ``turn_seq`` del payload llega al cuerpo async (marca de idempotencia)."""
+        with patch(
+            "app.workflows.consolidation._async_consolidate", new_callable=AsyncMock
+        ) as mock_async:
+            mock_async.return_value = 1
+
+            consolidate_turn(
+                user_id=USER_ID,
+                session_id=SESSION_ID,
+                user_msg="hola",
+                model_response="chau",
+                mode=MODE,
+                turn_seq=4,
+            )
+
+        assert mock_async.await_args.kwargs["turn_seq"] == 4
 
     def test_does_not_propagate_if_async_consolidate_raises(self) -> None:
         """Si ``_async_consolidate`` lanza, el wrapper NO propaga (regla worker)."""
