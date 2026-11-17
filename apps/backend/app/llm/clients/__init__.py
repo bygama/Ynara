@@ -1,9 +1,10 @@
 """Clientes de inferencia LLM.
 
 - ``base`` define los Protocols (``LLMClient``, ``ToolCallParser``).
-- ``providers`` implementa el cliente HTTP contra la API de Chat Completions de
-  cada proveedor de IA (``OpenAICompatClient``, ADR-028): es el unico lugar del
-  backend que habla con los proveedores (regla #4b).
+- ``providers`` implementa los clientes HTTP de los proveedores de IA (ADR-028):
+  ``OpenAICompatClient`` contra la API de Chat Completions y ``ApiEmbeddingClient``
+  contra la de Embeddings. Es el unico lugar del backend que habla con los
+  proveedores (regla #4b).
 - ``parsers`` normaliza las tool calls del formato OpenAI que devuelven los
   proveedores.
 - ``fakes`` provee un cliente programable para tests del router / pool.
