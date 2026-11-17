@@ -38,7 +38,7 @@ export type LiveTurn = {
   rawText: string;
   /** Texto de respuesta limpio (sin el bloque de razonamiento), en vivo. */
   text: string;
-  /** Razonamiento en curso separado del texto (qwen thinking), o `null`. */
+  /** Razonamiento en curso separado del texto, o `null`. */
   thinking: string | null;
   /** Tokens de completion contados (chunks con delta no vacío). */
   completionTokens: number;
@@ -118,7 +118,7 @@ export function usePlaygroundStream() {
           phase: "streaming",
           rawText: raw,
           text: split.text,
-          // El canal `reasoning` separado (qwen) tiene precedencia; si no, el bloque
+          // El canal `reasoning` separado tiene precedencia; si no, el bloque
           // `<think>` embebido que `splitThinkingLive` haya separado del texto.
           thinking: reasoning || split.thinking,
           completionTokens: tokens,

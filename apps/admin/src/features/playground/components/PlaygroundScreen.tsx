@@ -69,7 +69,7 @@ function PlaygroundBody({ serving }: { serving: ServingOutT }) {
 
   const firstHealthy = serving.models.find((m) => m.healthy) ?? serving.models[0];
   const [config, setConfig] = useState<PlaygroundConfig>({
-    model: firstHealthy?.served_name ?? "",
+    model: firstHealthy?.alias ?? "",
     lowPerf: false,
     maxTokens: 1024,
     temperature: 0.7,
@@ -91,7 +91,7 @@ function PlaygroundBody({ serving }: { serving: ServingOutT }) {
     [messages],
   );
 
-  const activeModel = serving.models.find((m) => m.served_name === config.model);
+  const activeModel = serving.models.find((m) => m.alias === config.model);
   const isBusy = stream.isStreaming || agent.isPending;
   const canSend = serving.is_real && config.model !== "" && draft.trim().length > 0 && !isBusy;
 

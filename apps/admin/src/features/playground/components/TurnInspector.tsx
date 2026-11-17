@@ -17,7 +17,7 @@ type Props = {
 /**
  * Inspector del turno (riel derecho). Muestra las métricas del último turno (o
  * del que está en vuelo) como lista de stats `tabular-nums`, y —en modo agente—
- * las tool-calls observadas del loop de qwen (incluidas las `memory.*`, que caen
+ * las tool-calls observadas del tool-loop (incluidas las `memory.*`, que caen
  * en `unknown_tool` por construcción: cero efecto sobre la memoria real, ADR-019).
  *
  * El razonamiento (`thinking`) se ve en la propia burbuja del chat; acá el foco
@@ -98,7 +98,7 @@ function Stats({ rows }: { rows: [string, string][] }) {
   );
 }
 
-/** Tool-calls observadas del loop agente (qwen). `memory.*` → unknown_tool. */
+/** Tool-calls observadas del loop agente. `memory.*` → unknown_tool. */
 function ToolCalls({ actions }: { actions: ToolCallOutT[] }) {
   return (
     <div className="flex flex-col gap-3 border-t border-[var(--color-border)] pt-4">

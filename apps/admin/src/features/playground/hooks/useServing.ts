@@ -8,8 +8,8 @@ import { ServingOut, type ServingOutT } from "../schemas";
 /**
  * Datos de `GET /v1/admin/serving` (ADR-018 F1, contrato §2.1).
  *
- * Estado read-only del serving: backend (fake/vllm), salud agregada, y el
- * catálogo de modelos con sus served_names/role/quant/healthy. Igual que
+ * Estado read-only del serving: backend (fake/api), salud agregada, y el
+ * catálogo de alias de modelo con su role/contexto/healthy. Igual que
  * `useSystem`, NO se segmenta por `range`: es una foto de runtime/config, no una
  * métrica de negocio (por eso `qk.admin.playground()` no lleva parámetro).
  *

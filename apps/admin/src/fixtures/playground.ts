@@ -13,9 +13,9 @@ import {
 /**
  * Fixtures del Playground (ADR-018 §3 / blueprint §3 "Handlers MSW").
  *
- * `servingFixture` trae los DOS modelos reales del catálogo (gemma4
- * conversational + qwen agent) sobre un backend `vllm` real y sano, para que el
- * dev vea la pantalla en su estado feliz. `playgroundEcho` devuelve un turno
+ * `servingFixture` trae los DOS alias de modelo del catálogo (`conversacional` +
+ * `agente`) sobre un backend `api` real y sano, para que el dev vea la pantalla en
+ * su estado feliz. `playgroundEcho` devuelve un turno
  * determinista que refleja modelo/low_perf/thinking efectivo (mismo cálculo que
  * el server) con latencia simulada por el handler. `playgroundAgentEcho` devuelve
  * un turno de modo agente con 2 tool-calls de ejemplo (Fase B).
@@ -25,45 +25,40 @@ import {
  * la red cumple el contrato que el hook va a re-parsear.
  */
 
-/** Los dos modelos reales del catálogo de serving (ADR-013/014). */
-const GEMMA: ServingModelOutT = ServingModelOut.parse({
-  key: "gemma-4-12b",
-  served_name: "gemma4",
+/**
+ * Los dos alias de modelo del catálogo (ADR-028), con el presupuesto de contexto
+ * de `ynara.config.json[models]`.
+ */
+const CONVERSACIONAL: ServingModelOutT = ServingModelOut.parse({
+  alias: "conversacional",
   role: "conversational",
   writes_memory: false,
-  context_window: 128000,
-  max_model_len: 8192,
-  quantization: "awq_marlin",
-  tool_parser: "gemma4",
+  context_tokens: 8192,
   healthy: true,
   default_thinking: false,
 });
 
-const QWEN: ServingModelOutT = ServingModelOut.parse({
-  key: "qwen-3.5-9b",
-  served_name: "qwen",
+const AGENTE: ServingModelOutT = ServingModelOut.parse({
+  alias: "agente",
   role: "agent",
   writes_memory: true,
-  context_window: 262144,
-  max_model_len: 32768,
-  quantization: "awq_marlin",
-  tool_parser: "hermes",
+  context_tokens: 32768,
   healthy: true,
   default_thinking: true,
 });
 
 /**
- * `GET /v1/admin/serving` — estado feliz: backend vllm real y sano, los 2
- * modelos del catálogo healthy, embedder/reranker cargados. Sin secretos.
+ * `GET /v1/admin/serving` — estado feliz: backend api real y sano, los 2 alias
+ * del catálogo healthy, embedder/reranker cargados. Sin secretos.
  */
 export function servingFixture(): ServingOutT {
   const data: ServingOutT = {
-    backend: "vllm",
+    backend: "api",
     is_real: true,
     serving_healthy: true,
-    request_timeout_s: 120,
+    request_timeout_s: 20,
     low_perf_available: true,
-    models: [GEMMA, QWEN],
+    models: [CONVERSACIONAL, AGENTE],
     embedder: "bge-m3",
     reranker: "bge-reranker-v2-m3",
   };
@@ -83,9 +78,9 @@ export function servingFixture(): ServingOutT {
  * ```
  */
 
-/** Mapea un modelo servido a su `default_thinking` (gotcha Gemma del §2.2). */
-function defaultThinkingFor(servedName: string): boolean {
-  return servedName === "qwen";
+/** Mapea un alias a su `default_thinking`: solo `agente` razona por defecto (§2.2). */
+function defaultThinkingFor(alias: string): boolean {
+  return alias === "agente";
 }
 
 /**

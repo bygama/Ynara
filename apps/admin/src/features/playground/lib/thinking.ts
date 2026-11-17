@@ -15,7 +15,7 @@
  *  - `<think>…</think>` cerrado → thinking = el interior; texto = lo de antes + lo
  *    de después concatenado.
  *
- * Qwen vía Ollama emite el tag plano `<think>`; no intentamos cubrir atributos
+ * Los modelos que razonan inline emiten el tag plano `<think>`; no cubrimos atributos
  * (`<think foo="bar">`) acá: el split definitivo lo hace el backend en `done`.
  */
 const OPEN = "<think>";

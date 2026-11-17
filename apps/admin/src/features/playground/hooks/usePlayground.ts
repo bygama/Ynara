@@ -49,7 +49,7 @@ export function playgroundStatusCopy(status: number | null): { title: string; hi
     case 409:
       return {
         title: "Serving real no disponible.",
-        hint: "El backend está en modo fake. Corré con LLM_BACKEND=vllm para generar.",
+        hint: "El backend está en modo fake. Corré con LLM_BACKEND=api para generar.",
       };
     case 422:
       return {
