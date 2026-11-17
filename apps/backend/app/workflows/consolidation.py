@@ -26,6 +26,11 @@ Reglas no negociables (ADR-010 + critica adversarial M8):
    con ``turn_seq``, el turno del usuario queda marcado como consolidado en la
    MISMA transaccion (``_turn_marker.claim_turn``). Una re-entrega del mismo turno
    encuentra la marca y no vuelve a escribir.
+8. Reintentos ante fallas transitorias del proveedor (``LlmTransientError``: 429,
+   5xx, timeout, breaker abierto, respuesta degradada): Celery reprograma la task
+   con backoff exponencial y jitter, y la ackea tarde (ver
+   ``_CONSOLIDATION_TASK_OPTIONS``). Lo permanente (credencial rechazada, request
+   invalido) no se reintenta: el motor lo descarta con un log sin contenido.
 """
 
 from __future__ import annotations
@@ -33,8 +38,10 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
+from celery import Task
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,6 +54,7 @@ from app.llm.clients.embedding import EmbeddingClient
 from app.llm.clients.factory import build_embedder, build_llm_client, build_reranker
 from app.llm.clients.reranker import Reranker
 from app.llm.config import load_llm_config
+from app.llm.errors import LlmTransientError
 from app.llm.memory_engine import QwenMemoryEngine, apply_ops
 from app.memory.audit import AuditStore
 from app.memory.config import MemoryConfigError, RetentionConfig, load_retention_config
@@ -87,8 +95,13 @@ def _build_consolidation_llm(settings: Settings) -> LLMClient:
     aplica 0 ops y commitea sin efectos, comportamiento historico de M8); con
     ``LLM_BACKEND=api`` devuelve el ``ResilientClient`` sobre los proveedores de
     ``LLM_PROVIDERS`` (ADR-028). El fake sirve los alias de ``ynara.config.json``.
+
+    Sin degradar (``degrade=False``): agotada la cadena, el cliente levanta el error en
+    vez de devolver la respuesta degradada del chat. Asi la task distingue un 429 o una
+    caida (``LlmTransientError``, se reintenta) de una credencial rechazada (permanente,
+    el motor la descarta sin reintentar).
     """
-    return build_llm_client(settings, load_llm_config())
+    return build_llm_client(settings, load_llm_config(), degrade=False)
 
 
 def _build_reranker() -> Reranker:
@@ -314,13 +327,89 @@ async def _async_consolidate(
 
 
 # ---------------------------------------------------------------------------
+# Politica de reintentos de las dos tasks de consolidacion
+# ---------------------------------------------------------------------------
+#
+# Una falla transitoria del proveedor (``LlmTransientError``: 429, 5xx, timeout,
+# breaker abierto, presupuesto agotado o respuesta degradada) no pierde el turno:
+# ``autoretry_for`` reprograma la task con backoff exponencial y jitter completo. El
+# countdown antes del reintento N+1 es ``randrange(min(600, 30 * 2**N) + 1)``, con N
+# los reintentos ya hechos: hasta 30s, 60s, 120s, 240s y 480s, unos 15 minutos en el
+# peor caso entre los 6 intentos. El jitter desparrama los reintentos de muchos turnos
+# que cayeron juntos (un 429 de todo el proveedor) en vez de devolverlos a todos en el
+# mismo segundo. Lo permanente (credencial rechazada, request invalido) no es
+# ``LlmTransientError``: el motor lo descarta con un log sin contenido y la task
+# termina sin reintentar.
+#
+# ``acks_late=True`` (at-least-once) solo en estas dos tasks: el mensaje se ackea al
+# terminar, asi un worker que muere en el medio no pierde el turno. El broker lo
+# re-entrega: en el acto si muere el proceso hijo (``task_reject_on_worker_lost``),
+# despues del ``visibility_timeout`` si cae el worker entero. Es seguro porque
+# re-ejecutar no duplica: cada intento es todo-o-nada (``worker_session`` revierte la
+# transaccion entera si algo levanta), el turno queda marcado como consolidado en la
+# misma transaccion que escribe la memoria (``claim_turn``) y el episodio de una
+# sesion es unico (``_episode_exists`` + UNIQUE(session_id)). El resto de las tasks
+# sigue at-most-once (``task_acks_late=False`` global, ver ``celery_app``).
+#
+# Limites de tiempo propios: el soft limit global (90s) es igual al presupuesto del
+# cliente LLM (``PROVIDER_TOTAL_BUDGET_S``), asi que saltaria antes de que el cliente
+# corte con ``LlmTransientError``, y ``SoftTimeLimitExceeded`` no se reintenta. 180s
+# cubren el presupuesto del LLM mas los embeddings de las ops; el hard limit (210s)
+# mata la task si el soft no alcanzo a cortarla.
+_CONSOLIDATION_TASK_OPTIONS: dict[str, Any] = {
+    "autoretry_for": (LlmTransientError,),
+    "max_retries": 5,
+    "retry_backoff": 30,
+    "retry_backoff_max": 600,
+    "retry_jitter": True,
+    "acks_late": True,
+    "soft_time_limit": 180,
+    "time_limit": 210,
+}
+
+
+def _retry_or_give_up(
+    task: Task, exc: LlmTransientError, *, label: str, user_id: str, session_id: str
+) -> None:
+    """Re-levanta la falla transitoria para que Celery reintente, o la registra al agotar.
+
+    Con reintentos disponibles levanta un ``LlmTransientError`` nuevo y sin cadena
+    (``from None``): ``autoretry_for`` reprograma la task y ni el log del reintento ni
+    el backend de resultados guardan el error original. Agotados, NO levanta: una task
+    fallida hace que Celery loguee sus kwargs (el turno del usuario, regla #4) en el
+    ``extra`` del log. Se loguean solo los ids, el intento y el tipo del error.
+    """
+    attempt = task.request.retries + 1
+    max_retries = task.max_retries
+    if max_retries is not None and task.request.retries >= max_retries:
+        logger.error(
+            "%s: reintentos agotados user=%s session=%s intentos=%d: %s (sin datos de usuario)",
+            label,
+            user_id,
+            session_id,
+            attempt,
+            type(exc).__name__,
+        )
+        return
+    logger.warning(
+        "%s: falla transitoria user=%s session=%s intento=%d: %s, se reintenta",
+        label,
+        user_id,
+        session_id,
+        attempt,
+        type(exc).__name__,
+    )
+    raise LlmTransientError("se reintenta la consolidacion") from None
+
+
+# ---------------------------------------------------------------------------
 # Task Celery — firma 100% JSON-serializable
 # ---------------------------------------------------------------------------
 
 
-@celery_app.task(bind=True, name="workflows.consolidate_turn")
+@celery_app.task(bind=True, name="workflows.consolidate_turn", **_CONSOLIDATION_TASK_OPTIONS)
 def consolidate_turn(
-    self,  # bind=True, self no se usa (sin retry manual en M8)
+    self,  # bind=True: self.request.retries dice si quedan reintentos
     *,
     user_id: str,
     session_id: str,
@@ -334,9 +423,11 @@ def consolidate_turn(
     Firma 100% strings/primitivos (``task_serializer='json'``). NUNCA cruza
     el wire un ``AsyncSession``, un ``LLMClient``, un ``UUID`` ni un store.
 
-    El cuerpo async se corre con ``asyncio.run`` (worker prefork de Celery).
-    Todo el bloque se envuelve en ``try/except``: un fallo NO tumba el worker
-    (loguea un mensaje SIN el contenido del usuario, regla #4).
+    El cuerpo async se corre con ``asyncio.run`` (worker prefork de Celery). Una
+    falla transitoria del proveedor se re-levanta para que Celery reintente (ver
+    ``_CONSOLIDATION_TASK_OPTIONS``); cualquier otro fallo, o la falla transitoria con
+    los reintentos agotados, se loguea SIN el contenido del usuario (regla #4) y NO
+    tumba el worker.
 
     Args:
         user_id: UUID del usuario como string (JSON-safe).
@@ -367,6 +458,10 @@ def consolidate_turn(
             user_id,
             session_id,
             applied,
+        )
+    except LlmTransientError as exc:
+        _retry_or_give_up(
+            self, exc, label="consolidate_turn", user_id=user_id, session_id=session_id
         )
     except Exception as exc:
         # Regla: el worker NUNCA muere por un fallo de consolidacion.
@@ -477,8 +572,10 @@ async def _consolidate_session_in_db(
     mem_engine = QwenMemoryEngine(llm_client, model=MODEL_ALIAS_AGENT)
     summary = await mem_engine.summarize(transcript=transcript, mode=mode)
     if not summary.summary:
-        # Resumen vacio (LLM degradado / JSON corrupto): NO se persiste un episodio
-        # sin contenido. Los turnos NO se purgan: un reintento futuro podria resumir.
+        # Resumen vacio (JSON corrupto o un error permanente del LLM; lo transitorio y
+        # la respuesta degradada levantan y la task se reintenta): NO se persiste un
+        # episodio sin contenido. Los turnos NO se purgan: un reintento futuro podria
+        # resumir.
         logger.info("consolidate_session: resumen vacio session=%s, no-op", source_session_id)
         return 0
 
@@ -616,9 +713,9 @@ async def _async_consolidate_session(
         )
 
 
-@celery_app.task(bind=True, name="workflows.consolidate_session")
+@celery_app.task(bind=True, name="workflows.consolidate_session", **_CONSOLIDATION_TASK_OPTIONS)
 def consolidate_session(
-    self,  # bind=True, self no se usa (sin retry manual en M10)
+    self,  # bind=True: self.request.retries dice si quedan reintentos
     *,
     user_id: str,
     session_id: str,
@@ -629,9 +726,12 @@ def consolidate_session(
     Firma 100% strings/primitivos (``task_serializer='json'``). NUNCA cruza el
     wire un ``AsyncSession``, un ``LLMClient``, un ``UUID`` ni un store.
 
-    El cuerpo async se corre con ``asyncio.run`` (worker prefork de Celery). Todo
-    el bloque se envuelve en ``try/except``: un fallo NO tumba el worker (loguea un
-    mensaje SIN el contenido del usuario, regla #4).
+    El cuerpo async se corre con ``asyncio.run`` (worker prefork de Celery). Una falla
+    transitoria del proveedor se re-levanta para que Celery reintente (mismos
+    ``_CONSOLIDATION_TASK_OPTIONS`` que ``consolidate_turn``: el resumen y la purga van
+    en un solo commit y un episodio existente corta, asi que re-ejecutar no duplica);
+    cualquier otro fallo, o la falla transitoria con los reintentos agotados, se loguea
+    SIN el contenido del usuario (regla #4) y NO tumba el worker.
 
     Args:
         user_id: UUID del usuario como string (JSON-safe).
@@ -654,6 +754,10 @@ def consolidate_session(
             user_id,
             session_id,
             created,
+        )
+    except LlmTransientError as exc:
+        _retry_or_give_up(
+            self, exc, label="consolidate_session", user_id=user_id, session_id=session_id
         )
     except Exception as exc:
         # Regla: el worker NUNCA muere por un fallo de consolidacion episodica.
