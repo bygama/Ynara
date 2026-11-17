@@ -1,23 +1,24 @@
 # Ynara
 
-> Asistente personal adaptativo con memoria propia. On-prem, en
-> rioplatense, para estudiantes y profesionales jóvenes de LATAM.
+> Asistente personal adaptativo con memoria propia, en rioplatense,
+> para estudiantes y profesionales jóvenes de LATAM.
 
 [![Web: Next.js 16](https://img.shields.io/badge/Web-Next.js%2016-black)](./apps/web)
 [![Mobile: Expo 53+](https://img.shields.io/badge/Mobile-Expo%2053%2B-1B1F23)](./apps/mobile)
 [![Backend: FastAPI + Pydantic v2](https://img.shields.io/badge/Backend-FastAPI%20%2B%20Pydantic%20v2-009688)](./apps/backend)
-[![LLM: Ollama/GGUF (Gemma+Qwen)](https://img.shields.io/badge/LLM-Ollama%2FGGUF%20(Gemma%2BQwen)-ff6b6b)](./docs/architecture/adrs/ADR-014-serving-ollama-gguf-16gb.md)
+[![LLM: API (conversacional+agente)](https://img.shields.io/badge/LLM-API%20(conversacional%2Bagente)-ff6b6b)](./docs/architecture/adrs/ADR-028-inferencia-por-api.md)
 [![DB: Postgres 16 + pgvector](https://img.shields.io/badge/DB-Postgres%2016%20%2B%20pgvector-4169E1)](./docs/architecture/adrs/ADR-004-postgres-pgvector-vs-pinecone.md)
 [![AI-friendly](https://img.shields.io/badge/AI--friendly-Claude%20%C2%B7%20Codex%20%C2%B7%20Gemini-8e44ad)](./AGENTS.md)
 [![Phase: MVP](https://img.shields.io/badge/Phase-MVP-yellow)](./docs/architecture/adrs/ADR-005-supabase-mvp-postgres-selfhosted-v2.md)
 [![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red)](./LICENSE)
 
 Cinco modos (productividad, estudio, bienestar, vida, memoria) sobre dos
-modelos propios (Gemma 4 12B + Qwen 3.5-9B), memoria semántica +
-episódica + procedural sobre Postgres + pgvector, todo on-prem. El serving
-local corre con Ollama/GGUF en una RTX 4080 Super 16GB (vLLM reservado para
-GPU de 24GB+, ver [`ADR-014`](./docs/architecture/adrs/ADR-014-serving-ollama-gguf-16gb.md)).
-Sin datos de usuario saliendo del perímetro, sin lock-in a big tech.
+alias de modelo (`conversacional` + `agente`), memoria semántica +
+episódica + procedural sobre Postgres + pgvector. La inferencia se consume
+por API, con una lista de proveedores en orden de prioridad y respaldo (ver
+[`ADR-028`](./docs/architecture/adrs/ADR-028-inferencia-por-api.md)). Los datos de usuario
+solo van a proveedores aprobados y solo para la inferencia; hasta cerrar las
+compuertas de ADR-028, los proveedores reciben solo datos sintéticos.
 
 - **Humanos**: empezá por [Quick Start](#quick-start) y después
   [`docs/operations/LOCAL-DEV.md`](./docs/operations/LOCAL-DEV.md).
@@ -34,9 +35,9 @@ Sin datos de usuario saliendo del perímetro, sin lock-in a big tech.
 | Métrica | Valor actual |
 | --- | --- |
 | Modos del producto | 5 (productividad, estudio, bienestar, vida, memoria) |
-| Modelos LLM | 2 (Gemma 4 12B conversacional + Qwen 3.5-9B agente) |
+| Alias de modelo | 2 (`conversacional` + `agente`) |
 | Capas de memoria | 3 (semántica, episódica, procedural) |
-| Tools del agente Qwen | 8 (calendar×2, reminder×2, memory×4) |
+| Tools del alias `agente` | 8 (calendar×2, reminder×2, memory×4) |
 | Apps | 3 (web Next.js 16, mobile Expo 53+, backend FastAPI) |
 | Packages compartidos | 5 (shared-types, shared-schemas, ui, config, core) |
 | ADRs aprobados | 15 (ADR-001 a ADR-015) |
@@ -46,13 +47,13 @@ Sin datos de usuario saliendo del perímetro, sin lock-in a big tech.
 
 ## Los 5 modos
 
-| Modo | Para qué sirve | Modelo | Tools | Capas de memoria |
+| Modo | Para qué sirve | Alias de modelo | Tools | Capas de memoria |
 | --- | --- | --- | --- | --- |
-| **Productividad** | Agendar, recordar, ejecutar | Qwen 3.5-9B (agente) | calendar, reminder, memory | semántica, episódica |
-| **Estudio** | Tutoría, explicar, procesar textos | Gemma 4 12B | — | episódica, procedural |
-| **Bienestar** | Descarga emocional, acompañar | Gemma 4 12B | — | procedural, semántica |
-| **Vida** | Charla casual, recomendaciones | Gemma 4 12B | — | procedural |
-| **Memoria** | Recall explícito de conversaciones | Qwen 3.5-9B (agente) | memory | las 3 capas |
+| **Productividad** | Agendar, recordar, ejecutar | `agente` | calendar, reminder, memory | semántica, episódica |
+| **Estudio** | Tutoría, explicar, procesar textos | `conversacional` | — | episódica, procedural |
+| **Bienestar** | Descarga emocional, acompañar | `conversacional` | — | procedural, semántica |
+| **Vida** | Charla casual, recomendaciones | `conversacional` | — | procedural |
+| **Memoria** | Recall explícito de conversaciones | `agente` | memory | las 3 capas |
 
 Detalle de cada modo en [`docs/product/MODES.md`](./docs/product/MODES.md).
 Configuración canónica en [`ynara.config.json`](./ynara.config.json).
@@ -111,23 +112,17 @@ make dev-web                                    # Next.js :3000 (otra terminal)
 make dev-mobile                                 # Expo (opcional)
 ```
 
-### 5. (Opcional) Levantar el serving local
+### 5. (Opcional) Conectar un proveedor de IA
 
-En la RTX 4080 Super 16GB el serving local es **Ollama/GGUF** (un solo proceso
-que sirve `gemma4` + `qwen` + bge-m3 co-residentes en `:11434`, ver
-[`ADR-014`](./docs/architecture/adrs/ADR-014-serving-ollama-gguf-16gb.md)). vLLM
-(`./infra/vllm/start-vllm.sh`, Gemma `:8000` + Qwen `:8001`) queda como ruta para
-GPU de 24GB+.
-
-Sin GPU, el backend corre con Fakes (`FakeLlmClient`) por defecto. Para apuntar al
-serving real, setear `LLM_BACKEND=vllm` (nombre **legacy** del cliente
-OpenAI-compatible: vale tanto para Ollama como para vLLM, no fuerza vLLM) y
-declarar el destino del serving en `LLM_SERVING` (lista JSON de procesos
-`{base_url, models}`) en `apps/backend/.env`. `LLM_SERVING` indica *dónde* corre
-cada modelo pero no activa por sí solo el serving real; el switch es
-`LLM_BACKEND`. En `production` el serving real se fuerza igual. Ver
-[`ADR-013`](./docs/architecture/adrs/ADR-013-serving-endpoints-config.md) y
-[`ADR-014`](./docs/architecture/adrs/ADR-014-serving-ollama-gguf-16gb.md).
+Sin proveedor, el backend corre con el cliente fake (`FakeLlmClient`) por defecto.
+Para hablar con un proveedor real, en `apps/backend/.env` setear
+`LLM_BACKEND=api`, declarar los proveedores en `LLM_PROVIDERS` (lista JSON en orden
+de prioridad, cada uno con `name`, `base_url`, `models` y
+`supports_reasoning_effort`) y la credencial de cada uno en `LLM_API_KEY_<NAME>`.
+El ejemplo está en `apps/backend/.env.example`. En `production` el backend no
+arranca con el fake, sin proveedores o sin alguna credencial. Hasta cerrar las
+compuertas de [`ADR-028`](./docs/architecture/adrs/ADR-028-inferencia-por-api.md), los
+proveedores reciben solo datos sintéticos.
 
 Guía paso a paso completa: [`docs/operations/INSTALL.md`](./docs/operations/INSTALL.md).
 Flujo de desarrollo diario: [`docs/operations/LOCAL-DEV.md`](./docs/operations/LOCAL-DEV.md).
@@ -160,33 +155,32 @@ Atajos completos en [`Makefile`](./Makefile).
 | Web | Next.js 16, TypeScript strict, Tailwind v4 (CSS-first), shadcn/ui, GSAP, Lenis, TanStack Query v5, Zustand v5, React Hook Form + Zod, Auth.js v5 |
 | Mobile | Expo SDK 53+, Expo Router (file-based), NativeWind, TanStack Query, Zustand, expo-secure-store, expo-notifications |
 | Backend | Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2 async, Alembic, Celery 5.4+, uv, Ruff |
-| LLM | Ollama/GGUF (serving local 16GB, ADR-014), vLLM (reservado para 24GB+), Unsloth + QLoRA (fine-tuning), LlamaIndex (orquestación) |
+| LLM | Inferencia por API con proveedores compatibles con OpenAI y respaldo (ADR-028), Unsloth + QLoRA (fine-tuning), LlamaIndex (orquestación) |
 | DB (MVP) | Supabase como Postgres 16 gestionado + pgvector, Redis (Upstash o Docker) |
 | DB (V2) | Postgres 16 self-hosted + pgvector, Redis self-hosted |
 | Monorepo | pnpm 10+, Turborepo 2.x, Biome 2.x |
 | Deploy | Vercel (web), EAS (mobile), Cloudflare Tunnel + R2 (backend) |
 
-## Modelos (dual-stack)
+## Alias de modelo
 
-| Modelo | Rol | Lee memoria | Escribe memoria | Llama tools | Served name |
-| --- | --- | --- | --- | --- | --- |
-| **Gemma 4 12B** (dense) | Conversacional | Sí | No | No | `gemma4` |
-| **Qwen 3.5-9B** | Agente | Sí | Sí | Sí | `qwen` |
+| Alias | Modos | Lee memoria | Escribe memoria | Llama tools |
+| --- | --- | --- | --- | --- |
+| `conversacional` | estudio, bienestar, vida | Sí | No | No |
+| `agente` | productividad, memoria y la consolidación | Sí | Sí (async vía Celery) | Sí |
 
-Razonamiento: [`ADR-002`](./docs/architecture/adrs/ADR-002-gemma-qwen-dual-stack.md).
-En la RTX 4080 Super 16GB ambos corren cuantizados (GGUF Q4_K_M) en Ollama, en
-**un solo proceso** que sirve los dos modelos co-residentes + bge-m3 sobre el
-endpoint OpenAI-compatible `:11434/v1` (ver [`ADR-014`](./docs/architecture/adrs/ADR-014-serving-ollama-gguf-16gb.md)).
-vLLM (con sus procesos por modelo en `:8000`/`:8001`) queda reservado para GPU de
-24GB+.
+El código pide el alias y cada proveedor de `LLM_PROVIDERS` lo traduce a su id de
+modelo: la identidad del modelo en el código es el alias. Razonamiento:
+[`ADR-028`](./docs/architecture/adrs/ADR-028-inferencia-por-api.md), que mantiene la separación
+de roles de [`ADR-002`](./docs/architecture/adrs/ADR-002-gemma-qwen-dual-stack.md) y reemplaza el
+serving local de [`ADR-014`](./docs/architecture/adrs/ADR-014-serving-ollama-gguf-16gb.md).
 
 ## Memoria (3 capas)
 
 | Capa | Qué guarda | Store | Quién escribe |
 | --- | --- | --- | --- |
-| **Semántica** | Hechos persistentes sobre el usuario | Postgres + pgvector + bge-m3 (1024-dim), engine in-house (ADR-010) | Qwen (async Celery) |
-| **Episódica** | Resúmenes de sesiones pasadas con embedding | Postgres + pgvector + JSONB metadata | Qwen al cerrar sesión |
-| **Procedural** | Preferencias y patrones | Postgres + JSONB | Qwen + heurísticas |
+| **Semántica** | Hechos persistentes sobre el usuario | Postgres + pgvector + bge-m3 (1024-dim), engine in-house (ADR-010) | `agente` (async Celery) |
+| **Episódica** | Resúmenes de sesiones pasadas con embedding | Postgres + pgvector + JSONB metadata | `agente` al cerrar sesión |
+| **Procedural** | Preferencias y patrones | Postgres + JSONB | `agente` + heurísticas |
 
 Estas 3 capas + el `audit_log` son **tablas sagradas**: cualquier migración
 requiere tests + 1 aprobación humana explícita (regla #3 de
@@ -202,10 +196,10 @@ sesión y luego purga. Derechos del usuario (export, borrado, pausa, audit log) 
 Cliente (web/mobile)
   -> POST /v1/chat {text, mode}
   -> Auth JWT + rate limit
-  -> Router LLM (decide modelo según modo)
+  -> Router LLM (decide el alias según el modo)
   -> memory.search (capas activas del modo)
-  -> Modelo (Gemma o Qwen)
-       Qwen agente: tool calls en loop -> tools (calendar/reminder/memory)
+  -> Proveedor de IA por API (alias conversacional o agente)
+       agente: tool calls en loop -> tools (calendar/reminder/memory)
   -> Respuesta al cliente
   -> Celery worker: consolida memoria (async, fuera del path)
 ```
@@ -261,7 +255,7 @@ ynara/
 │
 ├── skills/                  # 6 SKILL.md reutilizables
 │   ├── add-new-mode/        # agregar un modo al producto
-│   ├── add-llm-tool/        # agregar una tool al agente Qwen
+│   ├── add-llm-tool/        # agregar una tool al alias agente
 │   ├── add-memory-type/     # agregar una capa de memoria (proceso pesado)
 │   ├── adr-create/          # crear un ADR
 │   ├── create-ui-component/ # crear un componente UI
@@ -298,8 +292,9 @@ Copilot, etc.) trabajando en este repo:
 - OK humano antes de `pnpm install`, `uv sync`, `git commit`, `git push`,
   cambios en `.md` raíz, cambios en `ynara.config.json`, migraciones
   Alembic.
-- Datos de usuario nunca fuera del perímetro: prohibido enviar a APIs de
-  OpenAI, Anthropic, Google, etc. Toda inferencia es vLLM/Ollama local.
+- Datos de usuario y proveedores de IA: nunca contenido ni PII en logs; la
+  IA se consume solo desde `apps/backend/app/llm/clients/providers/`, con
+  proveedores aprobados y solo para la inferencia (regla #4).
 - Cliente JavaScript de Supabase prohibido desde el frontend. Todo
   acceso a datos pasa por la API de FastAPI.
 - Tablas `semantic_memory`, `episodic_memory`, `procedural_memory` son
@@ -319,8 +314,8 @@ para V2 post-validación de producto.
 
 | Fase | DB | Cache | Inferencia | Por qué |
 | --- | --- | --- | --- | --- |
-| **MVP** (hoy) | Supabase (Postgres 16 + pgvector) | Upstash o Docker | Ollama/GGUF on-prem (16GB; vLLM en 24GB+) | Velocidad sin DevOps inicial |
-| **V2** (post-PMF) | Postgres 16 self-hosted | Redis self-hosted | on-prem (Ollama 16GB / vLLM 24GB+) | Alineado a "infra propia" |
+| **MVP** (hoy) | Supabase (Postgres 16 + pgvector) | Upstash o Docker | Por API, con proveedores aprobados (ADR-028) | Velocidad sin DevOps inicial |
+| **V2** (post-PMF) | Postgres 16 self-hosted | Redis self-hosted | Por API (ADR-028) | Alineado a "infra propia" |
 
 **Reglas que hacen la migración trivial**:
 
@@ -334,12 +329,15 @@ Plan de cutover: [`docs/operations/MIGRATION-SUPABASE-TO-SELFHOSTED.md`](./docs/
 
 ## Posicionamiento
 
-Producto comercial self-hosted. La ventaja defensiva es **infra propia**:
+Producto comercial. Las ventajas defensivas:
 
-- **Modelos propios** — no dependemos de OpenAI, Anthropic, Google.
+- **Modelos intercambiables** — la inferencia va por API detrás de dos alias, con
+  una lista de proveedores y respaldo: cambiar de proveedor o de modelo es
+  configuración (ADR-028).
 - **Memoria propia** — el dato vive donde nosotros lo ponemos, no en SaaS de terceros.
 - **Tono y lengua** — rioplatense específico, no traducido a escala global.
-- **Soberanía** — los datos del usuario no salen del perímetro.
+- **Datos con reglas propias** — los datos del usuario van solo a proveedores
+  aprobados y solo para la inferencia (regla #4).
 
 Visión completa: [`docs/product/VISION.md`](./docs/product/VISION.md).
 Identidad de marca: [`IDENTITY.md`](./IDENTITY.md).
