@@ -1,9 +1,11 @@
-# SKILL: Agregar una tool al agente Qwen
+# SKILL: Agregar una tool al alias `agente`
 
 ## Cuándo usar
 
-Cuando hace falta que Qwen pueda ejecutar una acción nueva (ej:
-`calendar.move_event`, `note.create`).
+Cuando hace falta que el alias `agente` (el único que llama tools,
+[ADR-028](../../docs/architecture/adrs/ADR-028-inferencia-por-api.md))
+pueda ejecutar una acción nueva (ej: `calendar.move_event`,
+`note.create`).
 
 ## Pre-requisitos
 
@@ -34,11 +36,19 @@ Cuando hace falta que Qwen pueda ejecutar una acción nueva (ej:
        async def execute(self, arguments: dict[str, object]) -> dict[str, object]:
            ...
    ```
+   El `name` es `namespace.accion` en snake_case. En la API del
+   proveedor cada `.` viaja como `__` y vuelve al parsear la respuesta,
+   así que el nombre no puede traer `__` ni un `_` justo antes del `.`,
+   y mapeado tiene que cumplir `^[a-zA-Z0-9_-]{1,64}$`
+   (`apps/backend/tests/llm/test_provider_tool_names.py` lo verifica
+   con todas las tools del código).
 3. **Registro en la vía de producción**. Agregar el
    `namespace → builder` a `_AGENT_TOOL_BUILDERS` en
    `apps/backend/app/llm/tools/agent_registry.py` (lo consume
    `build_chat_tool_registry`, el tool-loop síncrono del chat — ADR-022)
-   y habilitar el namespace en `ynara.config.json[modes][*].tools_enabled`.
+   y habilitar el namespace en `ynara.config.json[modes][*].tools_enabled`,
+   solo en modos con el alias `agente` (`load_llm_config()` rechaza tools
+   en un modo `conversacional`).
    **NO** registrar en `default_registry()`: son los stubs `not_wired` del
    playground observado (ADR-019) y NO se ejecutan en el chat real.
 4. **Documentación**. Agregar entrada en

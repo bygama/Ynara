@@ -7,8 +7,8 @@ Skills reutilizables para humanos y agentes IA, en formato Anthropic
 
 - [`add-new-mode/`](./add-new-mode/) — agregar un modo nuevo al
   producto.
-- [`add-llm-tool/`](./add-llm-tool/) — agregar una tool al agente
-  Qwen.
+- [`add-llm-tool/`](./add-llm-tool/) — agregar una tool al alias
+  `agente`.
 - [`add-memory-type/`](./add-memory-type/) — agregar un tipo de
   memoria (proceso pesado, requiere ADR).
 - [`adr-create/`](./adr-create/) — crear un Architecture Decision
