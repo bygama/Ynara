@@ -166,8 +166,9 @@ export const handlers = [
   }),
 
   // POST /v1/chat (no-streaming). El streaming va aparte en /v1/chat/stream (W3).
-  // Respuesta canned por modo; `actions` solo en modos Qwen (productividad,
-  // memoria). El backend real es M9 — esto espeja el contrato cerrado en #61.
+  // Respuesta canned por modo; `actions` solo en los modos del alias agente
+  // (productividad, memoria). El backend real es M9 — esto espeja el contrato
+  // cerrado en #61.
   http.post(apiUrl("/v1/chat"), async ({ request }) => {
     const json = await request.json().catch(() => null);
     const parsed = ChatRequestSchema.safeParse(json);
@@ -197,8 +198,9 @@ export const handlers = [
   // POST /v1/chat/stream (streaming SSE, W3). Pseudo-streamea la misma
   // respuesta canned del handler no-streaming, pero token a token: parte el
   // texto en ventanas chicas (~6 chars) emitidas como eventos `token`, y
-  // cierra con un evento `done` (con `actions` solo en modos Qwen). El wire
-  // sigue el contrato cerrado en #61 que consume `createSseParser` (sse.ts).
+  // cierra con un evento `done` (con `actions` solo en los modos del alias
+  // agente). El wire sigue el contrato cerrado en #61 que consume
+  // `createSseParser` (sse.ts).
   http.post(apiUrl("/v1/chat/stream"), async ({ request }) => {
     const json = await request.json().catch(() => null);
     const parsed = ChatRequestSchema.safeParse(json);

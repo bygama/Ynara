@@ -6,8 +6,9 @@ import { persist } from "zustand/middleware";
  *
  * El toggle SOLO muestra/oculta el colapsable de razonamiento en la UI: NO
  * controla el thinking del modelo ni manda ningún flag al backend. El backend
- * SIEMPRE emite el `reasoning` por SSE cuando el modelo razona (p. ej. modos
- * agente Qwen); el front decide si renderizarlo según `enabled`.
+ * SIEMPRE emite el `reasoning` por SSE cuando el proveedor devuelve el
+ * razonamiento del modelo (puede pasar en cualquier modo, ADR-028 D9); el
+ * front decide si renderizarlo según `enabled`.
  *
  * Default OFF (el razonamiento es ruido para la mayoría; quien quiera verlo lo
  * prende). Web-local (no se sincroniza con mobile): clon del modelo de
