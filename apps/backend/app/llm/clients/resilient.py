@@ -15,8 +15,10 @@ stdlib (regla M3: nada de tenacity/circuitbreaker):
    - Ante un error del REQUEST (request invalido, contexto excedido, modelo
      no servido) re-lanza de inmediato: es bug del request, no del
      proveedor, y el respaldo fallaria igual.
-   - Ante una credencial rechazada (401/403) no reintenta contra ese
-     proveedor y pasa al siguiente, que tiene la suya.
+   - Ante una credencial rechazada (401/403) o un request que ese proveedor
+     no acepta (un 4xx propio, como un 404 por un id de modelo que no tiene)
+     no reintenta contra ese proveedor y pasa al siguiente, que tiene su
+     credencial y sus modelos.
    - Si tiene exito, devuelve el resultado.
 3. Si todos los candidatos se agotan (o ninguno tiene el breaker cerrado), o
    se vence el presupuesto global, devuelve ``degraded_response()``. NUNCA
@@ -24,12 +26,12 @@ stdlib (regla M3: nada de tenacity/circuitbreaker):
 
 El breaker de cada candidato abre solo por caidas (timeout, 5xx, red:
 ``BREAKER_ERRORS``) o porque el presupuesto global corto su request. Cualquier
-otra respuesta (error del request, credencial, 429, respuesta invalida) quiere
-decir que el proveedor contesto: cuenta como exito y cierra la prueba
-HALF_OPEN si la habia. Un candidato que termina devolviendo un resultado
-siempre cuenta como exito, aunque un intento anterior haya sido una caida: el
-proveedor ya respondio, y una prueba HALF_OPEN que responde en el reintento
-vuelve a ``CLOSED`` (contrato de ``CircuitBreaker``).
+otra respuesta (error del request, rechazo del proveedor, 429, respuesta
+invalida) quiere decir que el proveedor contesto: cuenta como exito y cierra
+la prueba HALF_OPEN si la habia. Un candidato que termina devolviendo un
+resultado siempre cuenta como exito, aunque un intento anterior haya sido una
+caida: el proveedor ya respondio, y una prueba HALF_OPEN que responde en el
+reintento vuelve a ``CLOSED`` (contrato de ``CircuitBreaker``).
 
 El respaldo es otro cliente del pool: otra instancia de serving o, con
 ADR-028, otro proveedor por API (regla #4b). ``clock`` y ``sleep`` son
@@ -269,10 +271,10 @@ class ResilientClient:
         """Reintenta un candidato; ``None`` si se agota (toca el respaldo).
 
         Re-lanza los errores del request sin probar el siguiente candidato.
-        Una credencial rechazada o un 429 que no entra en el presupuesto cortan
-        los reintentos de este candidato; el resto de los ``LlmError`` se
-        reintentan con backoff. El breaker se resuelve siempre (ver
-        ``BreakerTally``).
+        Un rechazo del proveedor (credencial o 4xx propio) o un 429 que no entra
+        en el presupuesto cortan los reintentos de este candidato; el resto de
+        los ``LlmError`` se reintentan con backoff. El breaker se resuelve
+        siempre (ver ``BreakerTally``).
         """
         tally.start(breaker)
         last_error: LlmError | None = None
@@ -291,8 +293,8 @@ class ResilientClient:
                 tally.resolve()
                 raise
             except LlmError as exc:
-                # Transitorio, credencial o LlmError no clasificado (4xx no
-                # mapeado, respuesta sin choices, tool parse error).
+                # Transitorio, rechazo del proveedor (credencial o 4xx propio) o
+                # LlmError no clasificado (respuesta sin choices, tool parse error).
                 tally.note(exc)
                 last_error = exc
                 delay = self._policy.delay(exc, attempt, deadline - self._clock())
