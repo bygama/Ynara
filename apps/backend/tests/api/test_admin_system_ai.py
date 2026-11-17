@@ -11,6 +11,8 @@ IA). Cubre:
    el orden de ``LLM_PROVIDERS``, con su host y sus alias -> id de modelo.
 3. Embeddings: modo, host, modelo, dimensión y estado.
 4. Privacidad: ninguna credencial, URL completa ni path sale en la respuesta.
+5. Runtime: lleva solo el inventario (alias, modos, schema head y build); el modelo
+   de embeddings sale en el bloque ``ai``.
 """
 
 from __future__ import annotations
@@ -351,16 +353,21 @@ def _system_overrides() -> Iterator[None]:
         app.dependency_overrides.clear()
 
 
-@pytest.mark.usefixtures("_system_overrides")
-async def test_system_endpoint_returns_ai_block_from_the_app_clients() -> None:
-    """El endpoint sondea los clientes de ``app.state`` (acá, los overrides)."""
+async def _get_system() -> httpx.Response:
+    """``GET /v1/admin/system`` con settings en modo api y el schema head fijo."""
     transport = ASGITransport(app=app)
     with (
         patch("app.api.v1.admin.metrics.get_settings", return_value=_api_settings()),
         patch("app.api.v1.admin.metrics._schema_head", return_value="20260101_0000"),
     ):
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/v1/admin/system")
+            return await client.get("/v1/admin/system")
+
+
+@pytest.mark.usefixtures("_system_overrides")
+async def test_system_endpoint_returns_ai_block_from_the_app_clients() -> None:
+    """El endpoint sondea los clientes de ``app.state`` (acá, los overrides)."""
+    resp = await _get_system()
 
     assert resp.status_code == 200
     ai = AdminSystemOut.model_validate_json(resp.content).ai
@@ -375,3 +382,12 @@ async def test_system_endpoint_returns_ai_block_from_the_app_clients() -> None:
         "ok",
     )
     _assert_no_secrets(resp.text)
+
+
+@pytest.mark.usefixtures("_system_overrides")
+async def test_system_endpoint_runtime_carries_only_the_inventory() -> None:
+    """El runtime lleva alias, modos, schema head y build; el embedder va en ``ai``."""
+    resp = await _get_system()
+
+    assert resp.status_code == 200
+    assert set(resp.json()["runtime"]) == {"models", "modes", "schema_head", "build_version"}
