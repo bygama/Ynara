@@ -17,7 +17,7 @@ import { TailscaleBanner } from "./TailscaleBanner";
  * Grilla 12-col por bandas con reveal escalonado:
  *  1. `TailscaleBanner` (`col-span-12`) — el estado del tailnet, lo primero.
  *  2. N `ShareTargetCard` (`col-span-6`) — las URLs para repartir (panel admin y
- *     app web primero, después API OpenAI-compatible y chat de Open WebUI).
+ *     app web).
  *
  * Si el tailnet está abajo no hay targets: se muestra un empty editorial con el
  * próximo paso (prender Tailscale en el host), no un error.
@@ -71,7 +71,7 @@ export function SharingView() {
         <Band span={12} index={1}>
           <EmptyStateCard
             title="Todavía no hay nada para compartir."
-            hint="Prendé Tailscale en esta máquina (tailscale up) para exponer el serving al tailnet; las URLs aparecen acá."
+            hint="Prendé Tailscale en esta máquina (tailscale up) para exponer el panel y la app web al tailnet; las URLs aparecen acá."
           />
         </Band>
       ) : (

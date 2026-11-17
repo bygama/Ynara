@@ -8,8 +8,8 @@ export const metadata: Metadata = { title: "Conexión / Compartir" };
  *
  * Server component: header editorial estático + `metadata`, delega la composición
  * de datos a `<SharingView/>` (client, consume `useConnectivity()`). Estado del
- * tailnet de Tailscale + las URLs para que otra máquina consuma el serving: la API
- * OpenAI-compatible de Ollama y el chat de Open WebUI.
+ * tailnet de Tailscale + las URLs para que otra máquina abra el panel admin y la
+ * app web.
  */
 export default function CompartirPage() {
   return (
@@ -18,8 +18,8 @@ export default function CompartirPage() {
         <p className="text-caption text-[var(--color-ink-soft)]">Soberanía</p>
         <h1 className="text-display text-[var(--color-ink-deep)]">Conexión / Compartir</h1>
         <p className="max-w-[var(--measure-prose)] text-body text-[var(--color-ink-soft)]">
-          Estado de tu tailnet de Tailscale y las URLs para que otra máquina consuma el serving: la
-          API OpenAI-compatible de Ollama y el chat de Open WebUI.
+          Estado de tu tailnet de Tailscale y las URLs para que otra máquina abra el panel admin y
+          la app web.
         </p>
       </header>
 
