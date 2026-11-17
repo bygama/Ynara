@@ -8,7 +8,8 @@ IA). Cubre:
 
 1. Backend ``fake``: no se sondea a nadie y todo queda ``unconfigured``.
 2. Backend ``api``: cada proveedor queda ``ok`` o ``down`` según su propio health, en
-   el orden de ``LLM_PROVIDERS``, con su host y sus alias -> id de modelo.
+   el orden de ``LLM_PROVIDERS``, con su host y sus alias -> id de modelo. El cliente
+   que arma la factory es el que sabe dar esa salud por proveedor.
 3. Embeddings: modo, host, modelo, dimensión y estado.
 4. Privacidad: ninguna credencial, URL completa ni path sale en la respuesta.
 5. Runtime: lleva solo el inventario (alias, modos, schema head y build); el modelo
@@ -31,11 +32,13 @@ from app.core.config import Settings
 from app.core.constants import EMBEDDING_DIM
 from app.core.deps import get_current_admin, get_db, get_embedder, get_llm_client
 from app.llm.clients.embedding import FakeEmbeddingClient
+from app.llm.clients.factory import build_llm_client
 from app.llm.clients.fakes import FakeLlmClient
 from app.llm.clients.pool import build_provider_pool
 from app.llm.clients.providers.embeddings import ApiEmbeddingClient
 from app.llm.clients.providers.openai_compat import OpenAICompatClient
 from app.llm.clients.resilient import ResilientClient
+from app.llm.config import load_llm_config
 from app.llm.schemas import ModelHealth
 from app.main import app
 from app.schemas.admin import AdminSystemOut
@@ -315,6 +318,27 @@ async def test_api_backend_embedder_that_raises_is_down() -> None:
     ai = await _probe_ai(settings, FakeLlmClient(models=frozenset()), _Exploding())
 
     assert ai.embeddings.status == "down"
+
+
+async def _principal_only_healthy(self: OpenAICompatClient) -> ModelHealth:
+    """``health()`` sin red para el cliente de la factory: responde solo el principal."""
+    return ModelHealth(model_name=self.name, healthy=self.name == "principal")
+
+
+async def test_api_backend_probes_the_client_the_factory_builds() -> None:
+    """El cliente que la factory deja en ``app.state`` reporta cada proveedor por nombre."""
+    settings = _api_settings()
+    llm = build_llm_client(settings, load_llm_config())
+    try:
+        with patch.object(OpenAICompatClient, "health", _principal_only_healthy):
+            ai = await _probe_ai(settings, llm, FakeEmbeddingClient())
+    finally:
+        await llm.aclose()
+
+    assert [(p.name, p.status) for p in ai.llm.providers] == [
+        ("principal", "ok"),
+        ("respaldo", "down"),
+    ]
 
 
 async def test_ai_block_never_exposes_credentials_or_urls() -> None:
