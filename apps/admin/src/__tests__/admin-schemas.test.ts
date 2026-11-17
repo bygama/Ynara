@@ -61,8 +61,8 @@ const SERVING_API_PAYLOAD = {
       default_thinking: true,
     },
   ],
-  embedder: "bge-m3",
-  reranker: "bge-reranker-v2-m3",
+  embedder: "BAAI/bge-m3",
+  reranker: "passthrough",
 };
 
 /** La misma respuesta con el backend fake (default de dev): sin serving real. */
