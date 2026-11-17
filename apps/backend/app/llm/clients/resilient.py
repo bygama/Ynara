@@ -217,6 +217,17 @@ class ResilientClient:
                 return ModelHealth(model_name=health.model_name, healthy=True)
         return ModelHealth(model_name=first_name, healthy=False)
 
+    async def provider_health(self) -> list[ModelHealth]:
+        """Salud de cada cliente del pool, en el orden del pool (el principal primero).
+
+        A diferencia de ``health()``, que corta en el primer sano, sondea a todos a la
+        vez: el panel admin muestra el estado de cada proveedor por separado. El
+        ``model_name`` de cada uno es el nombre del proveedor (la clase del cliente si no
+        tiene ``name``). Un cliente que rompe en ``health()`` cuenta como no-sano y no
+        tumba al resto.
+        """
+        return list(await asyncio.gather(*(_probe_health(c) for c in self._pool.clients)))
+
     async def complete(
         self,
         *,
@@ -528,3 +539,13 @@ def _client_label(client: LLMClient) -> str:
     """Nombre para los logs: el del proveedor si lo tiene, si no la clase del cliente."""
     name = getattr(client, "name", None)
     return name if isinstance(name, str) and name else type(client).__name__
+
+
+async def _probe_health(client: LLMClient) -> ModelHealth:
+    """``health()`` de un cliente rotulado con su nombre; no-sano si levanta."""
+    label = _client_label(client)
+    try:
+        health = await client.health()
+    except Exception:
+        return ModelHealth(model_name=label, healthy=False)
+    return ModelHealth(model_name=label, healthy=health.healthy)
