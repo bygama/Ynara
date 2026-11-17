@@ -23,7 +23,8 @@ uso es asyncio en 1-2 procesos, no threads.
 
 El estado del breaker es per-proceso (uno por worker de gunicorn). La cota de
 despliegue de 1-2 workers que lo hace correcto (sin breaker distribuido) esta
-fijada en ADR-020 (se apoya en ADR-014: una sola GPU on-prem).
+fijada en ADR-020; desde ADR-028 se revisa contra la cuota de los proveedores
+de IA, no contra una GPU propia.
 """
 
 from __future__ import annotations

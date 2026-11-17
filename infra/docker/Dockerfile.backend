@@ -34,7 +34,7 @@ RUN uv sync --frozen --no-dev || uv sync --no-dev
 COPY apps/backend/app ./app
 COPY apps/backend/alembic ./alembic
 COPY apps/backend/alembic.ini ./
-# Contrato de producto (models/modes/llm.serving + bloque [memory]). La app lo
+# Contrato de producto (modos, alias de modelo y bloque [memory]). La app lo
 # resuelve por YNARA_CONFIG_PATH (arriba). Vive en la raíz del repo: por eso el
 # build context es la raíz.
 COPY ynara.config.json ./
@@ -63,9 +63,11 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS http://localhost:8080/v1/health || exit 1
 
 # Producción: gunicorn + uvicorn workers.
-# 2 workers (no 4): el circuit breaker del LLM es per-proceso y la caja on-prem
-# tiene una sola GPU (ADR-014/ADR-020) -> más workers = split-brain del breaker
-# sin beneficio (el cuello de botella es el serving, no los workers HTTP async).
+# 2 workers (no 4): el circuit breaker de cada proveedor de IA es per-proceso
+# (ADR-020, enmendado por ADR-028) -> más workers = split-brain del breaker sin
+# beneficio: el techo lo ponen la cuota y la latencia del proveedor, no los
+# workers HTTP async. El worker de Celery tiene su propia cota
+# (CELERY_CONCURRENCY, en infra/docker/docker-compose.yml).
 CMD ["uv", "run", "gunicorn", "app.main:app", \
      "--worker-class", "uvicorn.workers.UvicornWorker", \
      "--workers", "2", \
