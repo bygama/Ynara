@@ -1,13 +1,9 @@
-"""Carga y validacion de la config de runtime del LLM (ADR-013).
+"""Carga y validacion de la config de runtime del LLM.
 
-Fusiona dos fuentes en un unico objeto inmutable:
-
-- ``ynara.config.json`` — contrato de producto: ``models`` (con
-  ``served_name``), ``modes`` y el bloque ``llm.serving`` (parsers,
-  quantization, ``max_model_len``, timeouts).
-- ``Settings`` (``.env``) — valores por entorno: la lista ``LLM_SERVING``
-  con cada proceso de serving (vLLM o Ollama; su base_url y los served_names
-  que sirve, ADR-013).
+Lee el contrato de producto de ``ynara.config.json``: ``models`` (con
+``served_name``), ``modes`` y el bloque ``llm.serving`` (parsers,
+quantization, ``max_model_len``, timeouts). Los proveedores de IA y sus
+credenciales no van aca: son valores por entorno (``Settings``, ADR-028).
 
 ``load_llm_config()`` es fail-fast: levanta ``LlmConfigError`` con un
 mensaje claro si la config es incoherente (modo que apunta a un modelo
@@ -25,7 +21,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.core.config import ServingEndpoint, Settings, get_settings
 from app.core.paths import resolve_config_path
 
 
@@ -87,7 +82,6 @@ class LlmRuntimeConfig(BaseModel):
 
     model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
 
-    serving_endpoints: list[ServingEndpoint]
     serving: ServingConfig
     models: dict[str, ModelConfig]
     modes: dict[str, ModeConfig]
@@ -118,7 +112,7 @@ def _read_config_file(path: Path) -> dict[str, object]:
     return data
 
 
-def _build_runtime_config(data: dict[str, object], settings: Settings) -> LlmRuntimeConfig:
+def _build_runtime_config(data: dict[str, object]) -> LlmRuntimeConfig:
     raw_models = data.get("models")
     raw_modes = data.get("modes")
     raw_llm = data.get("llm")
@@ -144,10 +138,9 @@ def _build_runtime_config(data: dict[str, object], settings: Settings) -> LlmRun
         # para que el caller solo tenga que atrapar LlmConfigError.
         raise LlmConfigError(f"ynara.config.json invalido: {exc}") from exc
 
-    _validate_coherence(serving, settings.llm_serving, models, modes)
+    _validate_coherence(serving, models, modes)
 
     return LlmRuntimeConfig(
-        serving_endpoints=settings.llm_serving,
         serving=serving,
         models=models,
         modes=modes,
@@ -156,7 +149,6 @@ def _build_runtime_config(data: dict[str, object], settings: Settings) -> LlmRun
 
 def _validate_coherence(
     serving: ServingConfig,
-    serving_endpoints: list[ServingEndpoint],
     models: dict[str, ModelConfig],
     modes: dict[str, ModeConfig],
 ) -> None:
@@ -191,46 +183,18 @@ def _validate_coherence(
                 f"context_window del modelo ({model.context_window})"
             )
 
-    # ADR-013: validar la lista LLM_SERVING (fail-fast: un .env mal armado no
-    # debe bootear con ruteo roto o un httpx.AsyncClient huerfano).
-    if not serving_endpoints:
-        raise LlmConfigError(
-            "LLM_SERVING está vacío: declarar al menos un proceso de serving (vLLM o Ollama)"
-        )
-    served_names = {model.served_name for model in models.values()}
-    seen_base_urls: set[str] = set()
-    for entry in serving_endpoints:
-        # base_url duplicada: el factory keyea por base_url -> el 2do client
-        # pisaria al 1ro (su httpx queda huerfano, nunca se cierra) y el pool
-        # tendria dos slots al MISMO client. N instancias = N base_urls distintas.
-        if entry.base_url in seen_base_urls:
-            raise LlmConfigError(f"LLM_SERVING: base_url duplicada: {entry.base_url!r}")
-        seen_base_urls.add(entry.base_url)
-        # entrada sin models: el client nunca seria elegido (serves_model->False)
-        # y el modelo daria ModelNotServedError en runtime sin aviso al boot.
-        if not entry.models:
-            raise LlmConfigError(f"LLM_SERVING: la entrada {entry.base_url!r} no declara 'models'")
-        for name in entry.models:
-            if name not in served_names:
-                raise LlmConfigError(f"LLM_SERVING referencia served_name desconocido: {name!r}")
 
-
-def load_llm_config(
-    *, config_path: Path | None = None, settings: Settings | None = None
-) -> LlmRuntimeConfig:
+def load_llm_config(*, config_path: Path | None = None) -> LlmRuntimeConfig:
     """Carga y valida la config de runtime del LLM.
 
-    Inyectable para tests (``config_path`` / ``settings``); sin argumentos
-    usa ``ynara.config.json`` de la raiz del repo + el singleton de
-    settings, y cachea el resultado.
+    Inyectable para tests (``config_path``); sin argumentos usa el
+    ``ynara.config.json`` de la raiz del repo y cachea el resultado.
     """
-    if config_path is None and settings is None:
+    if config_path is None:
         return _load_cached()
-    resolved_settings = settings if settings is not None else get_settings()
-    resolved_path = config_path if config_path is not None else resolve_config_path()
-    return _build_runtime_config(_read_config_file(resolved_path), resolved_settings)
+    return _build_runtime_config(_read_config_file(config_path))
 
 
 @lru_cache(maxsize=1)
 def _load_cached() -> LlmRuntimeConfig:
-    return _build_runtime_config(_read_config_file(resolve_config_path()), get_settings())
+    return _build_runtime_config(_read_config_file(resolve_config_path()))

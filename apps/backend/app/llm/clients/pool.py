@@ -1,22 +1,18 @@
 """Pool de clientes LLM y estrategia de ruteo (M3).
 
-El ``ClientPool`` agrupa varios ``LLMClient`` (uno por proceso de inferencia
-— Ollama en 16GB / vLLM en 24GB+, ADR-014) y resuelve a que instancia mandar
-una request segun el campo ``model``. La ``RoutingStrategy`` decide cual
-candidato elegir cuando hay mas de uno que sirve el modelo.
+El ``ClientPool`` agrupa varios ``LLMClient`` (uno por proveedor de IA, ADR-028) y
+resuelve a que cliente mandar una request segun el campo ``model``. La
+``RoutingStrategy`` decide cual candidato elegir cuando hay mas de uno que sirve el
+modelo.
 
-Hoy la unica estrategia es ``FirstHealthy`` (toma el primero): alcanza
-para 1-2 procesos. El gancho de escalado (ADR-009, plan §4) es
-``LeastQueueDepth``, que rutearia por ``vllm:num_requests_waiting``; se
-implementa cuando haya multiples instancias del mismo modelo, sin tocar
-router ni cliente.
+Hoy la unica estrategia es ``FirstHealthy`` (toma el primero, es decir, el de mayor
+prioridad); el respaldo lo maneja el ``ResilientClient`` recorriendo los candidatos
+en orden.
 
-``build_pool`` arma el pool desde ``config.serving_endpoints`` (la lista
-``LLM_SERVING`` describe la topologia, ADR-013). ``build_provider_pool`` lo
-arma con proveedores por API en orden de prioridad (ADR-028): el principal
-primero y el respaldo despues. Ninguno de los dos instancia clientes HTTP:
-los reciben ya construidos (eso es responsabilidad del startup, M8), asi el
-pool es testeable con ``FakeLlmClient``.
+``build_provider_pool`` arma el pool con los proveedores en orden de prioridad: el
+principal primero y el respaldo despues. No instancia clientes HTTP: los recibe ya
+construidos (eso es responsabilidad de la factory), asi el pool es testeable con
+``FakeLlmClient``.
 """
 
 from __future__ import annotations
@@ -25,7 +21,6 @@ from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
 from app.llm.clients.base import LLMClient
-from app.llm.config import LlmRuntimeConfig
 from app.llm.errors import ModelNotServedError
 
 
@@ -39,12 +34,10 @@ class RoutingStrategy(Protocol):
 
 
 class FirstHealthy:
-    """Estrategia placeholder: devuelve el primer candidato.
+    """Estrategia por default: devuelve el primer candidato.
 
     Asume que el pool ya entrega los candidatos en orden de preferencia
-    (el principal antes que el respaldo). ``LeastQueueDepth`` es el
-    sucesor para escalar a N instancias por modelo (ADR-009, plan §4); no
-    se implementa hasta que haga falta.
+    (el principal antes que el respaldo).
     """
 
     def pick(self, candidates: list[LLMClient]) -> LLMClient:
@@ -89,28 +82,6 @@ class ClientPool:
             aclose = getattr(client, "aclose", None)
             if aclose is not None:
                 await aclose()
-
-
-def build_pool(
-    config: LlmRuntimeConfig,
-    clients_by_base_url: dict[str, LLMClient],
-) -> ClientPool:
-    """Arma el ``ClientPool`` desde ``config.serving_endpoints`` (ADR-013).
-
-    La lista ``LLM_SERVING`` describe la topologia: cada entrada es un proceso
-    de inferencia (Ollama en 16GB / vLLM en 24GB+, ADR-014) — un ``base_url`` +
-    los served_names que sirve. Ya no hay enum: N entradas = N procesos; varias
-    entradas con el mismo served_name = N instancias del mismo modelo (escalado,
-    ADR-009 §4).
-
-    Los clientes ya vienen construidos en ``clients_by_base_url`` (keyed por
-    base_url); este helper solo los ordena segun la lista. El orden importa: es
-    el orden de preferencia (primero = principal, siguientes = respaldo).
-    Levanta ``KeyError`` si falta un cliente para una base_url declarada en
-    ``serving_endpoints`` (config incoherente: fail-fast en el arranque).
-    """
-    clients = [clients_by_base_url[ep.base_url] for ep in config.serving_endpoints]
-    return ClientPool(clients, FirstHealthy())
 
 
 def build_provider_pool(clients: Sequence[LLMClient]) -> ClientPool:

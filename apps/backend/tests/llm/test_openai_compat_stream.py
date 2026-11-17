@@ -1,11 +1,11 @@
 """Streaming de ``OpenAICompatClient`` con ``httpx.MockTransport`` (sin red).
 
-Porta los casos de streaming de ``test_vllm_client.py`` y agrega los del proveedor por
-API: nombres de tools partidos entre deltas, razonamiento por canal e inline (con el
-tag partido, y un ``<think>`` literal a mitad del texto), lo retenido que sale al
-cerrar, los status de error con el body leído
-(el contexto excedido también se detecta en streaming), un evento de error a mitad del
-stream y un corte de red con el stream empezado.
+Cubre el texto y el payload (con el ``reasoning_effort`` que pide ``thinking``, igual
+que en ``complete``), los nombres de tools partidos entre deltas, el razonamiento por
+canal e inline (con el tag partido, y un ``<think>`` literal a mitad del texto), lo
+retenido que sale al cerrar, los status de error con el body leído (el contexto
+excedido también se detecta en streaming), un evento de error a mitad del stream y un
+corte de red con el stream empezado.
 """
 
 from __future__ import annotations
@@ -110,6 +110,30 @@ async def test_stream_text_chunks() -> None:
     assert captured["payload"]["stream"] is True
     assert captured["payload"]["model"] == _MODEL_ID
     assert captured["request"].headers["Authorization"] == f"Bearer {_API_KEY}"
+
+
+@pytest.mark.parametrize(
+    ("thinking", "expected"),
+    [(True, "medium"), (False, "none"), (None, None)],
+)
+async def test_stream_sends_reasoning_effort_for_thinking(
+    thinking: bool | None, expected: str | None
+) -> None:
+    """``stream`` hila ``thinking`` como ``complete``: el ``reasoning_effort`` del proveedor."""
+    captured: dict[str, Any] = {}
+    body = _sse(_delta("stop", content="ok"), "[DONE]")
+    client = OpenAICompatClient(
+        name="principal",
+        base_url=_BASE_URL,
+        api_key=SecretStr(_API_KEY),
+        model_map={_ALIAS: _MODEL_ID},
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(_serving(body, captured))),
+        reasoning_effort_on="medium",
+        reasoning_effort_off="none",
+    )
+    await _collect(client, thinking=thinking)
+    assert captured["payload"].get("reasoning_effort") == expected
+    assert ("reasoning_effort" in captured["payload"]) is (expected is not None)
 
 
 async def test_stream_ignores_non_data_lines_and_stops_at_done() -> None:

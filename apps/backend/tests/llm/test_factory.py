@@ -132,7 +132,7 @@ def _config() -> LlmRuntimeConfig:
             tone="neutro",
         )
     }
-    return LlmRuntimeConfig(serving_endpoints=[], serving=serving, models=models, modes=modes)
+    return LlmRuntimeConfig(serving=serving, models=models, modes=modes)
 
 
 def _provider_clients(client: object) -> list[OpenAICompatClient]:
