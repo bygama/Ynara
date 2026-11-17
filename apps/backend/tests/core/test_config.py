@@ -33,6 +33,14 @@ _LLM_API: dict[str, object] = {
     "LLM_PROVIDERS": json.dumps([_PROVIDER]),
     "llm_api_keys": {"principal": "sk-test-principal-0123"},
 }
+# Embeddings por API listos para production (ADR-028 D4): URL base y credencial; el
+# modelo queda en su default.
+_EMBEDDING_KEY = "sk-test-embeddings-4321"
+_EMBEDDING_API: dict[str, object] = {
+    "EMBEDDING_BACKEND": "api",
+    "EMBEDDING_BASE_URL": "https://api.embeddings.test/v1",
+    "EMBEDDING_API_KEY": _EMBEDDING_KEY,
+}
 
 
 def test_dev_allows_weak_secret() -> None:
@@ -59,6 +67,7 @@ def test_prod_accepts_strong_secret() -> None:
         cors_origins=["https://app.ynara.com"],
         MEMORY_ENCRYPTION_MASTER_KEY="k" * 44,
         **_LLM_API,
+        **_EMBEDDING_API,
     )
     assert s.environment == "production"
 
@@ -68,13 +77,15 @@ def test_prod_accepts_strong_secret() -> None:
 # ---------------------------------------------------------------------------
 
 # Config "limpia" de prod reutilizable: master key seteada + CORS de dominio real +
-# inferencia por API. Los tests sobreescriben SOLO el campo que quieren romper.
+# inferencia y embeddings por API. Los tests sobreescriben SOLO el campo que quieren
+# romper.
 _PROD_CLEAN: dict[str, object] = {
     "environment": "production",
     "JWT_SECRET": "x" * 40,
     "MEMORY_ENCRYPTION_MASTER_KEY": "k" * 44,
     "cors_origins": ["https://app.ynara.com"],
     **_LLM_API,
+    **_EMBEDDING_API,
 }
 
 
@@ -469,13 +480,150 @@ def test_api_empty_key_counts_as_missing(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_prod_api_config_from_the_environment_starts(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Como en el arranque real: todo por variables de entorno, sin kwargs del LLM."""
+    """Como en el arranque real: todo por variables de entorno, sin kwargs de la IA."""
     monkeypatch.setenv("LLM_BACKEND", "api")
     monkeypatch.setenv("LLM_PROVIDERS", json.dumps([_PROVIDER, _SECOND_PROVIDER]))
     monkeypatch.setenv("LLM_API_KEY_PRINCIPAL", "sk-env-principal")
     monkeypatch.setenv("LLM_API_KEY_RESPALDO", "sk-env-respaldo")
-    base = {k: v for k, v in _PROD_CLEAN.items() if k not in _LLM_API}
+    monkeypatch.setenv("EMBEDDING_BACKEND", "api")
+    monkeypatch.setenv("EMBEDDING_BASE_URL", "https://api.embeddings.test/v1")
+    monkeypatch.setenv("EMBEDDING_API_KEY", "sk-env-embeddings")
+    base = {k: v for k, v in _PROD_CLEAN.items() if k not in {**_LLM_API, **_EMBEDDING_API}}
     s = _settings(**base)
     assert s.llm_backend == "api"
     assert [p.name for p in s.llm_providers] == ["principal", "respaldo"]
     assert set(s.llm_api_keys) == {"principal", "respaldo"}
+    assert s.embedding_backend == "api"
+    assert s.embedding_api_key.get_secret_value() == "sk-env-embeddings"
+
+
+# ---------------------------------------------------------------------------
+# Embeddings por API (ADR-028 D4): EMBEDDING_* y el fail-fast del arranque
+# ---------------------------------------------------------------------------
+
+
+def test_embeddings_default_to_fake_without_a_provider() -> None:
+    s = _settings()
+    assert s.embedding_backend == "fake"
+    assert s.embedding_base_url == ""
+    assert s.embedding_api_key.get_secret_value() == ""
+    assert s.embedding_model == "BAAI/bge-m3"
+    assert s.embedding_batch_size == 32
+    assert s.embedding_timeout_s == 30.0
+
+
+def test_embeddings_config_is_read_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EMBEDDING_BACKEND", "api")
+    monkeypatch.setenv("EMBEDDING_BASE_URL", "https://api.embeddings.test/v1/")
+    monkeypatch.setenv("EMBEDDING_API_KEY", "  sk-env-embeddings  ")
+    monkeypatch.setenv("EMBEDDING_MODEL", " org/bge-m3 ")
+    monkeypatch.setenv("EMBEDDING_BATCH_SIZE", "8")
+    monkeypatch.setenv("EMBEDDING_TIMEOUT_S", "12.5")
+    s = _settings()
+    assert s.embedding_backend == "api"
+    assert s.embedding_base_url == "https://api.embeddings.test/v1"
+    assert s.embedding_api_key.get_secret_value() == "sk-env-embeddings"
+    assert s.embedding_model == "org/bge-m3"
+    assert s.embedding_batch_size == 8
+    assert s.embedding_timeout_s == 12.5
+
+
+def test_embedding_key_is_masked_in_repr() -> None:
+    s = _settings(**_EMBEDDING_API)
+    assert _EMBEDDING_KEY not in repr(s)
+    assert _EMBEDDING_KEY not in str(s.model_dump())
+
+
+def test_prod_with_fake_embeddings_does_not_start() -> None:
+    """Production con el embedder fake no arranca (ADR-028 D7)."""
+    overrides = {**_PROD_CLEAN, "EMBEDDING_BACKEND": "fake"}
+    with pytest.raises(ValueError, match="EMBEDDING_BACKEND tiene que ser 'api' en production"):
+        _settings(**overrides)
+
+
+def test_prod_without_embedding_backend_does_not_start() -> None:
+    """Sin EMBEDDING_BACKEND el default es fake: production tampoco arranca."""
+    overrides = {k: v for k, v in _PROD_CLEAN.items() if k != "EMBEDDING_BACKEND"}
+    with pytest.raises(ValueError, match="EMBEDDING_BACKEND tiene que ser 'api'"):
+        _settings(**overrides)
+
+
+@pytest.mark.parametrize("environment", ["production", "development"])
+@pytest.mark.parametrize(
+    ("blank", "missing"),
+    [
+        (("EMBEDDING_BASE_URL",), "EMBEDDING_BASE_URL"),
+        (("EMBEDDING_API_KEY",), "EMBEDDING_API_KEY"),
+        (("EMBEDDING_MODEL",), "EMBEDDING_MODEL"),
+        (("EMBEDDING_BASE_URL", "EMBEDDING_API_KEY"), "EMBEDDING_BASE_URL, EMBEDDING_API_KEY"),
+    ],
+)
+def test_embeddings_api_without_its_config_does_not_start(
+    environment: str, blank: tuple[str, ...], missing: str
+) -> None:
+    """``EMBEDDING_BACKEND=api`` sin URL, credencial o modelo no arranca, tampoco en dev."""
+    overrides = {**_PROD_CLEAN, "environment": environment, **dict.fromkeys(blank, "  ")}
+    with pytest.raises(ValueError) as excinfo:
+        _settings(**overrides)
+    assert f"falta la configuración del proveedor de embeddings: {missing} [" in str(excinfo.value)
+
+
+def test_embeddings_missing_config_does_not_leak_secrets() -> None:
+    """El error nombra la variable que falta y no muestra la credencial ni otros secretos."""
+    overrides = {
+        **_EMBEDDING_API,
+        "EMBEDDING_BASE_URL": "",
+        "JWT_SECRET": "jwt-secret-que-no-se-muestra-0123456789",
+    }
+    with pytest.raises(ValueError) as excinfo:
+        _settings(**overrides)
+    rendered = str(excinfo.value)
+    assert "falta la configuración del proveedor de embeddings: EMBEDDING_BASE_URL [" in rendered
+    assert _EMBEDDING_KEY not in rendered
+    assert _EMBEDDING_KEY[-6:] not in rendered
+    assert "jwt-secret-que-no-se-muestra" not in rendered
+
+
+@pytest.mark.parametrize(
+    ("base_url", "message"),
+    [
+        ("http://api.embeddings.test/v1", "tiene que ser https"),
+        ("ftp://api.embeddings.test/v1", "tiene que ser https"),
+        ("https://api.embeddings.test/v1?modelo=x", "no lleva query"),
+    ],
+)
+def test_embedding_base_url_is_validated_at_startup(base_url: str, message: str) -> None:
+    """Se valida aunque el backend sea fake: una URL mal escrita frena el arranque."""
+    with pytest.raises(ValueError, match=message):
+        _settings(EMBEDDING_BASE_URL=base_url)
+
+
+def test_embedding_base_url_with_credentials_is_rejected_without_echoing_it() -> None:
+    url = "https://usuario:clave-secreta@api.embeddings.test/v1"
+    with pytest.raises(ValueError, match="no lleva usuario ni clave") as excinfo:
+        _settings(EMBEDDING_BASE_URL=url)
+    assert "clave-secreta" not in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    ("base_url", "expected"),
+    [("", ""), ("   ", ""), ("http://localhost:8003/v1/", "http://localhost:8003/v1")],
+)
+def test_embedding_base_url_blank_or_on_loopback_boots_with_fake(
+    base_url: str, expected: str
+) -> None:
+    s = _settings(EMBEDDING_BASE_URL=base_url)
+    assert s.embedding_backend == "fake"
+    assert s.embedding_base_url == expected
+
+
+def test_embedding_backend_vllm_is_rejected() -> None:
+    """El embedder local de vLLM ya no existe (ADR-028): un .env viejo no arranca."""
+    with pytest.raises(ValueError, match="EMBEDDING_BACKEND"):
+        _settings(EMBEDDING_BACKEND="vllm")
+
+
+@pytest.mark.parametrize("batch_size", [0, -1, 2049])
+def test_embedding_batch_size_is_bounded(batch_size: int) -> None:
+    with pytest.raises(ValueError, match="EMBEDDING_BATCH_SIZE"):
+        _settings(EMBEDDING_BATCH_SIZE=batch_size)
