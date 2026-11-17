@@ -3,9 +3,9 @@
 Complementa ``test_resilient.py`` con lo que agrega un proveedor por API: la
 credencial rechazada o un 4xx propio del proveedor (sin reintento, pasa al respaldo),
 qué errores abren el breaker y cuáles no, la prueba HALF_OPEN que se cierra con
-cualquier respuesta del proveedor, el corte del presupuesto que cuenta como caída y el
-log del candidato descartado. El 429 y la sobrecarga van en
-``test_resilient_rate_limit.py``.
+cualquier respuesta del proveedor, el corte del presupuesto (caída si agarra un request
+en curso, no si agarra una espera) y el log del candidato descartado. El 429 y la
+sobrecarga van en ``test_resilient_rate_limit.py``.
 
 Mismos dobles que ``test_resilient.py``: ``FakeLlmClient`` programable, ``sleep`` y
 ``clock`` fakes. ``_AdvancingSleep`` además avanza el reloj, así el presupuesto que
@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 
 import pytest
 
@@ -95,7 +96,7 @@ def _resilient(
     clients: list[FakeLlmClient],
     *,
     clock: _Clock | None = None,
-    sleep: _AdvancingSleep | None = None,
+    sleep: Callable[[float], Awaitable[None]] | None = None,
     max_attempts: int = 3,
     total_budget_s: float = 90.0,
     breaker_clock: _Clock | None = None,
@@ -277,7 +278,7 @@ async def test_stream_success_still_closes_breaker() -> None:
     assert _state(resilient, primary) is CircuitState.CLOSED
 
 
-# ---------- el presupuesto que corta un request cuenta como caída ----------
+# ---------- el corte del presupuesto: caída si agarra un request, no una espera ----------
 
 
 class _HangingClient:
@@ -326,6 +327,56 @@ async def test_budget_cut_reopens_half_open_probe() -> None:
     assert _state(resilient, hanging) is CircuitState.OPEN
     breaker_clock.now = 60.0
     assert resilient._breakers[id(hanging)].allow()  # vuelve a admitir una prueba
+
+
+class _HangingSleep:
+    """``sleep`` que no vuelve dentro del presupuesto: el corte agarra la espera."""
+
+    def __init__(self) -> None:
+        self.delays: list[float] = []
+
+    async def __call__(self, delay: float) -> None:
+        self.delays.append(delay)
+        await asyncio.sleep(5.0)
+
+
+@pytest.mark.parametrize(
+    "error", [LlmRateLimitError("HTTP 429", retry_after_s=None), LlmError("respuesta sin choices")]
+)
+async def test_budget_cut_during_a_wait_is_not_an_outage(error: LlmError) -> None:
+    """El proveedor ya contestó (429, respuesta inválida): cortar la espera no lo marca caído."""
+    primary = _fake()
+    primary.queue_error(error)
+    sleep = _HangingSleep()
+    resilient = _resilient([primary], sleep=sleep, total_budget_s=0.05)
+
+    assert (await _complete(resilient)).finish_reason == "degraded"
+    assert len(sleep.delays) == 1  # el corte agarró la espera del backoff
+    assert _state(resilient, primary) is CircuitState.CLOSED
+
+
+async def test_budget_cut_during_a_wait_closes_half_open_probe() -> None:
+    primary = _fake()
+    breaker_clock = _Clock()
+    resilient = _resilient(
+        [primary], sleep=_HangingSleep(), total_budget_s=0.05, breaker_clock=breaker_clock
+    )
+    resilient._breakers[id(primary)].record_failure()  # umbral 1: abre
+    breaker_clock.now = 30.0  # ventana de recovery: entra una prueba
+    primary.queue_error(LlmRateLimitError("HTTP 429", retry_after_s=None))
+
+    assert (await _complete(resilient)).finish_reason == "degraded"
+    assert _state(resilient, primary) is CircuitState.CLOSED  # la prueba no quedó colgada
+
+
+async def test_budget_cut_during_a_wait_after_an_outage_opens_breaker() -> None:
+    """Una caída en un intento anterior no se tapa porque el corte agarre la espera."""
+    primary = _fake()
+    primary.queue_error(LlmTimeoutError("timeout HTTP"))
+    resilient = _resilient([primary], sleep=_HangingSleep(), total_budget_s=0.05)
+
+    assert (await _complete(resilient)).finish_reason == "degraded"
+    assert _state(resilient, primary) is CircuitState.OPEN
 
 
 # ---------- log del candidato descartado ----------

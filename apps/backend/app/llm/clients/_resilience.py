@@ -144,23 +144,34 @@ class BreakerTally:
     (``succeed``), aunque un intento anterior haya sido una caida: el proveedor
     respondio. Si se agota sin resultado o re-lanza un error del request
     (``resolve``), falla si alguno de sus intentos fue una caida
-    (``BREAKER_ERRORS``) o si el presupuesto global lo corto; si no, exito,
-    porque el proveedor respondio (aunque haya sido con un error del request, un
-    rechazo propio del proveedor o un 429). Resolver siempre cierra tambien la
-    prueba HALF_OPEN que ``allow()`` pudo haber abierto: sin eso el candidato
-    quedaria salteado hasta reiniciar el proceso. Vive por llamada (no en el
-    ``ResilientClient``) para que dos ``complete()`` concurrentes no se pisen.
+    (``BREAKER_ERRORS``) o si el presupuesto global corto un request en curso
+    (``sending`` sin respuesta); si no, exito, porque el proveedor respondio
+    (aunque haya sido con un error del request, un rechazo propio del proveedor
+    o un 429). Un corte durante una espera (el ``Retry-After`` de un 429, un
+    backoff) no es una caida: el proveedor ya habia contestado. Resolver siempre
+    cierra tambien la prueba HALF_OPEN que ``allow()`` pudo haber abierto: sin
+    eso el candidato quedaria salteado hasta reiniciar el proceso. Vive por
+    llamada (no en el ``ResilientClient``) para que dos ``complete()``
+    concurrentes no se pisen.
     """
 
     def __init__(self) -> None:
         self._breaker: CircuitBreaker | None = None
         self._failed = False
+        self._in_flight = False
 
     def start(self, breaker: CircuitBreaker) -> None:
         self._breaker = breaker
         self._failed = False
+        self._in_flight = False
+
+    def sending(self) -> None:
+        """Hay un request en curso: si el presupuesto lo corta, cuenta como caida."""
+        self._in_flight = True
 
     def note(self, exc: LlmError) -> None:
+        """El request en curso termino con ``exc``: el proveedor contesto o se cayo."""
+        self._in_flight = False
         if isinstance(exc, BREAKER_ERRORS):
             self._failed = True
 
@@ -173,7 +184,7 @@ class BreakerTally:
         breaker, self._breaker = self._breaker, None
         if breaker is None:
             return
-        if self._failed or cut:
+        if self._failed or (cut and self._in_flight):
             breaker.record_failure()
         else:
             breaker.record_success()
