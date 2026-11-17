@@ -35,7 +35,7 @@ schemas Pydantic.
 |---|---|---|---|
 | `Mode` | `mode_enum` | productividad, estudio, bienestar, vida, memoria | `sessions.mode`, `audit_log.origin_mode` |
 | `MemoryLayer` | `memory_layer_enum` | semantic, episodic, procedural | `audit_log.target_layer` |
-| `LlmModel` | `llm_model_enum` | gemma, qwen | `audit_log.origin_model` |
+| `LlmModel` | `llm_model_enum` | gemma, qwen (nombres de antes de ADR-028: hoy los alias `conversacional` y `agente`) | `audit_log.origin_model` |
 | `AuditOperation` | `audit_operation_enum` | read, write, update, delete | `audit_log.operation` |
 | `TurnRole` | `turn_role_enum` | user, model | `conversation_turns.role` (dueño, único consumidor) |
 | `EventStatus` | `event_status_enum` | confirmed, tentative, cancelled | `calendar_events.status` (dueño, único consumidor) |
@@ -178,7 +178,7 @@ GDPR + worker de retention).
 | `operation` | `audit_operation_enum` NOT NULL | read / write / update / delete |
 | `target_layer` | `memory_layer_enum` NOT NULL | Qué capa de memoria se tocó |
 | `target_id` | UUID | Nullable (para operaciones sobre toda la capa, ej `DELETE /v1/memory`) |
-| `origin_model` | `llm_model_enum` | gemma / qwen, nullable (operación del usuario directo) |
+| `origin_model` | `llm_model_enum` | gemma / qwen, nullable (operación del usuario directo). La consolidación, que corre con el alias `agente`, escribe `qwen`; `gemma` no se escribe porque `conversacional` no escribe memoria. Renombrar los valores es una migración de tabla sagrada (regla #3) |
 | `origin_mode` | `mode_enum` | Modo activo cuando ocurrió, nullable |
 | `origin_tool` | VARCHAR(80) | Nombre de la tool si la operación vino de tool-call, nullable |
 | `record_hash` | VARCHAR(64) NOT NULL | SHA-256 hex del contenido afectado (texto plano antes de cifrar). CHECK constraint `record_hash ~ '^[0-9a-f]{64}$'` enforce el formato a nivel DB |
