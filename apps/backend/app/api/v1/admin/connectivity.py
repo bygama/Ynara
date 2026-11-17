@@ -1,10 +1,9 @@
 """Connectivity del panel (``GET /v1/admin/connectivity``): tailnet + URLs para compartir.
 
 Control plane del operador (no es métrica de negocio): permite compartir las superficies
-de Ynara con otra máquina del tailnet de Tailscale — el panel admin, la app web, la API
-OpenAI-compatible de Ollama y el chat de Open WebUI. El probe de Tailscale es READ-ONLY
-(``tailscale status --json``, exec sin shell ni input del request) y degrada elegante si
-el binario no está. Gate ``CurrentAdmin``.
+de Ynara con otra máquina del tailnet de Tailscale — el panel admin y la app web. El
+probe de Tailscale es READ-ONLY (``tailscale status --json``, exec sin shell ni input
+del request) y degrada elegante si el binario no está. Gate ``CurrentAdmin``.
 
 Sin secretos (regla #4): nunca se ecoa ``str(exc)`` (solo ``type(exc).__name__``);
 ``tailnet_ip``/``hostname`` son la identidad de ESTA máquina en el tailnet del operador,
@@ -103,8 +102,7 @@ async def admin_connectivity(
 
     Read-only, sin DB ni queries de negocio. Si el tailnet está arriba, arma las
     URLs de las superficies consumibles con el IP del tailnet + los puertos de
-    config. Orden: panel admin (playground) y app web primero —lo que un invitado
-    usa— y después la API ``/v1`` OpenAI-compatible y el chat de Open WebUI. Si el
+    config: el panel admin (playground) y la app web, lo que usa un invitado. Si el
     tailnet no está arriba, ``targets`` queda vacío (sin IP no hay URL alcanzable).
     Las URLs se arman aunque el servicio no esté levantado: el panel ofrece el
     destino; corré cada superficie que quieras compartir.
@@ -125,16 +123,6 @@ async def admin_connectivity(
                 label="App web",
                 url=f"http://{ip}:{settings.web_port}",
                 port=settings.web_port,
-            ),
-            ShareTarget(
-                label="API (OpenAI-compatible)",
-                url=f"http://{ip}:{settings.ollama_api_port}/v1",
-                port=settings.ollama_api_port,
-            ),
-            ShareTarget(
-                label="Chat (Open WebUI)",
-                url=f"http://{ip}:{settings.openwebui_port}",
-                port=settings.openwebui_port,
             ),
         ]
 
