@@ -31,6 +31,13 @@ from pydantic import ConfigDict, Field
 from app.enums import Mode
 from app.schemas.base import YnaraBaseModel
 
+# Tope del mensaje del usuario, en caracteres. Espejo de ``CHAT_TEXT_MAX_LENGTH`` en
+# ``packages/shared-schemas/src/chat.ts`` (mismo valor; ADR-028 D9 no lo cambia). No
+# sale de un modelo concreto: el presupuesto de contexto es por alias
+# (``context_tokens`` de ``ynara.config.json[models]``) y el router recorta el
+# historial para que entren el system, este mensaje y la reserva de la respuesta.
+# 4000 caracteres (~1333 tokens con ``estimate_tokens``) entran holgados en el alias
+# mas chico (``conversacional``, 8192).
 CHAT_TEXT_MAX_LENGTH = 4000
 
 
