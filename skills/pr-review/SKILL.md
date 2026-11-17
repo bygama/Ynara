@@ -293,8 +293,8 @@ analizar.
      # Pin de version en package.json vs README/ADR
      grep -rn "5\.0\.0-beta\.31" --include="*.json" --include="*.md"
 
-     # Nombre de modelo en config vs router
-     grep -rn "claude-sonnet-4-6\|gemma-4-26b-a4b" --include="*.py" --include="*.json"
+     # Alias de modelo en config vs código
+     grep -rn '"conversacional"\|"agente"' --include="*.py" --include="*.json" --include="*.ts"
      ```
      Si un valor diverge entre archivos, **siempre es un hallazgo**
      (mínimo menor, mayor si afecta runtime).
