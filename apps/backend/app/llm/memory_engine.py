@@ -23,6 +23,11 @@ Decisiones (ADR-010 + critica adversarial M8, NO re-litigar):
 5. Sin dedup search-based en Ola 2: ops directo sin search-before-add.
    (gateado por embedder/reranker real; FakeReranker no modela similitud).
 6. Ningun dato de usuario a logs (regla #4).
+7. Una falla TRANSITORIA del proveedor (``LlmTransientError``: 429, 5xx, timeout,
+   breaker abierto, respuesta degradada) se PROPAGA, en la extraccion, en el resumen
+   y en el embedder de ``apply_ops``: el worker reintenta el turno entero. Tragarla
+   (devolver ``[]`` o un resumen vacio) perdia el turno como si no hubiera nada que
+   guardar. Lo permanente (credencial, request invalido) se sigue descartando.
 """
 
 from __future__ import annotations
@@ -39,7 +44,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.constants import MODEL_ALIAS_AGENT
 from app.enums import AuditOperation, LlmModel, MemoryLayer, Mode
 from app.llm.clients.base import LLMClient
-from app.llm.schemas import ChatMessage
+from app.llm.errors import LlmTransientError
+from app.llm.schemas import ChatMessage, CompletionResult
 from app.llm.text_utils import THINK_BLOCK_RE
 from app.memory.hashing import compute_record_hash, procedural_hash_payload
 from app.schemas.memory import ProceduralMemoryUpsert, SemanticMemoryCreate
@@ -118,6 +124,9 @@ class MemoryEngine(Protocol):
 
         Returns:
             Lista de ``MemoryOp`` a aplicar. Vacia si no hay nada que guardar.
+
+        Raises:
+            LlmTransientError: falla transitoria del proveedor; el caller reintenta.
         """
         ...
 
@@ -125,9 +134,10 @@ class MemoryEngine(Protocol):
         """Resume un transcript de sesión completo a un ``SessionSummary``.
 
         Lo usa el worker episódico (``consolidate_session``) al cerrar la sesión.
-        El transcript NO se loguea (regla #4). Ante un fallo del LLM o JSON
-        inválido devuelve un ``SessionSummary`` vacío (``summary=""``) sin
-        propagar: el caller NO crea el episodio cuando el summary es vacío.
+        El transcript NO se loguea (regla #4). Ante un error permanente del LLM o
+        JSON inválido devuelve un ``SessionSummary`` vacío (``summary=""``) sin
+        propagar: el caller NO crea el episodio cuando el summary es vacío. Una
+        falla transitoria (``LlmTransientError``) sí se propaga: el caller reintenta.
         """
         ...
 
@@ -329,6 +339,18 @@ def _parse_summary(raw_text: str) -> SessionSummary:
     return SessionSummary(summary=summary.strip(), topics=topics)
 
 
+def _raise_if_degraded(result: CompletionResult) -> None:
+    """Levanta ``LlmTransientError`` si la respuesta es la degradada del cliente.
+
+    Un cliente que degrada (``finish_reason="degraded"``) devuelve un texto de cortesia
+    para el chat, no JSON: parsearlo daria ``[]`` / un resumen vacio y el turno se
+    perderia como si no hubiera nada que guardar. Es una falla transitoria del
+    proveedor y el worker la reintenta.
+    """
+    if result.finish_reason == "degraded":
+        raise LlmTransientError("respuesta degradada")
+
+
 class QwenMemoryEngine:
     """Extractor de memoria usando Qwen via ``LLMClient``.
 
@@ -353,8 +375,9 @@ class QwenMemoryEngine:
         """Extrae ops de memoria del turno via Qwen.
 
         El contenido del turno NO se loguea (regla #4: ningun dato de
-        usuario a logs). Si el LLM falla o devuelve JSON invalido,
-        devuelve [] sin propagar.
+        usuario a logs). Si el LLM falla por algo permanente o devuelve JSON
+        invalido, devuelve [] sin propagar. Una falla transitoria (o una
+        respuesta degradada) levanta ``LlmTransientError``: el worker reintenta.
         """
         user_content = _EXTRACTION_USER_TMPL.format(
             mode=mode,
@@ -376,11 +399,17 @@ class QwenMemoryEngine:
                 thinking=False,
                 max_tokens=512,
             )
-        except Exception:
-            # El worker nunca debe caerse por un fallo del LLM en la extraccion.
-            logger.debug("memory_engine: fallo al llamar a Qwen para extraccion (descartado)")
+        except LlmTransientError:
+            # 429, 5xx, timeout, breaker abierto o cadena agotada: mas tarde puede andar.
+            # Se propaga para que el worker reintente el turno en vez de perderlo.
+            raise
+        except Exception as exc:
+            # Permanente (credencial rechazada, request invalido, modelo no servido) u
+            # otro fallo: reintentar da lo mismo. Regla #4a: solo el tipo, sin contenido.
+            logger.warning("memory_engine: extraccion descartada (%s)", type(exc).__name__)
             return []
 
+        _raise_if_degraded(result)
         return _parse_ops(result.text)
 
     async def summarize(self, *, transcript: str, mode: str) -> SessionSummary:
@@ -391,9 +420,10 @@ class QwenMemoryEngine:
         ``summary`` (a cifrar + embeddear en ``episodic_memory``) + ``topics``.
 
         El contenido del transcript NO se loguea (regla #4: ningun dato de usuario
-        a logs). Si el LLM falla o devuelve JSON invalido, devuelve un
-        ``SessionSummary`` vacio (``summary=""``) sin propagar: el caller NO crea
-        el episodio cuando el summary es vacio.
+        a logs). Si el LLM falla por algo permanente o devuelve JSON invalido,
+        devuelve un ``SessionSummary`` vacio (``summary=""``) sin propagar: el
+        caller NO crea el episodio cuando el summary es vacio. Una falla
+        transitoria (o una respuesta degradada) levanta ``LlmTransientError``.
         """
         user_content = _SUMMARY_USER_TMPL.format(mode=mode, transcript=transcript)
         messages = [
@@ -410,11 +440,15 @@ class QwenMemoryEngine:
                 thinking=False,
                 max_tokens=512,
             )
-        except Exception:
-            # El worker nunca debe caerse por un fallo del LLM en el resumen.
-            logger.debug("memory_engine: fallo al llamar a Qwen para resumen (descartado)")
+        except LlmTransientError:
+            # Mas tarde puede andar: se propaga para que el worker reintente el cierre.
+            raise
+        except Exception as exc:
+            # Permanente u otro fallo: se descarta. Regla #4a: solo el tipo.
+            logger.warning("memory_engine: resumen descartado (%s)", type(exc).__name__)
             return SessionSummary()
 
+        _raise_if_degraded(result)
         return _parse_summary(result.text)
 
 
@@ -477,8 +511,13 @@ async def apply_ops(
     - NOOP            -> skip
 
     Robustez: si target_id/key faltan para una op que los requiere, la op
-    se skippea silenciosamente. Nunca propaga errores individuales de ops
-    (regla: el worker no muere por una op mala).
+    se skippea silenciosamente. No propaga los errores individuales de ops
+    (regla: el worker no muere por una op mala), salvo una falla TRANSITORIA
+    del embedder (``LlmTransientError``: 429, 5xx, timeout): esa se propaga
+    para que el worker reintente el turno entero, porque saltear la op perdia
+    el hecho en silencio. El savepoint ya revirtio esa op, pero las anteriores
+    quedan en la transaccion: quien llama tiene que descartar el intento
+    completo (el worker revierte la transaccion entera antes de reintentar).
 
     NOTA: sin dedup search-based en Ola 2. El search-before-add para evitar
     duplicados semanticos queda gateado por el embedder/reranker real
@@ -554,6 +593,10 @@ async def apply_ops(
                 did_apply = await _apply_single_op(op, **op_kwargs)
             if did_apply:
                 applied += 1
+        except LlmTransientError:
+            # El embedder no respondio (429, 5xx, timeout): el savepoint revirtio ESTA
+            # op y se propaga para reintentar el turno entero (ver el docstring).
+            raise
         except Exception:
             # La op (o su audit) fallo: el savepoint ya revirtio ESTA op. Se loguea
             # SIN contenido (regla #4) a WARNING para que un fallo de auditoria NO
