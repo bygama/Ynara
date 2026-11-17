@@ -248,10 +248,10 @@ async def admin_playground(
     except LlmError as exc:
         raise _map_llm_error(exc) from exc
 
-    # 8) Pensamiento del turno: el canal ``reasoning`` separado (qwen via Ollama lo
-    #    manda en ``message.reasoning``, no inline) tiene precedencia; si el modelo
-    #    en cambio embebió <think>...</think> en el ``content`` (vLLM sin
-    #    reasoning-parser) lo separamos de ahí. El ``text`` queda siempre limpio.
+    # 8) Pensamiento del turno: el canal ``reasoning`` separado (el proveedor lo
+    #    manda en ``reasoning_content`` o ``reasoning``, no inline) tiene precedencia;
+    #    si el modelo en cambio embebió <think>...</think> en el ``content`` (proveedor
+    #    sin canal de reasoning) lo separamos de ahí. El ``text`` queda siempre limpio.
     clean_text, inline_thinking = split_thinking(result.text)
     thinking_text = result.reasoning or inline_thinking
 
@@ -376,9 +376,9 @@ async def admin_playground_stream(
 
         latency_ms = (time.perf_counter() - started) * 1000.0
         tps = completion_tokens / (latency_ms / 1000.0) if latency_ms > 0 else 0.0
-        # Pensamiento del turno: el canal ``reasoning`` acumulado (qwen via Ollama)
-        # tiene precedencia; si en cambio vino embebido como <think>...</think> en el
-        # content (vLLM sin reasoning-parser), lo separamos de ahí.
+        # Pensamiento del turno: el canal ``reasoning`` acumulado tiene precedencia; si
+        # en cambio vino embebido como <think>...</think> en el content (proveedor sin
+        # canal de reasoning), lo separamos de ahí.
         _clean, inline_thinking = split_thinking("".join(parts))
         thinking_text = "".join(reasoning_parts) or inline_thinking
         yield _sse_event(

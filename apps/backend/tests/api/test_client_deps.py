@@ -1,7 +1,7 @@
 """Tests unitarios de las deps get_llm_client / get_embedder / get_reranker.
 
 Verifican que las tres deps lean de ``app.state`` y devuelvan exactamente
-los singletons puestos ahí, sin tocar vLLM ni ningún servicio externo.
+los singletons puestos ahí, sin tocar proveedores de IA ni ningún servicio externo.
 
 Estrategia:
 - Tests con el lifespan real de ``app.main``: ejercita la construcción de

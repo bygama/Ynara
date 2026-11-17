@@ -125,11 +125,10 @@ async def lifespan(app: FastAPI):
     Construye los clientes LLM/embedder/reranker como singletons en
     ``app.state`` para que las deps de FastAPI los inyecten sin recrearlos
     por request.  La ``factory`` decide Fakes (dev/test, default) vs. clientes
-    reales (``ResilientClient(build_pool(VllmClient...))`` en production); los
-    *served_name* salen del config (p.ej. 'qwen', 'gemma4'), NO las keys del
-    dict de modelos. El cliente HTTP habla la API OpenAI-compatible, asi que
-    sirve igual para el motor local de 16GB (Ollama/GGUF, ADR-014) que para
-    vLLM en 24GB+: ``VllmClient``/``ResilientClient`` es agnostico del motor.
+    reales: con ``LLM_BACKEND=api``, un ``ResilientClient`` sobre un
+    ``OpenAICompatClient`` por proveedor de ``LLM_PROVIDERS`` (ADR-028). El
+    código pide los alias de modelo (``conversacional``/``agente``) y cada
+    proveedor los traduce a su id de modelo.
 
     TODO: warm-up del LLM router, etc.
 
@@ -148,10 +147,8 @@ async def lifespan(app: FastAPI):
         database_url=settings.database_url,
     )
 
-    # startup — clientes como singletons. La factory gatea Fakes (dev/test) vs.
-    # ResilientClient/VllmClient reales (production); el resto del stack no cambia.
-    # En 16GB el serving es Ollama/GGUF (ADR-014); el cliente HTTP es el mismo
-    # (API OpenAI-compatible), solo cambia el endpoint al que apunta.
+    # startup — clientes como singletons. La factory gatea Fakes (dev/test) vs. el
+    # ResilientClient sobre los proveedores de IA (api); el resto del stack no cambia.
     cfg = load_llm_config()
     (
         app.state.llm_client,
@@ -167,9 +164,8 @@ async def lifespan(app: FastAPI):
     yield
 
     # shutdown — liberar recursos. El llm_client puede ser un ResilientClient REAL
-    # (un httpx.AsyncClient por endpoint de serving — Ollama en 16GB / vLLM en 24GB+,
-    # ADR-014) en production; aclose() cierra esos connection pools (en dev/test es el
-    # no-op del Fake), evitando fuga de sockets.
+    # (un httpx.AsyncClient por proveedor de IA, ADR-028); aclose() cierra esos
+    # connection pools (en dev/test es el no-op del Fake), evitando fuga de sockets.
     # embedder/reranker reales (VllmEmbeddingClient / VllmReranker) tienen su propio
     # httpx.AsyncClient; se cierran defensivamente vía getattr (los Fakes no tienen
     # aclose, igual que ClientPool.aclose). Redis se cierra siempre.

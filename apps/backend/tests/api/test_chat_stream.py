@@ -71,7 +71,7 @@ def _completion(
     ``reasoning`` (canal separado de razonamiento) es opcional: el ``FakeLlmClient``
     devuelve el ``CompletionResult`` encolado tal cual, asi que encolar uno con
     ``reasoning`` alcanza para ejercitar el evento SSE ``reasoning`` con
-    ``LLM_BACKEND=fake`` (sin Ollama).
+    ``LLM_BACKEND=fake`` (sin proveedor).
     """
     return CompletionResult(
         text=text,

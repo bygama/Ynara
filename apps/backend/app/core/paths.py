@@ -1,6 +1,6 @@
 """Resolución robusta de la ruta de ``ynara.config.json`` (contrato de producto).
 
-``ynara.config.json`` (models / modes / llm.serving + el bloque ``[memory]``) vive
+``ynara.config.json`` (models / modes + el bloque ``[memory]``) vive
 en la raíz del repo en desarrollo, pero la imagen de producción lo copia a otra
 ruta (``/app/ynara.config.json``). Resolver la ruta con un ``parents[N]`` fijo
 asumía el layout del repo y **rompía en el contenedor con ``IndexError``** (el

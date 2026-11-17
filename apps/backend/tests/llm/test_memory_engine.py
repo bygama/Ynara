@@ -353,7 +353,7 @@ async def test_qwen_engine_invalid_layer_skipped() -> None:
 async def test_qwen_engine_llm_failure_returns_empty() -> None:
     """Si el LLM levanta una excepcion, consolidate devuelve [] sin propagar."""
     fake_llm = FakeLlmClient(models=frozenset({"qwen"}))
-    fake_llm.queue_error(RuntimeError("vllm timeout"))
+    fake_llm.queue_error(RuntimeError("timeout del proveedor"))
     engine = QwenMemoryEngine(llm_client=fake_llm, model="qwen")
     ops = await engine.consolidate(user_msg="x", model_response="y", mode="vida")
     assert ops == []
