@@ -1,16 +1,10 @@
 """Normalizador de tool calls en formato OpenAI (M2).
 
-El servidor de inferencia convierte el formato custom de cada modelo
-(``gemma4`` / ``hermes``) a tool calls OpenAI estandar en el response HTTP.
-El cliente HTTP del backend es OpenAI-compatible (sirve igual para Ollama en
-16GB o vLLM en 24GB+, ADR-014), asi que **siempre** ve ``tool_calls`` en
-formato OpenAI sin importar el modelo, y alcanza con UN solo normalizador en
-Python.
-
-El mapping ``tool_parsers`` de ``ynara.config.json`` (``hermes`` /
-``gemma4``) documenta que flag ``--tool-call-parser`` lanzar en el SERVER
-vLLM (infra de 24GB+); **no se usa para parsear en Python**. En Ollama ese
-flag NO aplica: el parsing de tool calls es interno al modelo/servidor.
+Cada proveedor de IA convierte el formato propio de su modelo a tool calls
+OpenAI estandar en el response HTTP. El backend habla la API de Chat
+Completions compatible con OpenAI (ADR-028), asi que **siempre** ve
+``tool_calls`` en formato OpenAI sin importar el modelo, y alcanza con UN solo
+normalizador en Python.
 
 Shape OpenAI esperado en ``message.tool_calls[i]``::
 
@@ -31,7 +25,7 @@ from app.llm.schemas import ToolCall
 
 
 class OpenAIToolCallParser:
-    """Implementa ``ToolCallParser`` para respuestas OpenAI de vLLM."""
+    """Implementa ``ToolCallParser`` para respuestas en formato OpenAI."""
 
     def parse(self, raw_message: dict[str, Any]) -> list[ToolCall]:
         """Normaliza ``message.tool_calls`` a una lista de ``ToolCall``.
@@ -95,7 +89,7 @@ class OpenAIToolCallParser:
 
     @staticmethod
     def _decode_arguments(raw: Any) -> dict[str, Any]:
-        # vLLM manda un string JSON; toleramos un dict ya parseado por
+        # El proveedor manda un string JSON; toleramos un dict ya parseado por
         # robustez, pero nada mas.
         if isinstance(raw, dict):
             return raw

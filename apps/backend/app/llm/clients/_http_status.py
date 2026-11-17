@@ -1,8 +1,9 @@
 """Mapeo compartido de status HTTP a la taxonomia ``LlmError``.
 
-``VllmClient`` (chat) tiene su propio ``_raise_for_status`` con deteccion de
-overflow de contexto; el embedder y el reranker no necesitan esa rama, asi que
-comparten este helper minimo en vez de duplicar el switch en cada cliente.
+El chat tiene su propio mapeo (``raise_for_provider_status`` en
+``providers/_http.py``), con deteccion de overflow de contexto y ``Retry-After``;
+el embedder y el reranker no necesitan esa rama, asi que comparten este helper
+minimo en vez de duplicar el switch en cada cliente.
 
 Regla #4: el detail de la excepcion es una etiqueta fija (``HTTP <status>``),
 NUNCA el body crudo (que podria traer texto del usuario).

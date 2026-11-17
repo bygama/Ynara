@@ -1,11 +1,14 @@
 """Capa LLM de Ynara.
 
-- ``router`` decide qué modelo usar según el modo activo.
+- ``router`` decide qué alias de modelo usar según el modo activo.
 - ``prompts`` contiene los prompt templates por modo.
-- ``tools`` contiene las tools que Qwen puede llamar.
+- ``tools`` contiene las tools que puede llamar el alias ``agente``.
+- ``clients`` habla con los proveedores de IA, solo desde ``clients/providers/``.
 
-Reglas:
-- Gemma 4 12B → modos conversacionales. Solo lee memoria.
-- Qwen 3.5-9B → modos agente. Lee y escribe memoria, llama tools.
-- Ningún dato de usuario sale del perímetro (regla #4 de AGENTS.md).
+Reglas (ADR-028 D3):
+- ``conversacional`` → modos estudio, bienestar y vida. Solo lee memoria.
+- ``agente`` → modos productividad y memoria, y la consolidación. Lee y escribe
+  memoria (la escritura va asíncrona vía Celery) y llama tools.
+- Los datos de usuario salen solo a los proveedores aprobados y solo para la
+  inferencia (regla #4 de AGENTS.md).
 """
