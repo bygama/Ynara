@@ -9,7 +9,8 @@ Tres familias:
   que ese proveedor no acepta (un 4xx sin mapeo propio, como un 404 por un id
   de modelo que no tiene). La credencial y esos rechazos son del proveedor, no
   del request: no se reintenta contra el mismo, pero el respaldo de la lista
-  puede aceptarlo (ver ``ResilientClient``).
+  puede aceptarlo (ver ``ResilientClient``). Tambien un embedding con otra
+  dimension que la de la memoria (``EmbeddingDimensionError``).
 - **Semanticos**: fallas de parseo / ejecucion de tools y de recuperacion
   de memoria.
 
@@ -134,6 +135,31 @@ class LlmProviderRejectedError(LlmError):
     """
 
     message = "request rechazado por el proveedor LLM"
+
+
+class EmbeddingDimensionError(LlmError):
+    """El proveedor devolvio un embedding con otra dimension que ``EMBEDDING_DIM``.
+
+    Las columnas de embeddings de la memoria son ``vector(1024)``: un vector de otra
+    dimension no se puede guardar ni comparar. El cliente no lo recorta ni lo rellena,
+    porque ya no representaria al texto. Suele ser de configuracion (un
+    ``EMBEDDING_MODEL`` que no da esa dimension), asi que es permanente: reintentar con
+    el mismo modelo da lo mismo. ``expected`` y ``received`` son las dos dimensiones.
+    Regla #4a: el detail lleva solo esos numeros, nunca el vector ni el texto.
+    """
+
+    message = "dimension de embedding inesperada"
+
+    def __init__(
+        self,
+        detail: str | None = None,
+        *,
+        expected: int | None = None,
+        received: int | None = None,
+    ) -> None:
+        super().__init__(detail)
+        self.expected = expected
+        self.received = received
 
 
 # ---------- Semanticos ----------
