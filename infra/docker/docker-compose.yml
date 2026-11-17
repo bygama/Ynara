@@ -38,9 +38,15 @@ services:
     image: ${DOCKER_REGISTRY}/ynara-backend:latest
     container_name: ynara-worker
     restart: unless-stopped
+    # Procesos del worker: CELERY_CONCURRENCY, 2 por default. Compose lo interpola
+    # del entorno donde corre `docker compose` o del .env junto a este archivo,
+    # como REDIS_PASSWORD: no lo lee del env_file del servicio. El techo lo pone la
+    # cuota del proveedor de IA, no una GPU: cada proceso consolida en paralelo y
+    # le pega al proveedor (agente y embeddings). Por encima de la cuota llegan
+    # 429, que las tasks de consolidación reintentan con backoff.
     command: >
       uv run celery -A app.workers.celery_app worker
-      --loglevel=info --concurrency=2
+      --loglevel=info --concurrency=${CELERY_CONCURRENCY:-2}
     env_file:
       - ../../apps/backend/.env
     depends_on:
@@ -67,8 +73,9 @@ services:
     restart: unless-stopped
     # Scheduler de los jobs periódicos definidos en celery_app.beat_schedule
     # (decay_procedural, purge_audit_log, purge_episodic_memory). Va en un
-    # servicio APARTE del worker a propósito: con --concurrency=2, meter --beat
-    # dentro del worker emitiría cada job una vez por proceso (jobs duplicados).
+    # servicio APARTE del worker a propósito: con más de un proceso
+    # (CELERY_CONCURRENCY), meter --beat dentro del worker emitiría cada job una
+    # vez por proceso (jobs duplicados).
     # Un único proceso beat garantiza una sola emisión por schedule. SIN beat,
     # los tres jobs no corren nunca: episodios vencidos no se purgan, el
     # procedural no decae (ADR-007 D1) y el audit_log crece sin límite.
