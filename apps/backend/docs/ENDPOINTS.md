@@ -147,7 +147,8 @@ Dos endpoints: uno no-streaming (JSON) y uno SSE. Contrato + justificación en
   - Request: `{ text: string (límite ~4000 chars), mode: Mode, session_id?: UUID }`
   - Response: `{ text: string, actions: Action[], session_id: UUID, finish_reason: string | null }`
     - `actions` **siempre presente** (lista vacía si no hubo acciones; los modos
-      Gemma nunca ejecutan tools). El Pydantic es `actions = []`, no opcional.
+      del alias `conversacional` nunca ejecutan tools). El Pydantic es
+      `actions = []`, no opcional.
     - `Action = { id, name, arguments, result }` — `result` es el resultado
       ejecutado de la tool (o `{ error: { code, message } }`).
     - **Tools de agente REALES (ADR-022)**: en `productividad`, las tools
@@ -155,8 +156,8 @@ Dos endpoints: uno no-streaming (JSON) y uno SSE. Contrato + justificación en
       y ESCRIBEN de verdad (`calendar_events` / `tasks`), atómicas con el commit del
       turno; su `result` trae el recurso creado (`id` presente), NO `not_wired`. El
       modelo puede confirmar la acción en `text` ("listo, te agendé..."). `reminder.*`
-      sigue siendo stub `not_wired` (sin backend real). Los modos gemma
-      (`tools_enabled=[]`) no exponen ni ejecutan tools.
+      sigue siendo stub `not_wired` (sin backend real). Los modos del alias
+      `conversacional` (`tools_enabled=[]`) no exponen ni ejecutan tools.
 - **POST** `/v1/chat/stream` (SSE, `text/event-stream`):
   - Mismo request. Eventos con nombre: `token` `{ delta }`, `done`
     `{ session_id, actions, finish_reason }`, `error` `{ code, message }`.
@@ -433,7 +434,7 @@ CRUD del dominio **TAREAS** (Fase D1, espejo de Agenda/ADR-023). El dashboard "H
 de la web ya consume estos endpoints (`packages/core/src/features/today/api.ts`); el
 contrato del wire vive en `packages/shared-schemas/src/today.ts` y lo espejan los
 schemas `app/schemas/task.py` ("Pydantic gana, Zod sigue"). El **alta la hace el
-agente** qwen por detrás de la conversación (`task.create_task`, ver TOOLS.md), no un
+alias `agente`** por detrás de la conversación (`task.create_task`, ver TOOLS.md), no un
 `POST` manual; por eso el CRUD HTTP expone solo `GET` (listar) + `PATCH` (togglear
 estado). Contrato + decisiones en el docstring de
 [`../app/api/v1/tasks.py`](../app/api/v1/tasks.py).

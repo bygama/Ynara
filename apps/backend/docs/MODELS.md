@@ -57,8 +57,9 @@ sin el gate extra.)
 ### 🔴 semantic_memory
 
 Hechos persistentes sobre el usuario (preferencias estables, datos
-biográficos, contexto duradero). **Solo Qwen escribe** (regla del
-producto). Lectura por ambos modelos vía `search()` por similitud.
+biográficos, contexto duradero). **Solo el alias `agente` escribe**
+(regla del producto). Lectura por los dos alias vía `search()` por
+similitud.
 
 | Columna | Tipo | Notas |
 |---|---|---|
@@ -77,7 +78,8 @@ producto). Lectura por ambos modelos vía `search()` por similitud.
 ### 🔴 episodic_memory
 
 Resúmenes de sesiones pasadas. Se generan **vía Celery al cerrar la
-sesión**: Qwen toma los mensajes de la sesión + embedding del resumen.
+sesión**: el alias `agente` toma los mensajes de la sesión + embedding
+del resumen.
 1-a-1 con `sessions` (constraint UNIQUE sobre `session_id`).
 
 | Columna | Tipo | Notas |
@@ -335,7 +337,7 @@ array de texto y se devuelve tal cual.
 
 **OPERATIVA**, no sagrada (sin 🔴): tareas/prioridades del día del usuario que el
 dashboard "Hoy" de la web consume vía `/v1/tasks` (dominio TAREAS, Fase D1, espejo de
-Agenda/ADR-023). El **alta la hace el agente** qwen por detrás de la conversación
+Agenda/ADR-023). El **alta la hace el alias `agente`** por detrás de la conversación
 (`task.create_task`, igual que agenda eventos), no un `POST` manual; el CRUD HTTP
 expone solo `GET` (listar) + `PATCH` (togglear estado). El shape espeja
 `packages/shared-schemas/src/today.ts` (`TaskSchema`: "Pydantic gana, Zod sigue").
