@@ -37,6 +37,17 @@ def to_api_tool_name(name: str) -> str:
     return api_name
 
 
+def to_api_history_tool_name(name: str) -> str:
+    """Nombre de una tool del historial -> nombre para la API, sin validar.
+
+    El historial repite los nombres que mandó el propio modelo, también uno inventado
+    que no cumpla la forma de la API: se le devuelve mapeado tal cual, en vez de cortar
+    el turno con un error local. Las definiciones de tools sí se validan
+    (``to_api_tool_name``).
+    """
+    return name.replace(".", _API_SEPARATOR)
+
+
 def from_api_tool_name(api_name: str) -> str:
     """Nombre de la API -> nombre interno de la tool (``__`` -> ``.``).
 

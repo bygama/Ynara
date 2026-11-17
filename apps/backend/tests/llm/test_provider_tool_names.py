@@ -19,6 +19,7 @@ from app.llm.clients.parsers import OpenAIToolCallParser
 from app.llm.clients.providers._tool_names import (
     ToolNameStreamDecoder,
     from_api_tool_name,
+    to_api_history_tool_name,
     to_api_tool_name,
 )
 from app.llm.errors import LlmBadRequestError
@@ -81,6 +82,18 @@ def test_unmappable_name_is_bad_request(name: str) -> None:
 def test_underscore_after_dot_round_trips(name: str) -> None:
     """Un ``_`` después del ``.`` (o puntos seguidos) sí se revierte sin ambigüedad."""
     assert from_api_tool_name(to_api_tool_name(name)) == name
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("calendar.create_event", "calendar__create_event"),
+        ("buscar clima", "buscar clima"),  # inventado por el modelo: no se valida
+        ("memory__search", "memory__search"),
+    ],
+)
+def test_history_name_is_mapped_without_validation(name: str, expected: str) -> None:
+    assert to_api_history_tool_name(name) == expected
 
 
 def test_every_tool_in_the_code_round_trips() -> None:
