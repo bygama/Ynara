@@ -4,6 +4,8 @@
 - ``raise_for_provider_status`` mapea un status >= 400 a la taxonomía ``LlmError``.
 - ``parse_retry_after`` lee el header ``Retry-After`` (segundos o fecha HTTP).
 - ``transport_errors`` convierte los errores de red de ``httpx`` en ``LlmError``.
+- ``validated_base_url`` valida la URL base de un proveedor (``https``, salvo contra la
+  propia máquina) al construir el cliente.
 
 Sirven para cualquier cliente de este paquete (chat o embeddings): un proveedor
 responde igual a los dos ante una credencial inválida, un límite de tasa o una caída.
@@ -17,12 +19,14 @@ trae la URL del proveedor. El body solo se mira para elegir el TIPO de excepció
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import math
 from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
+from urllib.parse import urlsplit
 
 import httpx
 from pydantic import SecretStr
@@ -54,6 +58,8 @@ _CONTEXT_OVERFLOW_SIGNATURES: tuple[str, ...] = (
 # 4xx que piden repetir el mismo request más tarde (408 Request Timeout, 425 Too Early):
 # quedan como ``LlmError`` genérico, que el ``ResilientClient`` reintenta con backoff.
 _RETRYABLE_CLIENT_STATUSES = frozenset({httpx.codes.REQUEST_TIMEOUT, httpx.codes.TOO_EARLY})
+
+_INVALID_BASE_URL = "la URL base del proveedor no es válida"
 
 
 class BearerAuth(httpx.Auth):
@@ -159,6 +165,41 @@ def transport_errors() -> Iterator[None]:
         raise LlmUnavailableError("transport error") from exc
 
 
+def validated_base_url(base_url: str) -> str:
+    """La URL base de un proveedor sin espacios ni la ``/`` final; ``ValueError`` si no sirve.
+
+    Exige ``https`` con un host. ``http`` se acepta solo contra la propia máquina
+    (``localhost``, ``*.localhost`` o una IP de loopback), para un servidor compatible
+    corriendo en local. La URL no lleva usuario ni clave (la credencial va aparte, en
+    ``BearerAuth``) ni query o fragmento, porque el cliente le agrega el path atrás.
+    Los mensajes de error son fijos y nunca repiten la URL.
+    """
+    url = base_url.strip().rstrip("/")
+    if not url:
+        raise ValueError("el proveedor necesita una URL base")
+    if any(char.isspace() for char in url):
+        raise ValueError(_INVALID_BASE_URL)
+    try:
+        parts = urlsplit(url)
+        _ = parts.port  # un puerto que no es número o está fuera de rango levanta acá
+        httpx.URL(url)
+    except (httpx.InvalidURL, ValueError):
+        # ``from None``: el mensaje de la excepción original puede repetir la URL.
+        raise ValueError(_INVALID_BASE_URL) from None
+    if parts.scheme not in ("http", "https"):
+        raise ValueError("la URL base del proveedor tiene que ser https")
+    host = parts.hostname
+    if not host:
+        raise ValueError("la URL base del proveedor necesita un host")
+    if "@" in parts.netloc:
+        raise ValueError("la URL base del proveedor no lleva usuario ni clave")
+    if "?" in url or "#" in url:
+        raise ValueError("la URL base del proveedor no lleva query ni fragmento")
+    if parts.scheme == "http" and not _is_loopback_host(host):
+        raise ValueError("la URL base del proveedor tiene que ser https (http solo en local)")
+    return url
+
+
 # ---------- helpers internos ----------
 
 
@@ -189,6 +230,16 @@ def _error_code(body_text: str) -> str | None:
     error = body.get("error") if isinstance(body, dict) else None
     code = error.get("code") if isinstance(error, dict) else None
     return code if isinstance(code, str) else None
+
+
+def _is_loopback_host(host: str) -> bool:
+    """``True`` si ``host`` es la propia máquina (``localhost`` o una IP de loopback)."""
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def _seconds_until(http_date: str, now: datetime) -> float | None:
