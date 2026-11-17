@@ -88,7 +88,7 @@ async def _client(
 async def test_chat_persists_two_encrypted_turns(db_session: AsyncSession) -> None:
     """Un turno OK persiste user(seq=0) + model(seq=1) cifrados en la misma sesion."""
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_result(_completion(text="hola, todo bien?", model_name="gemma4"))
 
     client = await _client(db_session, llm_client=fake)
@@ -146,7 +146,7 @@ async def test_chat_multi_turn_same_session_increments_seq(db_session: AsyncSess
     monotonica, los roles alternan user/model y los 4 turnos quedan persistidos.
     """
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_result(_completion(text="primera respuesta", model_name="gemma4"))
     fake.queue_result(_completion(text="segunda respuesta", model_name="gemma4"))
 
@@ -203,7 +203,7 @@ async def test_chat_multi_turn_same_session_increments_seq(db_session: AsyncSess
 async def test_chat_degraded_persists_no_turns(db_session: AsyncSession) -> None:
     """Un turno con finish_reason='degraded' NO persiste turnos (ni consolida)."""
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(served_models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"qwen"}))
     fake.queue_result(
         _completion(text="respuesta degradada", finish_reason="degraded", model_name="qwen")
     )

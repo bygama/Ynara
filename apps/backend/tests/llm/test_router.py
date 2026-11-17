@@ -110,7 +110,7 @@ async def test_route_uses_context_budget_for_render(monkeypatch: pytest.MonkeyPa
     from app.llm.context import MemoryContext, context_budget
     from app.llm.tools.registry import default_registry
 
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_result(_result(text="ok", finish_reason="stop", model_name="gemma4"))
 
     empty_ctx = MemoryContext(
@@ -133,7 +133,7 @@ async def test_route_uses_context_budget_for_render(monkeypatch: pytest.MonkeyPa
 
     cfg = _cfg()
     model_cfg = cfg.model_for_mode(Mode.VIDA.value)
-    max_model_len = cfg.serving.max_model_len[model_cfg.key]
+    context_tokens = cfg.serving.max_model_len[model_cfg.key]
     from datetime import datetime
     from zoneinfo import ZoneInfo
 
@@ -152,7 +152,7 @@ async def test_route_uses_context_budget_for_render(monkeypatch: pytest.MonkeyPa
         f"{build_now_preamble(fixed, tz_label='America/Argentina/Buenos_Aires')}"
         f"\n\n{load_prompt(Mode.VIDA)}"
     )
-    expected = context_budget(max_model_len=max_model_len, system_prompt=base_system)
+    expected = context_budget(context_tokens=context_tokens, system_prompt=base_system)
 
     try:
         await route(
@@ -195,7 +195,7 @@ async def test_route_conversational_mode_disables_thinking() -> None:
 
     El conversacional NUNCA piensa (Gemma -> content vacio con thinking ON).
     """
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_result(_result(text="hola", finish_reason="stop", model_name="gemma4"))
 
     from app.llm import router as router_mod
@@ -233,7 +233,7 @@ async def test_route_agent_mode_enables_thinking() -> None:
 
     El agente piensa para planificar tool calls (Qwen).
     """
-    fake = FakeLlmClient(served_models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"qwen"}))
     fake.queue_result(_result(text="listo", finish_reason="stop", model_name="qwen"))
 
     from app.llm import router as router_mod
@@ -285,7 +285,7 @@ async def test_route_injects_datetime_preamble_in_system() -> None:
     from app.llm.context import MemoryContext
     from app.llm.tools.registry import default_registry
 
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_result(_result(text="ok", finish_reason="stop", model_name="gemma4"))
 
     empty_ctx = MemoryContext(
@@ -341,7 +341,7 @@ async def test_route_splices_history_between_system_and_user() -> None:
     from app.llm.schemas import ChatMessage
     from app.llm.tools.registry import default_registry
 
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_result(_result(text="Te llamás Mateo.", finish_reason="stop", model_name="gemma4"))
 
     empty_ctx = MemoryContext(
@@ -397,7 +397,7 @@ async def test_overflow_returns_fallback_not_exception() -> None:
     """
     from app.llm.router import _FALLBACK_TEXT
 
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_error(LlmContextOverflowError("contexto excedido"))
 
     from app.llm import router as router_mod
@@ -437,7 +437,7 @@ async def test_bad_request_error_returns_fallback() -> None:
     """Un LlmBadRequestError generico (no overflow) tambien cae al fallback."""
     from app.llm.router import _FALLBACK_TEXT
 
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_error(LlmBadRequestError("request invalido"))
 
     from app.llm import router as router_mod
@@ -489,7 +489,7 @@ async def test_transient_error_returns_fallback(transient_exc: LlmError) -> None
     """
     from app.llm.router import _FALLBACK_TEXT
 
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_error(transient_exc)
 
     from app.llm import router as router_mod
@@ -532,7 +532,7 @@ async def test_model_not_served_propagates() -> None:
     que el usuario veria como respuesta normal. ``route()`` lo RE-LANZA (a diferencia
     del resto de la familia ``LlmError``, que degrada).
     """
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_error(ModelNotServedError("qwen"))
 
     from app.llm import router as router_mod
@@ -573,7 +573,7 @@ async def test_semantic_tool_parsing_error_degrades() -> None:
     """
     from app.llm.router import _FALLBACK_TEXT
 
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_error(ToolParsingError("hermes"))
 
     from app.llm import router as router_mod
@@ -608,7 +608,7 @@ async def test_semantic_tool_parsing_error_degrades() -> None:
 @pytest.mark.asyncio
 async def test_session_id_generated_when_none() -> None:
     """Si request.session_id is None, route genera un str(uuid4()) opaco."""
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_result(_result(text="hola!", finish_reason="stop", model_name="gemma4"))
 
     from app.llm import router as router_mod
@@ -646,7 +646,7 @@ async def test_session_id_generated_when_none() -> None:
 @pytest.mark.asyncio
 async def test_session_id_preserved_when_provided() -> None:
     """Si request.session_id viene, route lo respeta tal cual (opaco)."""
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_result(_result(text="ok", finish_reason="stop", model_name="gemma4"))
 
     from app.llm import router as router_mod
@@ -715,7 +715,7 @@ async def test_integration_gemma_reads_memory_via_prompt(db_session: Any) -> Non
     proc_store = ProceduralMemoryStore(db_session, user.id)
     await proc_store.upsert(ProceduralMemoryUpsert(key="pref.idioma", value={"idioma": "es"}))
 
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_result(_result(text="Hola, todo bien?", finish_reason="stop", model_name="gemma4"))
 
     resp = await route(
@@ -765,7 +765,7 @@ async def test_integration_qwen_tool_loop_memory_search(db_session: Any) -> None
     sem_store = SemanticMemoryStore(db_session, user.id, FakeEmbeddingClient(), FakeReranker())
     await sem_store.add(SemanticMemoryCreate(content="prefiere reuniones cortas"))
 
-    fake = FakeLlmClient(served_models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"qwen"}))
     tc = ToolCall(id="tc-1", name="memory.search", arguments={"query": "reuniones"})
     fake.queue_result(
         _result(text="", finish_reason="tool_calls", tool_calls=[tc], model_name="qwen")
@@ -827,7 +827,7 @@ async def test_integration_qwen_served_name_and_context(db_session: Any) -> None
     sem_store = SemanticMemoryStore(db_session, user.id, FakeEmbeddingClient(), FakeReranker())
     await sem_store.add(SemanticMemoryCreate(content="trabaja en inteligencia artificial"))
 
-    fake = FakeLlmClient(served_models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"qwen"}))
     fake.queue_result(_result(text="listo", finish_reason="stop", model_name="qwen"))
 
     await route(
@@ -855,7 +855,7 @@ async def test_integration_overflow_returns_fallback(db_session: Any) -> None:
 
     user = await _seed_user(db_session)
 
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_error(LlmContextOverflowError("contexto excedido"))
 
     resp = await route(
@@ -880,7 +880,7 @@ async def test_integration_user_no_memory_no_context_block(db_session: Any) -> N
     (no hay 'Contexto de memoria'), pero el flujo responde igual."""
     user = await _seed_user(db_session)
 
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_result(_result(text="hola nuevo!", finish_reason="stop", model_name="gemma4"))
 
     resp = await route(
@@ -968,7 +968,7 @@ async def test_route_does_not_enqueue_under_any_mode(monkeypatch: pytest.MonkeyP
     original = router_mod.build_memory_context
     router_mod.build_memory_context = lambda **_kw: empty_ctx
 
-    fake = FakeLlmClient(served_models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"qwen"}))
     fake.queue_result(_result(text="listo qwen", finish_reason="stop", model_name="qwen"))
 
     try:

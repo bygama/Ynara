@@ -64,15 +64,15 @@ def estimate_tokens(text: str) -> int:
     return max(1, len(text) // 3)
 
 
-def context_budget(*, max_model_len: int, system_prompt: str) -> int:
+def context_budget(*, context_tokens: int, system_prompt: str) -> int:
     """Presupuesto de tokens para el bloque de contexto de memoria.
 
     Funcion publica UNICA que centraliza la formula del presupuesto: el router
-    la consume (no reimplementa la cuenta). Descuenta de ``max_model_len`` la
+    la consume (no reimplementa la cuenta). Descuenta de ``context_tokens`` la
     estimacion del system prompt base (``estimate_tokens``) y el
     ``COMPLETION_RESERVE_TOKENS`` (tokens reservados para la generacion). El
-    resultado nunca es negativo: en el peor caso (prompt enorme + ventana chica,
-    p.ej. Gemma 4096) devuelve 0.
+    resultado nunca es negativo: en el peor caso (prompt enorme + ventana chica)
+    devuelve 0.
 
     Aun con budget 0, ``render_context_block`` NO recorta a cero: su recorte vive
     en ``_truncate_to_budget``, cuyos ``while`` solo bajan hasta un limite INFERIOR
@@ -87,21 +87,20 @@ def context_budget(*, max_model_len: int, system_prompt: str) -> int:
     con el truncado de ``render_context_block``.
 
     Args:
-        max_model_len: Ventana de contexto efectiva del modelo (de
-            ``serving.max_model_len[model_key]``).
+        context_tokens: Presupuesto de contexto del modelo, en tokens.
         system_prompt: System prompt base del modo (antes de inyectar memoria).
 
     Returns:
         Presupuesto en tokens (>= 0) para el bloque de contexto de memoria.
     """
     reserved = estimate_tokens(system_prompt) + COMPLETION_RESERVE_TOKENS
-    return max(0, max_model_len - reserved)
+    return max(0, context_tokens - reserved)
 
 
 def trim_history_to_budget(
     history: list[ChatMessage],
     *,
-    max_model_len: int,
+    context_tokens: int,
     system_prompt: str,
     current_user: str,
 ) -> list[ChatMessage]:
@@ -109,7 +108,7 @@ def trim_history_to_budget(
 
     El router arma ``messages = [system, *history, user_actual]``. El historial reciente
     es lo que le da continuidad a la conversación (sin esto el modelo trata cada turno
-    como una persona nueva), pero NO puede desbordar ``max_model_len``. Se reserva el
+    como una persona nueva), pero NO puede desbordar ``context_tokens``. Se reserva el
     espacio del system final (que ya incluye preámbulo de fecha + bloque de memoria), el
     mensaje actual del usuario y la ``COMPLETION_RESERVE_TOKENS`` para la generación; lo
     que queda es el presupuesto del historial.
@@ -132,7 +131,7 @@ def trim_history_to_budget(
 
     Args:
         history: Turnos previos como ``ChatMessage`` (user/assistant), en orden cronológico.
-        max_model_len: Ventana de contexto efectiva del modelo del modo.
+        context_tokens: Presupuesto de contexto del modelo del modo, en tokens.
         system_prompt: System final (preámbulo + prompt del modo + bloque de memoria).
         current_user: Texto del mensaje actual del usuario (entra después del historial).
 
@@ -142,7 +141,7 @@ def trim_history_to_budget(
     reserved = (
         estimate_tokens(system_prompt) + estimate_tokens(current_user) + COMPLETION_RESERVE_TOKENS
     )
-    budget = max(0, max_model_len - reserved)
+    budget = max(0, context_tokens - reserved)
     if budget == 0 or not history:
         return []
 

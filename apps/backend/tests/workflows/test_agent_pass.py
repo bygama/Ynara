@@ -59,7 +59,7 @@ def _make_llm_with_create_event(
     Reproduce el flujo del tool loop: el modelo pide la tool, el loop la ejecuta, y
     el modelo cierra con un ``stop`` (sin más tool_calls).
     """
-    client = FakeLlmClient(served_models=frozenset({"qwen"}))
+    client = FakeLlmClient(models=frozenset({"qwen"}))
     tc = ToolCall(
         id="tc-1",
         name="calendar.create_event",
@@ -278,7 +278,7 @@ class TestAsyncAgentPassUnit:
 
     async def test_no_tool_call_means_zero_actions(self) -> None:
         """Si el modelo no llama ninguna tool (nada para agendar), 0 acciones."""
-        client = FakeLlmClient(served_models=frozenset({"qwen"}))
+        client = FakeLlmClient(models=frozenset({"qwen"}))
         client.queue_result(
             CompletionResult(
                 text="nada para agendar",

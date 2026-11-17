@@ -40,7 +40,7 @@ SESSION_ID = str(uuid.uuid4())
 
 def _make_llm_with_create_task(*, title: str = "Comprar pan") -> FakeLlmClient:
     """FakeLlmClient guionado: 1ra completion = tool_call task.create_task; 2da = stop."""
-    client = FakeLlmClient(served_models=frozenset({"qwen"}))
+    client = FakeLlmClient(models=frozenset({"qwen"}))
     tc = ToolCall(
         id="tc-1",
         name="task.create_task",

@@ -48,7 +48,7 @@ class _NamedFake(FakeLlmClient):
     """``FakeLlmClient`` con ``name``, como ``OpenAICompatClient``."""
 
     def __init__(self, name: str) -> None:
-        super().__init__(served_models=frozenset({_MODEL}))
+        super().__init__(models=frozenset({_MODEL}))
         self.name = name
 
 
@@ -71,7 +71,7 @@ class _FailsMidStream:
 
 
 def _fake() -> FakeLlmClient:
-    return FakeLlmClient(served_models=frozenset({_MODEL}))
+    return FakeLlmClient(models=frozenset({_MODEL}))
 
 
 def _resilient(clients: list[object], *, breaker_clock: _Clock | None = None) -> ResilientClient:
