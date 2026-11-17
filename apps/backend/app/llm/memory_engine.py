@@ -338,9 +338,9 @@ class QwenMemoryEngine:
     contaminaria ``result.text`` y degradaria el parseo en silencio (#235).
     """
 
-    def __init__(self, llm_client: LLMClient, served_name: str = "qwen") -> None:
+    def __init__(self, llm_client: LLMClient, model: str = "qwen") -> None:
         self._client = llm_client
-        self._served_name = served_name
+        self._model = model
 
     async def consolidate(
         self,
@@ -366,7 +366,7 @@ class QwenMemoryEngine:
         ]
         try:
             result = await self._client.complete(
-                model=self._served_name,
+                model=self._model,
                 messages=messages,
                 temperature=0.1,  # baja temperatura para extraccion estructurada
                 # thinking OFF (ADR-012 D4): la extraccion quiere JSON puro. Qwen es
@@ -401,7 +401,7 @@ class QwenMemoryEngine:
         ]
         try:
             result = await self._client.complete(
-                model=self._served_name,
+                model=self._model,
                 messages=messages,
                 temperature=0.2,  # baja temperatura para un resumen estable
                 # thinking OFF (ADR-012 D4): el resumen quiere JSON puro; el <think>

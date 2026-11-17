@@ -68,9 +68,9 @@ def test_parse_summary_strips_think_block() -> None:
 
 async def test_qwen_engine_summarize_forces_thinking_off() -> None:
     """summarize manda thinking=False (#235): el resumen quiere JSON puro."""
-    fake_llm = FakeLlmClient(served_models=frozenset({"qwen"}))
+    fake_llm = FakeLlmClient(models=frozenset({"qwen"}))
     fake_llm.queue_result(_result(json.dumps({"summary": "Hablo de X.", "topics": {}})))
-    engine = QwenMemoryEngine(llm_client=fake_llm, served_name="qwen")
+    engine = QwenMemoryEngine(llm_client=fake_llm, model="qwen")
     await engine.summarize(transcript="user: hola\nmodel: hola!", mode="vida")
     assert fake_llm.complete_calls[0]["thinking"] is False
 
@@ -84,12 +84,12 @@ def test_parse_summary_strips_markdown_fence() -> None:
 
 async def test_qwen_engine_summarize_tolerates_think_block() -> None:
     """End-to-end: un bloque <think> en la respuesta no rompe summarize (#235)."""
-    fake_llm = FakeLlmClient(served_models=frozenset({"qwen"}))
+    fake_llm = FakeLlmClient(models=frozenset({"qwen"}))
     raw = "<think>la sesion fue sobre X</think>\n" + json.dumps(
         {"summary": "El usuario hablo de X.", "topics": {}}
     )
     fake_llm.queue_result(_result(raw))
-    engine = QwenMemoryEngine(llm_client=fake_llm, served_name="qwen")
+    engine = QwenMemoryEngine(llm_client=fake_llm, model="qwen")
     out = await engine.summarize(transcript="user: hola\nmodel: hola!", mode="vida")
     assert out.summary == "El usuario hablo de X."
 
@@ -111,7 +111,7 @@ def test_parse_summary_topics_not_dict_coerced_to_empty() -> None:
 
 
 async def test_summarize_returns_parsed_summary() -> None:
-    client = FakeLlmClient(served_models=frozenset({"qwen"}))
+    client = FakeLlmClient(models=frozenset({"qwen"}))
     client.queue_result(_result(json.dumps({"summary": "Resumen de la sesion.", "topics": {}})))
     engine = QwenMemoryEngine(client)
 
@@ -121,7 +121,7 @@ async def test_summarize_returns_parsed_summary() -> None:
 
 async def test_summarize_llm_failure_returns_empty() -> None:
     """Si el LLM lanza, ``summarize`` devuelve un ``SessionSummary`` vacio (no propaga)."""
-    client = FakeLlmClient(served_models=frozenset({"qwen"}))
+    client = FakeLlmClient(models=frozenset({"qwen"}))
     client.queue_error(RuntimeError("LLM caido"))
     engine = QwenMemoryEngine(client)
 
@@ -130,7 +130,7 @@ async def test_summarize_llm_failure_returns_empty() -> None:
 
 
 async def test_summarize_corrupt_json_returns_empty() -> None:
-    client = FakeLlmClient(served_models=frozenset({"qwen"}))
+    client = FakeLlmClient(models=frozenset({"qwen"}))
     client.queue_result(_result("esto no es json {"))
     engine = QwenMemoryEngine(client)
 

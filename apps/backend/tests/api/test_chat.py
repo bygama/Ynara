@@ -168,7 +168,7 @@ class _BoomRedisClient:
 async def test_happy_path_gemma_vida_creates_session(db_session: AsyncSession) -> None:
     """200 + body ChatHttpResponse; se crea una ChatSession persistida."""
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_result(_completion(text="hola, todo bien?", model_name="gemma4"))
 
     client = await _client(db_session, llm_client=fake)
@@ -206,7 +206,7 @@ async def test_happy_path_gemma_vida_creates_session(db_session: AsyncSession) -
 async def test_happy_path_qwen_productividad_with_actions(db_session: AsyncSession) -> None:
     """200 + actions pobladas (tool loop). Encola consolidacion (mockeada)."""
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(served_models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"qwen"}))
     # Vuelta 1: tool_call memory.search; vuelta 2: stop con texto.
     tc = ToolCall(id="tc-1", name="memory.search", arguments={"query": "reuniones"})
     fake.queue_result(
@@ -276,7 +276,7 @@ async def test_enqueue_failure_does_not_break_turn(db_session: AsyncSession) -> 
     OperationalError / ConnectionError del broker Redis).
     """
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(served_models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"qwen"}))
     fake.queue_result(
         _completion(text="Listo, lo agende.", finish_reason="stop", model_name="qwen")
     )
@@ -327,7 +327,7 @@ async def test_chat_executes_calendar_tool_synchronously_and_persists(
           commit del turno persiste la escritura de la tool, atomico).
     """
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(served_models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"qwen"}))
     # Vuelta 1: tool_call calendar.create_event (args validos); vuelta 2: stop + confirma.
     tc = ToolCall(
         id="tc-cal-1",
@@ -406,7 +406,7 @@ async def test_chat_degraded_after_tool_flush_rolls_back_event(
     from app.llm.errors import LlmUnavailableError
 
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(served_models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"qwen"}))
     tc = ToolCall(
         id="tc-cal-deg",
         name="calendar.create_event",
@@ -461,7 +461,7 @@ async def test_chat_non_calendar_mode_creates_no_events(db_session: AsyncSession
     siquiera se expone calendar al modelo: no hay efecto.
     """
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_result(
         _completion(text="todo bien por aca.", finish_reason="stop", model_name="gemma4")
     )
@@ -505,7 +505,7 @@ async def test_chat_ok_persists_two_turns_user_and_model(db_session: AsyncSessio
     superficie del endpoint /chat.
     """
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_result(_completion(text="hola, todo bien?", model_name="gemma4"))
 
     client = await _client(db_session, llm_client=fake)
@@ -538,7 +538,7 @@ async def test_chat_degraded_response_persists_no_turns(db_session: AsyncSession
     (ni se consolida). Cuenta 0 filas en ``conversation_turns`` para esa sesión.
     """
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(served_models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"qwen"}))
     fake.queue_result(
         _completion(text="respuesta degradada", finish_reason="degraded", model_name="qwen")
     )
@@ -581,7 +581,7 @@ async def test_reused_session_id_does_not_create_second_session(
 ) -> None:
     """Pasar el session_id devuelto reusa la misma ChatSession (mismo id)."""
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_result(_completion(text="uno", model_name="gemma4"))
     fake.queue_result(_completion(text="dos", model_name="gemma4"))
 
@@ -621,7 +621,7 @@ async def test_reused_session_id_does_not_create_second_session(
 
 
 async def test_missing_authorization_returns_401(db_session: AsyncSession) -> None:
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     client = await _client(db_session, llm_client=fake)
     try:
         async with client:
@@ -632,7 +632,7 @@ async def test_missing_authorization_returns_401(db_session: AsyncSession) -> No
 
 
 async def test_invalid_token_returns_401(db_session: AsyncSession) -> None:
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     client = await _client(db_session, llm_client=fake)
     try:
         async with client:
@@ -653,7 +653,7 @@ async def test_invalid_token_returns_401(db_session: AsyncSession) -> None:
 
 async def test_empty_text_returns_422(db_session: AsyncSession) -> None:
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     client = await _client(db_session, llm_client=fake)
     try:
         async with client:
@@ -670,7 +670,7 @@ async def test_empty_text_returns_422(db_session: AsyncSession) -> None:
 
 async def test_text_too_long_returns_422(db_session: AsyncSession) -> None:
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     client = await _client(db_session, llm_client=fake)
     try:
         async with client:
@@ -687,7 +687,7 @@ async def test_text_too_long_returns_422(db_session: AsyncSession) -> None:
 
 async def test_invalid_mode_returns_422(db_session: AsyncSession) -> None:
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     client = await _client(db_session, llm_client=fake)
     try:
         async with client:
@@ -712,7 +712,7 @@ async def test_session_of_other_user_returns_404(db_session: AsyncSession) -> No
     intruder = await _seed_user(db_session)
 
     # owner crea una sesion (commit del endpoint).
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_result(_completion(text="hola", model_name="gemma4"))
     client = await _client(db_session, llm_client=fake)
     try:
@@ -746,7 +746,7 @@ async def test_session_of_other_user_returns_404(db_session: AsyncSession) -> No
 
 async def test_mode_mismatch_returns_409(db_session: AsyncSession) -> None:
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_result(_completion(text="hola", model_name="gemma4"))
     client = await _client(db_session, llm_client=fake)
     try:
@@ -793,7 +793,7 @@ async def test_chat_rate_limit_429(
         lambda: _chat_ratelimit_settings(chat_max=2),
     )
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     for _ in range(2):
         fake.queue_result(_completion(text="hola", model_name="gemma4"))
 
@@ -831,7 +831,7 @@ async def test_chat_rate_limit_fail_open(db_session: AsyncSession) -> None:
     válido sigue dando 200, nunca un 429 espurio.
     """
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(served_models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"gemma4"}))
     fake.queue_result(_completion(text="hola", model_name="gemma4"))
 
     store = RedisTokenStore(_BoomRedisClient())

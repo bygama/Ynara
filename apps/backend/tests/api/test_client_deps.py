@@ -52,7 +52,7 @@ def test_lifespan_sets_fake_reranker() -> None:
         assert isinstance(app.state.reranker, FakeReranker)
 
 
-def test_lifespan_llm_client_served_models_match_config() -> None:
+def test_lifespan_llm_client_models_match_config() -> None:
     """FakeLlmClient recibe los served_name del config (no las keys del dict)."""
     from app.main import app
 
@@ -72,7 +72,7 @@ def test_lifespan_llm_client_served_models_match_config() -> None:
 
 
 _mini = FastAPI()
-_sentinel_llm = FakeLlmClient(served_models=frozenset({"qwen", "gemma4"}))
+_sentinel_llm = FakeLlmClient(models=frozenset({"qwen", "gemma4"}))
 _sentinel_emb = FakeEmbeddingClient()
 _sentinel_rer = FakeReranker()
 _mini.state.llm_client = _sentinel_llm

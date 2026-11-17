@@ -7,9 +7,9 @@ futuros (M3+).
 
 Uso tipico::
 
-    fake = FakeLlmClient(served_models=frozenset({"qwen-3.5-9b"}))
+    fake = FakeLlmClient(models=frozenset({"agente"}))
     fake.queue_result(CompletionResult(...))
-    result = await fake.complete(model="qwen-3.5-9b", messages=[...])
+    result = await fake.complete(model="agente", messages=[...])
 
 Si se programa una excepcion, ``complete`` la levanta. Por default
 ``health`` reporta sano; se puede forzar con ``set_health``.
@@ -32,8 +32,9 @@ from app.llm.schemas import (
 class FakeLlmClient:
     """Implementa ``LLMClient`` con respuestas programables."""
 
-    def __init__(self, *, served_models: frozenset[str]) -> None:
-        self._served_models = served_models
+    def __init__(self, *, models: frozenset[str]) -> None:
+        """``models``: los modelos que el fake dice servir (``serves_model``)."""
+        self._models = models
         self._results: deque[CompletionResult | Exception] = deque()
         self._chunks: deque[list[CompletionChunk] | Exception] = deque()
         self._healthy = True
@@ -71,7 +72,7 @@ class FakeLlmClient:
     # ---------- contrato LLMClient ----------
 
     def serves_model(self, model: str) -> bool:
-        return model in self._served_models
+        return model in self._models
 
     async def complete(
         self,
@@ -120,7 +121,7 @@ class FakeLlmClient:
             yield chunk
 
     async def health(self) -> ModelHealth:
-        model_name = next(iter(self._served_models), "")
+        model_name = next(iter(self._models), "")
         return ModelHealth(model_name=model_name, healthy=self._healthy)
 
     async def aclose(self) -> None:

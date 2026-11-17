@@ -138,7 +138,7 @@ def _patch_settings(settings: Settings) -> Iterator[None]:
 async def test_serving_real_backend_inventory(db_session: AsyncSession) -> None:
     """Con LLM_BACKEND=vllm: is_real=True, low_perf_available=True, ambos modelos sanos."""
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
 
     client = _client(db_session, llm_client=fake)
     try:
@@ -179,7 +179,7 @@ async def test_serving_fake_backend_flags_not_real(db_session: AsyncSession) -> 
     """Con backend fake: serving_healthy True (el Fake reporta sano) pero is_real /
     low_perf_available son False para que la UI advierta que no hay generación real."""
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
 
     client = _client(db_session, llm_client=fake)
     try:
@@ -200,7 +200,7 @@ async def test_serving_fake_backend_flags_not_real(db_session: AsyncSession) -> 
 async def test_serving_never_exposes_base_url(db_session: AsyncSession) -> None:
     """Regla #4: la respuesta del serving NUNCA contiene base_url ni connection strings."""
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
 
     client = _client(db_session, llm_client=fake)
     try:
@@ -225,7 +225,7 @@ async def test_serving_never_exposes_base_url(db_session: AsyncSession) -> None:
 async def test_playground_happy_path(db_session: AsyncSession) -> None:
     """200 + PlaygroundOut con el CompletionResult del Fake; llama complete() directo."""
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
     fake.queue_result(_completion(text="hola desde el playground", model_name="gemma4"))
 
     client = _client(db_session, llm_client=fake)
@@ -288,7 +288,7 @@ async def test_playground_happy_path(db_session: AsyncSession) -> None:
 async def test_playground_thinking_default_per_role_agent(db_session: AsyncSession) -> None:
     """qwen = agent -> default thinking True cuando el body no lo overridea."""
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
     fake.queue_result(_completion(model_name="qwen"))
 
     client = _client(db_session, llm_client=fake)
@@ -311,7 +311,7 @@ async def test_playground_thinking_default_per_role_agent(db_session: AsyncSessi
 async def test_playground_thinking_manual_override(db_session: AsyncSession) -> None:
     """El override manual del body gana sobre el default por role (gemma4 + thinking=True)."""
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
     fake.queue_result(_completion(model_name="gemma4"))
 
     client = _client(db_session, llm_client=fake)
@@ -339,7 +339,7 @@ async def test_playground_thinking_manual_override(db_session: AsyncSession) -> 
 async def test_playground_splits_thinking_block(db_session: AsyncSession) -> None:
     """Si el text del modelo trae <think>...</think>, se separa: text limpio + thinking aparte."""
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
     raw = "<think>razonando un toque</think>Hola, esta es la respuesta final."
     fake.queue_result(_completion(text=raw, model_name="qwen"))
 
@@ -370,7 +370,7 @@ async def test_playground_splits_thinking_block(db_session: AsyncSession) -> Non
 async def test_playground_trace_request_step_flags_low_perf(db_session: AsyncSession) -> None:
     """Con low_perf el step 'request' del trace marca el preset (detail público)."""
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
     fake.queue_result(_completion(model_name="qwen"))
 
     client = _client(db_session, llm_client=fake)
@@ -408,7 +408,7 @@ async def test_playground_trace_request_step_flags_low_perf(db_session: AsyncSes
 async def test_playground_low_perf_applies_preset(db_session: AsyncSession) -> None:
     """low_perf pisa max_tokens<=256, temp<=0.2 y thinking=False, sea cual sea el body."""
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
     fake.queue_result(_completion(model_name="qwen"))
 
     client = _client(db_session, llm_client=fake)
@@ -442,7 +442,7 @@ async def test_playground_low_perf_applies_preset(db_session: AsyncSession) -> N
 async def test_playground_invalid_model_422(db_session: AsyncSession) -> None:
     """Un served_name fuera del catálogo -> 422 con detail neutro 'modelo no servido'."""
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
 
     client = _client(db_session, llm_client=fake)
     try:
@@ -467,7 +467,7 @@ async def test_playground_fake_backend_409(db_session: AsyncSession) -> None:
     admin = await _seed_admin(db_session)
     # El Fake del lifespan NO tiene resultados encolados: si el endpoint lo llamara,
     # reventaría con AssertionError (500). El guard 409 debe cortar antes.
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
 
     client = _client(db_session, llm_client=fake)
     try:
@@ -508,7 +508,7 @@ async def test_playground_llm_error_mapping(
 ) -> None:
     """Cada familia de LlmError mapea a su status; el detail es solo el nombre de la clase."""
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
     fake.queue_error(error)
 
     client = _client(db_session, llm_client=fake)
@@ -531,7 +531,7 @@ async def test_playground_error_detail_never_echoes_payload(db_session: AsyncSes
     """Regla #4: el detail del error NO contiene el payload crudo (str(exc)), solo el
     nombre de la clase. Aunque el LlmError lleve un ``detail`` técnico sensible, no viaja."""
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
     secret = "PAYLOAD-SENSIBLE-1234"
     fake.queue_error(LlmTimeoutError(detail=secret))
 
@@ -581,7 +581,7 @@ def _completion_with_tools(
 async def test_playground_agent_captures_tool_calls(db_session: AsyncSession) -> None:
     """200 + ``actions`` captura cada tool call observada; calendar es stub -> not_wired."""
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
     # Iteración 1: el modelo pide una tool. Iteración 2: cierra (finish_reason terminal).
     fake.queue_result(
         _completion_with_tools(
@@ -628,7 +628,7 @@ async def test_playground_agent_captures_tool_calls(db_session: AsyncSession) ->
 async def test_playground_agent_memory_tool_unreachable(db_session: AsyncSession) -> None:
     """memory.* es INALCANZABLE (sin memory_registry) -> unknown_tool, observable y sin efecto."""
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
     fake.queue_result(
         _completion_with_tools([_tool_call("memory.update", {"id": "x", "content": "nuevo"})])
     )
@@ -661,7 +661,7 @@ async def test_playground_agent_never_builds_memory_registry(db_session: AsyncSe
     blindamos espiando el factory -> ``call_count == 0`` es la barrera por construcción.
     """
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
     fake.queue_result(_completion_with_tools([_tool_call("memory.delete", {"id": "x"})]))
     fake.queue_result(_completion(text="ok", finish_reason="stop", model_name="qwen"))
 
@@ -688,7 +688,7 @@ async def test_playground_agent_never_builds_memory_registry(db_session: AsyncSe
 async def test_playground_agent_invalid_model_422(db_session: AsyncSession) -> None:
     """Modelo fuera del catálogo -> 422 antes de correr el loop (no se llama al cliente)."""
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
 
     client = _client(db_session, llm_client=fake)
     try:
@@ -710,7 +710,7 @@ async def test_playground_agent_invalid_model_422(db_session: AsyncSession) -> N
 async def test_playground_agent_fake_backend_409(db_session: AsyncSession) -> None:
     """Backend fake -> 409 antes de correr el loop (mismo guard que /playground)."""
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
 
     client = _client(db_session, llm_client=fake)
     try:
@@ -763,7 +763,7 @@ def _chunk(
 async def test_playground_stream_emits_tokens_and_done(db_session: AsyncSession) -> None:
     """Cada chunk de texto -> un evento ``token``; al final un ``done`` con las métricas."""
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
     fake.queue_chunks(
         [_chunk(text="Hola"), _chunk(text=", "), _chunk(text="mundo", finish_reason="stop")]
     )
@@ -802,7 +802,7 @@ async def test_playground_stream_captures_reasoning_channel(db_session: AsyncSes
     ``done.thinking``; los ``completion_tokens`` cuentan SOLO los chunks de texto.
     """
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
     fake.queue_chunks(
         [
             _chunk(reasoning="Pensando"),
@@ -844,7 +844,7 @@ async def test_playground_stream_reasoning_only_empty_answer(db_session: AsyncSe
     razonamiento SÍ se captura: eventos ``reasoning`` + ``done.thinking`` poblado.
     """
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
     fake.queue_chunks(
         [_chunk(reasoning="Sigo pensando"), _chunk(reasoning="…", finish_reason="length")]
     )
@@ -875,7 +875,7 @@ async def test_playground_stream_inline_think_block(db_session: AsyncSession) ->
     """Fallback: si el modelo embebe <think>...</think> en el ``content`` (vLLM sin
     reasoning-parser), el thinking final se separa de ahí (precedencia: reasoning > inline)."""
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
     fake.queue_chunks(
         [
             _chunk(text="<think>razonando</think>"),
@@ -906,7 +906,7 @@ async def test_playground_stream_inline_think_block(db_session: AsyncSession) ->
 async def test_playground_stream_error_event_neutral(db_session: AsyncSession) -> None:
     """Un LlmError a mitad del stream -> evento ``error`` con mensaje NEUTRO (regla #4)."""
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
     secret = "PAYLOAD-SENSIBLE-9999"
     fake.queue_stream_error(LlmTimeoutError(detail=secret))
 
@@ -937,7 +937,7 @@ async def test_playground_stream_error_event_neutral(db_session: AsyncSession) -
 async def test_playground_stream_invalid_model_422(db_session: AsyncSession) -> None:
     """Modelo fuera del catálogo -> 422 HTTP (no SSE), antes de abrir el stream."""
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
 
     client = _client(db_session, llm_client=fake)
     try:
@@ -959,7 +959,7 @@ async def test_playground_stream_invalid_model_422(db_session: AsyncSession) -> 
 async def test_playground_stream_fake_backend_409(db_session: AsyncSession) -> None:
     """Backend fake -> 409 HTTP antes de abrir el stream (mismo guard que el sync)."""
     admin = await _seed_admin(db_session)
-    fake = FakeLlmClient(served_models=_SERVED)
+    fake = FakeLlmClient(models=_SERVED)
 
     client = _client(db_session, llm_client=fake)
     try:

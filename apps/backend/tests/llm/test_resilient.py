@@ -65,7 +65,7 @@ def _messages() -> list[ChatMessage]:
 
 
 def _fake(model: str = _MODEL) -> FakeLlmClient:
-    return FakeLlmClient(served_models=frozenset({model}))
+    return FakeLlmClient(models=frozenset({model}))
 
 
 def _resilient(

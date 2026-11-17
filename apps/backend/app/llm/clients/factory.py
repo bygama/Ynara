@@ -71,8 +71,8 @@ def build_llm_client(settings: Settings, config: LlmRuntimeConfig) -> LLMClient:
     de la config, igual que el comportamiento historico del lifespan. No abre red.
     """
     if not _wants_real_llm(settings):
-        served_models = frozenset(m.served_name for m in config.models.values())
-        return FakeLlmClient(served_models=served_models)
+        models = frozenset(m.served_name for m in config.models.values())
+        return FakeLlmClient(models=models)
 
     # Serving real (ADR-013): un VllmClient por entrada de LLM_SERVING, cada uno
     # anunciando solo SUS served_names (entry.models). El pool reune todos en el

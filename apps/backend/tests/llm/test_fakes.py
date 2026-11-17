@@ -33,19 +33,19 @@ def _messages() -> list[ChatMessage]:
 
 
 def test_satisfies_protocol() -> None:
-    fake = FakeLlmClient(served_models=frozenset({_MODEL}))
+    fake = FakeLlmClient(models=frozenset({_MODEL}))
     assert isinstance(fake, LLMClient)
 
 
 def test_serves_model() -> None:
-    fake = FakeLlmClient(served_models=frozenset({_MODEL}))
+    fake = FakeLlmClient(models=frozenset({_MODEL}))
     assert fake.serves_model(_MODEL)
     assert not fake.serves_model("otro")
 
 
 @pytest.mark.asyncio
 async def test_complete_returns_queued_result() -> None:
-    fake = FakeLlmClient(served_models=frozenset({_MODEL}))
+    fake = FakeLlmClient(models=frozenset({_MODEL}))
     fake.queue_result(_result("hola"))
     result = await fake.complete(model=_MODEL, messages=_messages())
     assert result.text == "hola"
@@ -59,7 +59,7 @@ async def test_complete_records_thinking_flag() -> None:
     Habilita los asserts de routing por rol: el router deriva el flag y el Fake lo
     expone para verificarlo. ``None`` por default (no se forzo el modo).
     """
-    fake = FakeLlmClient(served_models=frozenset({_MODEL}))
+    fake = FakeLlmClient(models=frozenset({_MODEL}))
     fake.queue_result(_result())
     fake.queue_result(_result())
     await fake.complete(model=_MODEL, messages=_messages(), thinking=True)
@@ -71,7 +71,7 @@ async def test_complete_records_thinking_flag() -> None:
 @pytest.mark.asyncio
 async def test_stream_records_thinking_flag() -> None:
     """``stream`` tambien registra ``thinking`` en ``stream_calls`` (ADR-012 D4)."""
-    fake = FakeLlmClient(served_models=frozenset({_MODEL}))
+    fake = FakeLlmClient(models=frozenset({_MODEL}))
     fake.queue_chunks([CompletionChunk(delta_text="ho")])
     async for _ in fake.stream(model=_MODEL, messages=_messages(), thinking=False):
         pass
@@ -80,7 +80,7 @@ async def test_stream_records_thinking_flag() -> None:
 
 @pytest.mark.asyncio
 async def test_complete_raises_queued_error() -> None:
-    fake = FakeLlmClient(served_models=frozenset({_MODEL}))
+    fake = FakeLlmClient(models=frozenset({_MODEL}))
     fake.queue_error(LlmTimeoutError())
     with pytest.raises(LlmTimeoutError):
         await fake.complete(model=_MODEL, messages=_messages())
@@ -88,14 +88,14 @@ async def test_complete_raises_queued_error() -> None:
 
 @pytest.mark.asyncio
 async def test_complete_without_program_raises() -> None:
-    fake = FakeLlmClient(served_models=frozenset({_MODEL}))
+    fake = FakeLlmClient(models=frozenset({_MODEL}))
     with pytest.raises(AssertionError):
         await fake.complete(model=_MODEL, messages=_messages())
 
 
 @pytest.mark.asyncio
 async def test_stream_yields_queued_chunks() -> None:
-    fake = FakeLlmClient(served_models=frozenset({_MODEL}))
+    fake = FakeLlmClient(models=frozenset({_MODEL}))
     fake.queue_chunks([CompletionChunk(delta_text="ho"), CompletionChunk(delta_text="la")])
     chunks = [c async for c in fake.stream(model=_MODEL, messages=_messages())]
     assert "".join(c.delta_text for c in chunks) == "hola"
@@ -103,7 +103,7 @@ async def test_stream_yields_queued_chunks() -> None:
 
 @pytest.mark.asyncio
 async def test_health_toggle() -> None:
-    fake = FakeLlmClient(served_models=frozenset({_MODEL}))
+    fake = FakeLlmClient(models=frozenset({_MODEL}))
     assert (await fake.health()).healthy is True
     fake.set_health(False)
     assert (await fake.health()).healthy is False
