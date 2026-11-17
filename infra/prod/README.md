@@ -3,11 +3,15 @@
 Configs y notas específicas de producción que no entran en el
 docker-compose principal:
 
-- systemd units para vLLM (creadas: ver abajo).
 - Cloudflare Tunnel ingress config.
 - Cron de backups encriptados a R2.
 - Reglas de firewall.
 - Tuning Postgres para la fase V2 (cuando se migre a self-hosted).
+
+La VPS de prod no tiene GPU: la IA (chat, agente, consolidación de memoria
+y embeddings) se consume por API de proveedores externos, según
+[ADR-028](../../docs/architecture/adrs/ADR-028-inferencia-por-api.md). No
+hay modelos que servir.
 
 ## Broker Redis con auth (SEC-001)
 
@@ -32,27 +36,39 @@ Para TLS extremo-a-extremo (solo si el broker cruza hosts, no en la VPS
 single-host actual) usar `rediss://` + `--tls-port` en redis; hoy el broker vive
 en la red bridge interna, así que `requirepass` es la cota suficiente.
 
-## systemd units de vLLM (issue #212)
+## Proveedores de IA
 
-> **ADR-014:** en GPU de 16 GB el motor es **Ollama/GGUF**, no vLLM. Estas units
-> son la ruta **vLLM para 24 GB+**; en 16 GB no se usan.
+Los proveedores se configuran en `apps/backend/.env`, el `env_file` que
+comparten `api`, `worker` y `beat`. Las credenciales nunca van inline en
+el compose (regla #2):
 
-Una unit por proceso, alineadas a ADR-012 (12B conversacional, 9B agente,
-`single_process` co-residente, thinking OFF conversacional). Levantar el
-stack completo:
+- `LLM_BACKEND=api` y `LLM_PROVIDERS`: lista JSON en orden de prioridad
+  (el primero es el principal y el resto, respaldo), con la credencial de
+  cada proveedor en `LLM_API_KEY_<NAME>`.
+- `EMBEDDING_BACKEND=api`, `EMBEDDING_BASE_URL`, `EMBEDDING_API_KEY` y
+  `EMBEDDING_MODEL`.
 
-```sh
-systemctl enable --now vllm-gemma.service vllm-qwen.service vllm-bge.service
-```
+Las URL base van por https. Con `ENVIRONMENT=production` el backend no
+arranca si el LLM o los embeddings quedan en `fake`, si `LLM_PROVIDERS`
+está vacía o si falta alguna de esas variables o credenciales (ADR-028
+D7). El detalle de cada variable está en
+[`apps/backend/.env.example`](../../apps/backend/.env.example).
 
-- [x] [`vllm-gemma.service`](./vllm-gemma.service) — Gemma 4 12B (conversacional, `:8001`).
-- [x] [`vllm-qwen.service`](./vllm-qwen.service) — Qwen 3.5-9B (agente, `:8002`).
-- [x] [`vllm-bge.service`](./vllm-bge.service) — bge-m3 (embeddings, `:8003`), companion para que el stack co-residente arranque completo.
+La salida a internet de `api` y `worker` va a esos proveedores (regla
+#4b), a la DB de Supabase y a Sentry si `SENTRY_DSN` está seteado. Es
+política del backend: la red del compose no filtra la salida.
 
-Los flags (`gpu_memory_utilization`, `max_model_len`) son PROVISIONALES
-(medición Ollama/GGUF, ADR-012 D3); reconfirmar bajo vLLM/AWQ-Marlin
-(#207). Paths/checkpoints van en `/etc/ynara/vllm.env` (EnvironmentFile),
-nunca en la unit (regla #4).
+## Concurrencia del worker de Celery
+
+`CELERY_CONCURRENCY` fija los procesos del worker, con 2 por default. Igual
+que `REDIS_PASSWORD`, va en el entorno de compose (la VPS o un `.env` junto
+al compose) y no en `apps/backend/.env`, porque compose la interpola en el
+`command` del worker.
+
+El techo lo pone la cuota del proveedor de IA: cada proceso consolida en
+paralelo y le pega al proveedor, y por encima de la cuota llegan 429 que
+las tasks de consolidación reintentan con backoff. Los 2 workers de
+gunicorn de `api` son otra cota, fija en `Dockerfile.backend` (ADR-020).
 
 ## TODO inicial (pendiente)
 
