@@ -191,8 +191,11 @@ class ChatService:
 
         # Persistir los 2 turnos (user + modelo) ANTES del commit, en la MISMA
         # transacción que la ChatSession: turnos + sesión son atómicos por el commit único.
+        # El ``seq`` del turno del usuario viaja a la consolidación para marcarlo como
+        # consolidado (idempotencia del worker); ``None`` si no se persistió.
+        turn_seq: int | None = None
         if resp.finish_reason != "degraded" and resp.text:
-            await self._persist_turns(chat_session, body=body, resp=resp)
+            turn_seq = await self._persist_turns(chat_session, body=body, resp=resp)
 
         # Commit AL FINAL, después de route(): persiste la ChatSession + los turnos (y lo
         # que hayan escrito los stores en esta sesión). Si saltara un bug inesperado antes
@@ -208,7 +211,7 @@ class ChatService:
         # tool-loop de producción usa el registry real vía ``build_chat_tool_registry``)
         # y se commitearon atómicas con el turno arriba. Seguir encolando la pasada async
         # dispararía qwen DOS veces por turno. La consolidación de memoria SÍ sigue async.
-        await self._enqueue_consolidation(chat_session, body=body, resp=resp)
+        await self._enqueue_consolidation(chat_session, body=body, resp=resp, turn_seq=turn_seq)
 
         return resp
 
@@ -257,7 +260,7 @@ class ChatService:
 
     async def _persist_turns(
         self, chat_session: ChatSession, *, body: ChatHttpRequest, resp: ChatResponse
-    ) -> None:
+    ) -> int | None:
         """Persiste el turno USER + el del MODELO (cifrados per-user) en la sesión actual.
 
         Es la FUENTE que el worker episódico (``consolidate_session``) lee al cerrar la
@@ -280,6 +283,11 @@ class ChatService:
         todos los intentos sigue colisionando (carga concurrente extrema), se degrada
         loguenado SOLO el conteo (regla #4): el turno ya respondió, no devolvemos 500 con
         la respuesta en mano por no poder persistir el transcript.
+
+        Returns:
+            El ``seq`` del turno del usuario (el del modelo es ``seq + 1``), o ``None`` si
+            no se pudo persistir. La consolidación lo usa para marcar el turno como
+            consolidado y que una re-entrega del broker no duplique memoria.
         """
         turns_store = ConversationTurnStore(self._session, self._user_id)
         for attempt in range(_PERSIST_MAX_ATTEMPTS):
@@ -305,7 +313,7 @@ class ChatService:
                             seq=base + 1,
                         )
                     )
-                return
+                return base
             except IntegrityError:
                 # Colisión de ``seq`` con un turno concurrente (TOCTOU). El ``async with``
                 # ya revirtió el savepoint; reintentar con ``next_seq`` fresco.
@@ -315,10 +323,15 @@ class ChatService:
                         "persistido (sin datos de usuario)",
                         _PERSIST_MAX_ATTEMPTS,
                     )
-                    return
+        return None
 
     async def _enqueue_consolidation(
-        self, chat_session: ChatSession, *, body: ChatHttpRequest, resp: ChatResponse
+        self,
+        chat_session: ChatSession,
+        *,
+        body: ChatHttpRequest,
+        resp: ChatResponse,
+        turn_seq: int | None,
     ) -> None:
         """Encola ``consolidate_turn`` DESPUÉS del commit (M10 Ola 0), best-effort.
 
@@ -336,6 +349,10 @@ class ChatService:
         es degradación aceptable. Capturamos AMPLIO (``Exception``) porque ``.delay()`` puede
         tirar varios tipos, y logueamos SOLO ``type(exc).__name__`` (regla #4: jamás payload /
         args / str(exc)).
+
+        ``turn_seq`` es el ``seq`` del turno del usuario que devolvió ``_persist_turns``
+        (``None`` si no se persistió): el worker marca ese turno como consolidado para que
+        una re-entrega del mensaje no duplique memoria.
         """
         writes_memory = load_llm_config().model_for_mode(body.mode.value).writes_memory
         if not (writes_memory and resp.finish_reason != "degraded"):
@@ -347,6 +364,7 @@ class ChatService:
                 user_msg=body.text,
                 model_response=resp.text,
                 mode=body.mode.value,
+                turn_seq=turn_seq,
             )
         except Exception as exc:  # best-effort: el broker caído NO rompe el turno.
             logger.warning("consolidate_turn enqueue failed: %s", type(exc).__name__)
