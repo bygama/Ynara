@@ -249,8 +249,7 @@ async def run_tool_loop(
     if not last_text and actions:
         # thinking=False a proposito: (1) la confirmacion no necesita razonar; (2) esquiva
         # el gotcha de qwen que con thinking ON vuelca el texto al canal de reasoning y deja
-        # el content VACIO -> con think:false la confirmacion cae en content. La forzada va
-        # SIN tools, asi que rutea por el /api/chat nativo de Ollama que honra think:false.
+        # el content VACIO -> con thinking apagado la confirmacion cae en content.
         forced = await llm_client.complete(
             model=model,
             messages=messages,

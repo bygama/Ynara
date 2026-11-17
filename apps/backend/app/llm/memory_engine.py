@@ -228,9 +228,9 @@ Devuelve SOLO el objeto JSON con "summary" y "topics". Nada mas."""
 _VALID_OPS: frozenset[str] = frozenset({"ADD", "UPDATE", "DELETE", "NOOP"})
 _VALID_LAYERS: frozenset[str] = frozenset({"semantic", "procedural"})
 
-# Qwen es un modelo *thinking*. consolidate/summarize fuerzan thinking=False
-# (output JSON limpio, ADR-012 D4), pero si el server igual antepone un bloque
-# <think>...</think> (default del server / Ollama sin reasoning-parser) o envuelve
+# El alias ``agente`` puede caer en un modelo *thinking*. consolidate/summarize
+# fuerzan thinking=False (output JSON limpio, ADR-012 D4), pero si el proveedor
+# igual antepone un bloque <think>...</think> (sin canal de reasoning) o envuelve
 # el JSON en un fence markdown, se limpia ANTES de json.loads para no degradar la
 # extraccion a [] / summary vacio en silencio (#235). El regex vive ahora en
 # ``app.llm.text_utils`` (util publico compartido); se reexporta con el nombre

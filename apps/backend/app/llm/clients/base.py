@@ -1,7 +1,7 @@
 """Protocols de la capa de clientes LLM (M1).
 
 ``LLMClient`` es el contrato que el router consume; cualquier
-implementacion concreta (``VllmClient``, ``FakeLlmClient``) lo satisface
+implementacion concreta (``OpenAICompatClient``, ``FakeLlmClient``) lo satisface
 por duck typing. ``ToolCallParser`` abstrae como se normalizan las tool
 calls de la respuesta del servidor.
 
@@ -28,8 +28,8 @@ from app.llm.schemas import (
 class ToolCallParser(Protocol):
     """Normaliza tool calls de la respuesta del servidor a ``ToolCall``.
 
-    vLLM ya devuelve las tool calls en formato OpenAI estandar (sin importar
-    el modelo); el parser solo las re-empaqueta y parsea el JSON de
+    Los proveedores devuelven las tool calls en formato OpenAI estandar (sin
+    importar el modelo); el parser solo las re-empaqueta y parsea el JSON de
     ``arguments``.
     """
 
@@ -60,7 +60,7 @@ class LLMClient(Protocol):
         """Genera una completion no-streaming.
 
         ``timeout_s=None`` deja que la implementacion use su default (el
-        ``VllmClient`` lo toma de ``config.serving.request_timeout_s``).
+        ``OpenAICompatClient`` usa el ``PROVIDER_REQUEST_TIMEOUT_S`` de la factory).
 
         ``thinking`` controla el modo de razonamiento del modelo (ADR-012 D4):
         ``None`` = no emitir la clave -> usa el default del server (preserva el
