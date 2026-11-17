@@ -171,7 +171,8 @@ async def test_qwen_1_vuelta_con_tool_call() -> None:
 
 @pytest.mark.asyncio
 async def test_tool_call_luego_stop_vacio_fuerza_confirmacion() -> None:
-    """Gotcha qwen real (medido en E2E): tras EJECUTAR una tool, el modelo corta con
+    """Gotcha medido en E2E con el modelo local de antes de ADR-028 (puede pasar con
+    cualquier modelo): tras EJECUTAR una tool, el modelo corta con
     finish_reason terminal ('stop') y content VACIO. El loop NO debe devolver el
     fallback generico (lee como error aunque la accion SI ocurrio): fuerza UNA completion
     final SIN tools para que el modelo confirme lo accionado. El finish_reason real de la
@@ -232,11 +233,11 @@ async def test_tool_call_luego_stop_vacio_fuerza_confirmacion() -> None:
 
 @pytest.mark.asyncio
 async def test_tool_call_forzada_tambien_vacia_usa_ack_no_fallback() -> None:
-    """Gotcha qwen reforzado (E2E del feature de razonamiento): tras ejecutar una tool el
+    """Gotcha reforzado (E2E del feature de razonamiento): tras ejecutar una tool el
     modelo corta vacio Y la forzada TAMBIEN vuelve vacia (vuelca todo al canal reasoning).
     El usuario NO debe ver el fallback-error: como SI hubo acciones, se devuelve un ack
-    determinista (``_ACTIONS_DONE_TEXT``). La forzada va con thinking=False para que la
-    confirmacion caiga en content, no en reasoning."""
+    determinista (``_ACTIONS_DONE_TEXT``). La forzada pide no razonar (thinking=False),
+    pero es intencion: si el modelo igual vuelca todo al reasoning, cubre el ack."""
     fake = FakeLlmClient(models=frozenset({"agente"}))
 
     tc = _make_tool_call("memory.add", "tc-z")
@@ -244,7 +245,7 @@ async def test_tool_call_forzada_tambien_vacia_usa_ack_no_fallback() -> None:
     fake.queue_result(_make_result(text="", finish_reason="tool_calls", tool_calls=[tc]))
     # 2) corte terminal 'stop' con content VACIO
     fake.queue_result(_make_result(text="", finish_reason="stop"))
-    # 3) forzada: qwen vuelve a dejar el content VACIO (vuelca al reasoning)
+    # 3) forzada: el modelo vuelve a dejar el content VACIO (vuelca al reasoning)
     fake.queue_result(_make_result(text="", finish_reason="stop"))
 
     reg = ToolRegistry()

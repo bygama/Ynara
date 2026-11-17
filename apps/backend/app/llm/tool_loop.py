@@ -144,9 +144,10 @@ async def run_tool_loop(
         registries: Tupla ``(default_registry, memory_registry|None)`` de
             ``MemoryContext.registries``.
         max_iterations: Guard maximo de iteraciones (default ``MAX_TOOL_ITERATIONS``).
-        thinking: Modo de razonamiento del modelo (ADR-012 D4). ``None`` deja el
-            default del server; ``True``/``False`` lo fuerza ON/OFF. Passthrough
-            puro hacia ``llm_client.complete``; lo decide el router por rol.
+        thinking: Intencion de razonamiento (ADR-028 D3): ``True`` razonar, ``False``
+            no razonar, ``None`` sin preferencia. Passthrough puro hacia
+            ``llm_client.complete``, que la traduce a ``reasoning_effort`` solo si el
+            proveedor lo soporta; lo decide el router por rol.
         fallback_text: Texto de fallback si el texto final esta vacio.
 
     Returns:
@@ -247,9 +248,12 @@ async def run_tool_loop(
     # Se gatea en ``actions`` (no en ``not last_text`` a secas) para no forzar una segunda
     # vuelta ante una respuesta conversacional normal que legitimamente vino vacia.
     if not last_text and actions:
-        # thinking=False a proposito: (1) la confirmacion no necesita razonar; (2) esquiva
-        # el gotcha de qwen que con thinking ON vuelca el texto al canal de reasoning y deja
-        # el content VACIO -> con thinking apagado la confirmacion cae en content.
+        # thinking=False a proposito: la confirmacion no necesita razonar, y un modelo que
+        # razona puede volcar el texto al canal de reasoning y dejar el content VACIO. Es
+        # intencion, no un switch: hoy el cliente no manda ``reasoning_effort`` para
+        # ``False`` (el valor que lo apaga cambia de proveedor a proveedor), asi que un
+        # modelo que razona por default puede razonar igual; si su texto queda solo en el
+        # reasoning, el turno cae al ack o al fallback de abajo.
         forced = await llm_client.complete(
             model=model,
             messages=messages,

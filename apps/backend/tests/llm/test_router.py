@@ -172,12 +172,12 @@ async def test_route_uses_context_budget_for_render(monkeypatch: pytest.MonkeyPa
 
 
 # ---------------------------------------------------------------------------
-# UNIT: thinking por rol (ADR-012 D4, #205)
+# UNIT: intencion de razonamiento por rol (ADR-028 D3, que sigue a ADR-012 D4; #205)
 # ---------------------------------------------------------------------------
 
 
 def test_thinking_for_role() -> None:
-    """``_thinking_for_role`` mapea rol -> flag (ADR-012 D4).
+    """``_thinking_for_role`` mapea rol -> intencion de razonamiento (ADR-028 D3).
 
     Cubre tambien la rama ``None`` (rol desconocido), inalcanzable en runtime
     porque la config tipa ``role`` como ``Literal``, pero presente como fail-safe
@@ -194,7 +194,8 @@ def test_thinking_for_role() -> None:
 async def test_route_conversational_mode_disables_thinking() -> None:
     """Modo conversacional (VIDA -> conversacional) deriva ``thinking=False`` al complete.
 
-    El conversacional NUNCA piensa (Gemma -> content vacio con thinking ON).
+    El conversacional no razona: responde directo (un modelo que razona puede
+    dejar el content vacio).
     """
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
     fake.queue_result(_result(text="hola", finish_reason="stop", model_name="gemma4"))
@@ -232,7 +233,7 @@ async def test_route_conversational_mode_disables_thinking() -> None:
 async def test_route_agent_mode_enables_thinking() -> None:
     """Modo agente (PRODUCTIVIDAD -> agente) deriva ``thinking=True`` al complete.
 
-    El agente piensa para planificar tool calls (Qwen).
+    El agente razona para planificar tool calls.
     """
     fake = FakeLlmClient(models=frozenset({"agente"}))
     fake.queue_result(_result(text="listo", finish_reason="stop", model_name="qwen"))
