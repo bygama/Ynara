@@ -606,7 +606,7 @@ Invariantes transversales:
   cuenta solo sesiones cerradas.
 
 - **GET** `/v1/admin/overview?range=7d` — KPIs + serie de sesiones + mix de modos + preview de audit.
-  - Response 200: `AdminOverviewOut = { perimeter{status, detail, checked_at}, kpis{users_total, sessions, memories, audit_events}, sessions_series: TimePoint[], mode_mix: {mode, value}[], audit_preview: {id, created_at, operation, target_layer, origin_mode, sensitive}[] }`. `memories` = suma de las 3 capas. El `audit_preview` **no** incluye `record_hash`/`target_id`.
+  - Response 200: `AdminOverviewOut = { kpis{users_total, sessions, memories, audit_events}, sessions_series: TimePoint[], mode_mix: {mode, value}[], audit_preview: {id, created_at, operation, target_layer, origin_mode, sensitive}[] }`. `memories` = suma de las 3 capas. El `audit_preview` **no** incluye `record_hash`/`target_id`.
 - **GET** `/v1/admin/users?range=7d` — actividad aproximada, heatmap, conversión, signups.
   - Response 200: `AdminUsersOut = { activity{dau, wau, mau, is_approximate}, heatmap: {date, count, level}[], conversion{ephemeral, registered, conversion_pct, is_estimate}, signups: {date, count}[] }`. DAU/WAU/MAU = COUNT(DISTINCT user_id) sobre `sessions.started_at` por ventana (proxy).
 - **GET** `/v1/admin/modes?range=7d` — mix de sesiones por modo + duración media por modo.
@@ -615,8 +615,10 @@ Invariantes transversales:
   - Response 200: `AdminMoatOut = { counts{semantic, episodic, procedural}, deltas{...}, growth: {key, points: TimePoint[]}[], procedural{stale_count, healthy_count, confidence_buckets: {range, count}[]}, consolidation{backlog, recent_episodic: {id, occurred_at, is_sensitive}[]} }`. `backlog` = sesiones cerradas sin episódica consolidada. `recent_episodic` es solo metadata (sin `summary`).
 - **GET** `/v1/admin/audit?range=7d&operation=&target_layer=&origin_mode=&origin_model=&sensitive=&limit=50&offset=0` — página de audit filtrable.
   - Response 200: `AdminAuditPage = { items: AdminAuditRow[], total, sensitive_pct }` donde `AdminAuditRow = { id, created_at, operation, target_layer, origin_mode, origin_model, origin_tool, sensitive }`. **SIN `record_hash` ni `target_id`** (omitidos del SELECT y del schema, regla #4). `total` es el conteo completo que matchea los filtros; `sensitive_pct` el porcentaje sensible dentro del total filtrado. Orden `created_at` DESC, paginación `limit` (1..100, default 50) / `offset` (≥0). Fuera de rango → 422.
-- **GET** `/v1/admin/system` — salud de infra + guard anti-prod + inventario de runtime. **Sin** `range`, sin queries de negocio.
-  - Response 200: `AdminSystemOut = { guard{active, db_target, is_prod_in_dev}, services{postgres{up, latency_ms, detail, checked_at}, redis{...}}, runtime{models, modes, schema_head, embedder, reranker, build_version} }`. `db_target` es solo el **host** (nunca el connection string con credenciales, regla #2). Postgres = `SELECT 1`; Redis = `PING` al singleton `app.state.redis`; `schema_head` = head de Alembic; `embedder` = el `EMBEDDING_MODEL` configurado (default `BAAI/bge-m3`); `reranker` = `"passthrough"` (`RERANKER_PASSTHROUGH`: el reranker no tiene modelo, ADR-028 D5).
+- **GET** `/v1/admin/system` — salud de infra + guard anti-prod + inventario de runtime + proveedores de IA. **Sin** `range`, sin queries de negocio.
+  - Response 200: `AdminSystemOut = { guard{active, db_target, is_prod_in_dev}, services{postgres{up, latency_ms, detail, checked_at}, redis{...}}, runtime{models, modes, schema_head, build_version}, ai{llm{backend, providers: SystemLlmProvider[]}, embeddings{backend, host, model, dim, status}} }` donde `SystemLlmProvider = { name, host, models: {alias, model_id}[], status }`, `backend` ∈ `{fake, api}` y `status` ∈ `{ok, down, unconfigured}`. `db_target` es solo el **host** (nunca el connection string con credenciales, regla #2). Postgres = `SELECT 1`; Redis = `PING` al singleton `app.state.redis`; `schema_head` = head de Alembic.
+  - Bloque `ai` (ADR-028): un elemento de `providers` por entrada de `LLM_PROVIDERS`, en su orden (el primero es el principal; el resto, el respaldo), con sus alias → id de modelo ordenados por alias. `embeddings` lleva el `EMBEDDING_MODEL` configurado (default `BAAI/bge-m3`) y `dim` = `EMBEDDING_DIM` (1024). Con backend `fake` no se sondea a nadie: `status=unconfigured`. Con `api`, cada request sondea en paralelo el `health()` de cada proveedor y el de embeddings (lo hace el cliente de cada uno en `app/llm/clients/providers/`, regla #4b, con un timeout corto de 5 s): `ok` si respondió, `down` si no o si el sondeo levantó. Un proveedor caído demora la respuesta hasta ese timeout.
+  - **Privacidad**: de cada URL base sale solo el **host** (sin esquema, puerto, path ni credenciales; `unknown` si no se puede leer, y `host=null` en embeddings sin `EMBEDDING_BASE_URL`), **nunca** una API key. A diferencia de `/serving`, acá sí viajan los ids de modelo de `LLM_PROVIDERS`: son config del operador, no datos de usuario.
 
 ### Playground admin (F1 ADR-018)
 
@@ -644,20 +646,6 @@ lógica del handler en el docstring de
   - Response 200: `PlaygroundAgentOut = { text, finish_reason ("stop"|"max_iterations"), model_name, actions: ToolCallOut[], thinking?, trace? }` donde `ToolCallOut = { id, name, arguments, result }` (las tool-calls observadas con su resultado `not_wired`). Mismos 409/422/502/503/504 que el sync.
 - Response 401 (todas las rutas): sin token / token inválido / user no admin.
 - Permisos: **admin** (flag `is_admin` o `ADMIN_BOOTSTRAP_IDS`).
-
-### Conexión / Compartir (control plane)
-
-Estado del tailnet de Tailscale + URLs para compartir las superficies de Ynara con otra
-máquina del tailnet. Contrato + lógica en el docstring de
-[`../app/api/v1/admin/connectivity.py`](../app/api/v1/admin/connectivity.py). Privacidad
-(regla #4): el probe es read-only (`tailscale status --json`, exec sin shell ni input del
-request) y **nunca** ecoa `str(exc)`; `tailnet_ip`/`hostname` son la identidad de ESTA
-máquina en el tailnet (análogo al `db_target` de `/admin/system`), no datos de usuario.
-
-- **GET** `/v1/admin/connectivity` — estado del tailnet + targets para compartir. **Sin** `range`, sin queries de negocio.
-  - Response 200: `ConnectivityOut = { tailscale: TailscaleStatus, targets: ShareTarget[] }` donde `TailscaleStatus = { up: bool, hostname?: string|null, tailnet_ip?: string|null, detail: string }` y `ShareTarget = { label: string, url: string, port: int }`. Con el tailnet arriba, `targets` arma 2 superficies en orden de uso — panel admin (`:3002`) y app web (`:3000`) — con el `tailnet_ip` + los puertos de config (`ADMIN_PORT`/`WEB_PORT`). Si el tailnet está abajo, `targets=[]`. **Sin secretos** (regla #4): solo IP del tailnet + puertos, nunca `base_url` ni credenciales.
-  - Response 401: sin token / token inválido / user no admin.
-  - Permisos: **admin** (flag `is_admin` o `ADMIN_BOOTSTRAP_IDS`).
 
 ---
 
