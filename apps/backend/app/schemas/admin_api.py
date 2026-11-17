@@ -92,8 +92,8 @@ class ServingOut(YnaraBaseModel):
     request_timeout_s: float  # PROVIDER_REQUEST_TIMEOUT_S de la factory (20)
     low_perf_available: bool  # True con serving real (preset per-request); False si fake
     models: list[ServingModelOut]
-    embedder: str  # settings.embedding_model ("bge-m3")
-    reranker: str  # settings.reranker_model ("bge-reranker-v2-m3")
+    embedder: str  # settings.embedding_model ("BAAI/bge-m3")
+    reranker: str  # RERANKER_PASSTHROUGH ("passthrough"): el reranker no tiene modelo
 
 
 class PlaygroundParams(YnaraBaseModel):

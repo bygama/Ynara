@@ -36,6 +36,7 @@ from app.core.deps import get_db, get_llm_client
 from app.core.security import create_access_token
 from app.llm.clients.factory import PROVIDER_REQUEST_TIMEOUT_S
 from app.llm.clients.fakes import FakeLlmClient
+from app.llm.clients.reranker import RERANKER_PASSTHROUGH
 from app.llm.errors import (
     LlmBadRequestError,
     LlmContextOverflowError,
@@ -168,7 +169,7 @@ async def test_serving_real_backend_inventory(db_session: AsyncSession) -> None:
         assert body["low_perf_available"] is True
         assert body["request_timeout_s"] == PROVIDER_REQUEST_TIMEOUT_S
         assert body["embedder"] == DEFAULT_EMBEDDING_MODEL
-        assert body["reranker"] == "bge-reranker-v2-m3"
+        assert body["reranker"] == RERANKER_PASSTHROUGH
 
         by_alias = {m["alias"]: m for m in body["models"]}
         assert set(by_alias) == {"conversacional", "agente"}

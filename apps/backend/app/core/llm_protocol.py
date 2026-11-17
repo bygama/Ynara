@@ -10,7 +10,7 @@ expone a sus callers — ni más ni menos. Tras esto ``core/deps.py`` no importa
 las clases concretas: eso es ``feature → feature`` (permitido), no ``core → feature``.
 
 Las implementaciones concretas (``OpenAICompatClient``/``FakeLlmClient``, los embedders
-Api/Fake y los rerankers Fake/Vllm) y los ``Protocol`` canónicos de
+Api/Fake y el ``FakeReranker`` passthrough) y los ``Protocol`` canónicos de
 ``app.llm.clients.*`` satisfacen ESTOS protocolos **estructuralmente** (sin herencia):
 mismas firmas, mismos tipos. No se duplica lógica, sólo la forma.
 

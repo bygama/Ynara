@@ -3,8 +3,8 @@
 Verifican el gate entre el fake (default de dev y test) y los clientes reales
 (``ResilientClient`` sobre un ``OpenAICompatClient`` por proveedor con
 ``LLM_BACKEND=api``) SIN abrir red: ``httpx.AsyncClient`` no disca hasta el primer
-request. Tambien cubren el presupuesto de resiliencia y los gates del embedder
-(``embedding_backend``) y del reranker.
+request. Tambien cubren el presupuesto de resiliencia, el gate del embedder
+(``embedding_backend``) y el reranker passthrough.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from app.llm.clients.factory import (
 from app.llm.clients.fakes import FakeLlmClient
 from app.llm.clients.providers.embeddings import ApiEmbeddingClient
 from app.llm.clients.providers.openai_compat import OpenAICompatClient
-from app.llm.clients.reranker import FakeReranker, VllmReranker
+from app.llm.clients.reranker import RERANKER_PASSTHROUGH, FakeReranker
 from app.llm.clients.resilient import ResilientClient
 from app.llm.config import LlmRuntimeConfig, ModeConfig, ModelConfig
 
@@ -63,7 +63,6 @@ def _settings(
     *,
     environment: str = "development",
     embedding_backend: str = "fake",
-    reranker_backend: str = "fake",
     llm_backend: str = "fake",
 ) -> Settings:
     """Settings aislado de cualquier .env. ``production`` exige config no-dev.
@@ -79,7 +78,6 @@ def _settings(
         # ``environment`` no tiene alias: se setea por nombre de campo, no por env var.
         "environment": environment,
         "EMBEDDING_BACKEND": embedding_backend,
-        "RERANKER_BACKEND": reranker_backend,
         "LLM_BACKEND": llm_backend,
     }
     if llm_backend == "api":
@@ -279,23 +277,27 @@ def test_embedder_fake_leaves_the_httpx_logs_alone() -> None:
 # ---------- build_reranker ----------
 
 
-def test_reranker_is_fake_by_default() -> None:
-    reranker = build_reranker(_settings())
+async def test_reranker_is_the_passthrough() -> None:
+    """El reranker es el ``FakeReranker`` passthrough y se reporta como tal (ADR-028 D5)."""
+    reranker = build_reranker()
     assert isinstance(reranker, FakeReranker)
+    health = await reranker.health()
+    assert health.model_name == RERANKER_PASSTHROUGH == "passthrough"
+    assert health.healthy is True
 
 
-def test_reranker_is_vllm_when_backend_vllm() -> None:
-    """``reranker_backend='vllm'`` construye el VllmReranker real (sin abrir red)."""
-    reranker = build_reranker(_settings(reranker_backend="vllm"))
-    assert isinstance(reranker, VllmReranker)
+async def test_reranker_passthrough_keeps_the_ann_order() -> None:
+    results = await build_reranker().rerank("consulta", ["a", "b", "c"], top_n=2)
+    assert [result.index for result in results] == [0, 1]
 
 
-def test_reranker_vllm_takes_timeout_from_settings() -> None:
-    """El timeout del reranker sale de Settings (review PR #198, MEDIUM #1)."""
-    settings = _settings(reranker_backend="vllm").model_copy(update={"reranker_timeout_s": 12.5})
-    reranker = build_reranker(settings)
-    assert isinstance(reranker, VllmReranker)
-    assert reranker._default_timeout_s == 12.5
+@pytest.mark.parametrize("environment", ["development", "production"])
+def test_reranker_is_the_passthrough_in_every_environment(environment: str) -> None:
+    """Production tambien usa el passthrough: no hay reranker real que prender."""
+    backend = "api" if environment == "production" else "fake"
+    settings = _settings(environment=environment, llm_backend=backend, embedding_backend=backend)
+    _, _, reranker = build_llm_clients(settings, _config())
+    assert isinstance(reranker, FakeReranker)
 
 
 # ---------- build_llm_clients (trio) ----------
@@ -314,5 +316,5 @@ def test_build_llm_clients_returns_real_clients_in_production() -> None:
     llm, embedder, reranker = build_llm_clients(settings, _config())
     assert isinstance(llm, ResilientClient)
     assert isinstance(embedder, ApiEmbeddingClient)
-    # El reranker real no existe: sigue el Fake detras del gate.
+    # El reranker es el passthrough en todos los entornos (ADR-028 D5).
     assert isinstance(reranker, FakeReranker)
