@@ -4,21 +4,13 @@ import { Delta, ModeId, TimePoint } from "@/features/_shared/schemas";
 /**
  * Contrato de `GET /v1/admin/overview?range=` (blueprint §4.1).
  *
- * Pantalla F1.1: estado del perímetro + 4 KPIs + serie de sesiones/día + mix de
- * modos compacto + preview de 6 filas de audit. Todos los conteos son enteros;
- * las fechas ISO 8601 UTC.
+ * Pantalla F1.1: 4 KPIs + serie de sesiones/día + mix de modos compacto +
+ * preview de 6 filas de audit. Todos los conteos son enteros; las fechas ISO
+ * 8601 UTC.
  *
  * `auditPreview` ya respeta la regla de privacidad del audit log: trae solo los
  * campos exponibles (sin `record_hash`, sin `target_id`, sin contenido).
  */
-
-/** Perímetro de soberanía que pinta el `PerimeterBadge` del hero. */
-export const OverviewPerimeter = z.object({
-  status: z.enum(["intact", "attention", "verifying"]),
-  detail: z.string().nullable(),
-  checked_at: z.string(),
-});
-export type OverviewPerimeterT = z.infer<typeof OverviewPerimeter>;
 
 /** KPI sin sparkline (valor + delta contra período anterior). */
 const KpiBare = z.object({
@@ -32,7 +24,6 @@ const KpiWithSpark = KpiBare.extend({
 });
 
 export const AdminOverviewOut = z.object({
-  perimeter: OverviewPerimeter,
   kpis: z.object({
     users_total: KpiBare,
     sessions: KpiWithSpark,
