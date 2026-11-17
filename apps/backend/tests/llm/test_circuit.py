@@ -111,3 +111,21 @@ def test_success_resets_failure_count() -> None:
     assert breaker.state is CircuitState.CLOSED  # solo 2 fallos tras el reset
     breaker.record_failure()
     assert breaker.state is CircuitState.OPEN
+
+
+def test_would_allow_has_no_side_effects() -> None:
+    """Responde lo mismo que ``allow`` sin pasar a HALF_OPEN ni consumir la prueba."""
+    clock = _Clock()
+    breaker = _breaker(clock, threshold=1, recovery=30.0)
+    assert breaker.would_allow() is True  # CLOSED
+    breaker.record_failure()
+    clock.now = 29.0
+    assert breaker.would_allow() is False  # OPEN, todavia dentro del timeout
+    clock.now = 30.0
+    assert breaker.would_allow() is True
+    assert breaker.would_allow() is True  # preguntar de nuevo no consume la prueba
+    assert breaker.state is CircuitState.OPEN
+    assert breaker.allow() is True  # la prueba sigue disponible -> HALF_OPEN
+    assert breaker.would_allow() is False  # prueba en curso
+    breaker.record_success()
+    assert breaker.would_allow() is True
