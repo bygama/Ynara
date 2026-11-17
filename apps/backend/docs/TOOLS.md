@@ -1,4 +1,4 @@
-# TOOLS.md — Catálogo de tools que Qwen puede llamar
+# TOOLS.md — Catálogo de tools que puede llamar el alias `agente`
 
 > Por cada tool: nombre, descripción, parámetros (con Pydantic
 > schema), modos donde está habilitada, ejemplo de invocación JSON,
@@ -20,8 +20,9 @@
 
 > **Estado**: `calendar.*`, `task.*` y `reminder.*` están **implementados de verdad** y,
 > desde **ADR-022**, se ejecutan **SÍNCRONOS en el chat de producción** (modo
-> `productividad`): cuando qwen llama `calendar.create_event` / `task.create_task` /
-> `reminder.set` durante un turno, la tool ESCRIBE en `calendar_events` / `tasks` /
+> `productividad`): cuando el alias `agente` llama `calendar.create_event` /
+> `task.create_task` / `reminder.set` durante un turno, la tool ESCRIBE en
+> `calendar_events` / `tasks` /
 > `reminders` dentro del turno (atómico con su commit) y el modelo confirma la acción en su
 > respuesta. `reminder.*` tiene además un scheduler (`dispatch_due_reminders`, beat 1 min)
 > que despacha los recordatorios vencidos vía un `NotificationDelivery` (hoy noop).
@@ -36,12 +37,13 @@
 >   (`app/llm/tools/agent_registry.py`) es el del **chat de producción** (ADR-022): trae
 >   los `calendar.*` / `task.*` / `reminder.*` **reales** de los namespaces que el modo
 >   habilita en `tools_enabled` (vía `_AGENT_TOOL_BUILDERS`). Lo arma `build_memory_context`
->   (`_default_reg`). Gateado estrictamente por modo: para los modos gemma
->   (`tools_enabled=[]`) queda vacío.
+>   (`_default_reg`). Gateado estrictamente por modo: para los modos del alias
+>   `conversacional` (`tools_enabled=[]`) queda vacío.
 > - `calendar_registry(store)` / `task_registry(store)` / `reminder_registry(store)` /
 >   `_build_agent_registry(...)` son los tools **reales** que usa la **pasada async del
 >   agente** (`app/workflows/agent_pass.py`), hoy **dormant** (ADR-022 D5): registrada pero
->   sin encolador, reservada para una futura pasada en modos gemma.
+>   sin encolador, reservada para una futura pasada en los modos del alias
+>   `conversacional`.
 >
 > En las tres superficies el `user_id` nunca viaja como argumento (el store ya lo tiene;
 > `extra='forbid'` lo impide), igual que la memoria.
