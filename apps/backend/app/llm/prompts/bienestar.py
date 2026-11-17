@@ -1,6 +1,6 @@
 """System prompt del modo Bienestar.
 
-Modelo Gemma 4 12B (conversacional): solo lee memoria, no escribe, no llama
+Alias ``conversacional`` (ADR-028 D3): solo lee memoria, no escribe, no llama
 tools. Tono casual-empatico. Capas de memoria: procedural + semantic. Ver
 ``ynara.config.json[modes][bienestar]`` y MODES.md.
 
