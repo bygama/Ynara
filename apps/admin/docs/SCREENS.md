@@ -93,6 +93,7 @@ Estado de runtime e infra (sin métricas de negocio, sin `range`).
   calma; DB de prod en dev → franja roja (incidente 2026-05-31).
 - **StatusCard** ×2: Postgres (`SELECT 1`) + Redis (PING). Dot de estado
   (**azul plano = OK**, error = down), latencia `tabular-nums`, último check.
-- **RuntimeInventory**: config no sensible — modelos LLM (gemma/qwen), los 5
-  modos, head de Alembic, embedder/reranker cargados, build version.
+- **RuntimeInventory**: config no sensible — los alias de modelo
+  (agente/conversacional), los 5 modos, head de Alembic, embedder/reranker
+  cargados, build version.
 - **Datos**: `useSystem()` → `GET /v1/admin/system` (sin `range`).
