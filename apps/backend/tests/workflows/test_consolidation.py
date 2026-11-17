@@ -9,7 +9,9 @@ Reglas aplicadas:
   variables; no se imprimen.
 - ``session_id`` es OPACO: no se usa como FK ni se pasa como
   ``source_session_id``.
-- El wrapper ``consolidate_turn`` nunca propaga excepciones.
+- El wrapper ``consolidate_turn`` no propaga excepciones, salvo la falla transitoria
+  del proveedor, que re-levanta para que Celery reintente
+  (``test_consolidation_retry.py``).
 """
 
 from __future__ import annotations

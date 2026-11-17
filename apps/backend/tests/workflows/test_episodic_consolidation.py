@@ -1,9 +1,9 @@
 """Tests de la consolidacion episodica (issue #209).
 
-UNIT: el wrapper ``consolidate_session`` (firma JSON, fail-open, no propaga) y
-  ``_async_consolidate_session`` con session inyectada (0 turnos -> 0, transcript
-  -> 1 episodio, JSON corrupto de Qwen -> parseo defensivo, is_sensitive bienestar
-  con retention <= 365).
+UNIT: el wrapper ``consolidate_session`` (firma JSON, fail-open, no propaga salvo
+  lo transitorio) y ``_async_consolidate_session`` con session inyectada (0 turnos
+  -> 0, transcript -> 1 episodio, JSON corrupto de Qwen -> parseo defensivo,
+  is_sensitive bienestar con retention <= 365).
 INTEGRATION (``@pytest.mark.integration``, DB real): close -> exactamente 1
   episodio cifrado con embedding + turnos purgados; idempotencia doble-cierre -> 1
   episodio; audit_log 1 fila WRITE/EPISODIC; no-leak de PII en logs; robustez del
@@ -11,7 +11,9 @@ INTEGRATION (``@pytest.mark.integration``, DB real): close -> exactamente 1
 
 Reglas aplicadas:
 - Ningun dato de usuario en logs (regla #4): el contenido va en variables.
-- El wrapper ``consolidate_session`` nunca propaga excepciones (fail-open).
+- El wrapper ``consolidate_session`` no propaga excepciones (fail-open), salvo la
+  falla transitoria del proveedor, que re-levanta para que Celery reintente
+  (``test_consolidation_retry.py``).
 """
 
 from __future__ import annotations

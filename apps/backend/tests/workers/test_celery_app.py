@@ -3,8 +3,9 @@
 Validan dos cosas:
 
 1. La politica de fiabilidad EXPLICITA en ``celery_app.conf`` (P0.3): los
-   valores estan seteados a mano, no a defaults implicitos. El contrato
-   relevante es AT-MOST-ONCE (``task_acks_late=False``) hasta el dedup de Ola 3.
+   valores estan seteados a mano, no a defaults implicitos. El default global es
+   AT-MOST-ONCE (``task_acks_late=False``); solo las dos tasks de consolidacion
+   (idempotentes) optan por ``acks_late`` y reintentos con backoff.
 2. Consistencia beat <-> registro: el ``task`` referenciado por cada entrada del
    ``beat_schedule`` MATCHEA un name realmente registrado en ``celery_app.tasks``
    por el decorador ``@celery_app.task(name=...)`` del workflow. Se importan los
@@ -25,12 +26,16 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
+from celery import Task
 
 # Importar las tasks de workflows las REGISTRA en celery_app.tasks via el
 # decorador @celery_app.task(name=...). Sin estos imports el registro estaria
 # vacio y el assert de consistencia beat<->registro seria un falso negativo.
 # Se importan los objetos task (no solo los modulos) para assertear su ``.name``
-# real contra el name registrado y el referenciado por el beat.
+# real contra el name registrado y el referenciado por el beat. ``app.workflows``
+# registra el resto (lo usa el chequeo de que las demas tasks no ackean tarde).
+import app.workflows  # noqa: F401  (import con efecto: registra las @celery_app.task)
+from app.llm.errors import LlmTransientError
 from app.workers.celery_app import celery_app
 from app.workflows.audit_retention import purge_audit_log
 from app.workflows.consolidation import consolidate_session, consolidate_turn
@@ -47,7 +52,7 @@ class TestReliabilityPolicy:
     """La politica de fiabilidad esta seteada EXPLICITA (no defaults implicitos)."""
 
     def test_at_most_once_acks_early(self) -> None:
-        """``task_acks_late=False`` => ackear antes de ejecutar (at-most-once)."""
+        """``task_acks_late=False`` => por default, ackear antes de ejecutar (at-most-once)."""
         assert celery_app.conf.task_acks_late is False
 
     def test_reject_on_worker_lost(self) -> None:
@@ -67,8 +72,57 @@ class TestReliabilityPolicy:
         assert celery_app.conf.task_time_limit == 120
 
     def test_visibility_timeout(self) -> None:
-        """Visibility timeout (180s) > task_time_limit (120s): no re-entrega activa."""
-        assert celery_app.conf.broker_transport_options["visibility_timeout"] == 180
+        """Visibility timeout de una hora (el default de Celery para Redis)."""
+        assert celery_app.conf.broker_transport_options["visibility_timeout"] == 3600
+
+
+_CONSOLIDATION_TASKS = (consolidate_turn, consolidate_session)
+
+
+def _task_name(task: Task) -> str:
+    return str(task.name)
+
+
+class TestConsolidationRetryPolicy:
+    """Las dos tasks de consolidacion reintentan lo transitorio y ackean tarde."""
+
+    @pytest.mark.parametrize("task", _CONSOLIDATION_TASKS, ids=_task_name)
+    def test_retries_transient_errors_with_backoff_and_jitter(self, task: Task) -> None:
+        """Solo ``LlmTransientError`` reintenta: backoff exponencial con tope y jitter."""
+        assert task.autoretry_for == (LlmTransientError,)
+        assert task.max_retries == 5
+        assert task.retry_backoff == 30
+        assert task.retry_backoff_max == 600
+        assert task.retry_jitter is True
+
+    @pytest.mark.parametrize("task", _CONSOLIDATION_TASKS, ids=_task_name)
+    def test_acks_late_with_limits_above_the_llm_budget(self, task: Task) -> None:
+        """At-least-once (idempotentes) y limites por encima del presupuesto del LLM (90s)."""
+        assert task.acks_late is True
+        assert task.soft_time_limit == 180
+        assert task.time_limit == 210
+
+    @pytest.mark.parametrize("task", _CONSOLIDATION_TASKS, ids=_task_name)
+    def test_visibility_timeout_outlasts_a_retry(self, task: Task) -> None:
+        """Un reintento queda sin ack hasta su ETA mas lo que corre: el broker no lo duplica.
+
+        Margen del doble sobre el countdown maximo mas el hard limit, por la espera en
+        una cola ocupada antes de que un worker lo tome.
+        """
+        visibility = celery_app.conf.broker_transport_options["visibility_timeout"]
+        longest = task.retry_backoff_max + task.time_limit
+        assert visibility >= 2 * longest
+
+    def test_other_tasks_stay_at_most_once(self) -> None:
+        """El resto de las tasks de workflows sigue at-most-once (el early-ack global)."""
+        consolidation = {task.name for task in _CONSOLIDATION_TASKS}
+        others = {
+            name: task
+            for name, task in celery_app.tasks.items()
+            if name.startswith("workflows.") and name not in consolidation
+        }
+        assert others
+        assert {name for name, task in others.items() if task.acks_late} == set()
 
 
 class TestBeatScheduleConsistency:
