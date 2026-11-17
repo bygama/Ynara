@@ -12,13 +12,16 @@ implementa cuando haya multiples instancias del mismo modelo, sin tocar
 router ni cliente.
 
 ``build_pool`` arma el pool desde ``config.serving_endpoints`` (la lista
-``LLM_SERVING`` describe la topologia, ADR-013). NO instancia clientes HTTP:
-los recibe ya construidos (eso es responsabilidad del startup, M8), asi el
+``LLM_SERVING`` describe la topologia, ADR-013). ``build_provider_pool`` lo
+arma con proveedores por API en orden de prioridad (ADR-028): el principal
+primero y el respaldo despues. Ninguno de los dos instancia clientes HTTP:
+los reciben ya construidos (eso es responsabilidad del startup, M8), asi el
 pool es testeable con ``FakeLlmClient``.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
 from app.llm.clients.base import LLMClient
@@ -39,7 +42,7 @@ class FirstHealthy:
     """Estrategia placeholder: devuelve el primer candidato.
 
     Asume que el pool ya entrega los candidatos en orden de preferencia
-    (primario antes que secundario on-prem). ``LeastQueueDepth`` es el
+    (el principal antes que el respaldo). ``LeastQueueDepth`` es el
     sucesor para escalar a N instancias por modelo (ADR-009, plan §4); no
     se implementa hasta que haga falta.
     """
@@ -52,7 +55,7 @@ class ClientPool:
     """Agrupa clientes LLM y rutea por modelo via ``serves_model``."""
 
     def __init__(self, clients: list[LLMClient], strategy: RoutingStrategy) -> None:
-        """``clients`` en orden de preferencia (primario, luego secundario)."""
+        """``clients`` en orden de preferencia (principal, luego respaldo)."""
         self._clients = clients
         self._strategy = strategy
 
@@ -102,9 +105,34 @@ def build_pool(
 
     Los clientes ya vienen construidos en ``clients_by_base_url`` (keyed por
     base_url); este helper solo los ordena segun la lista. El orden importa: es
-    el orden de preferencia (primero = primario, siguientes = fallback on-prem).
+    el orden de preferencia (primero = principal, siguientes = respaldo).
     Levanta ``KeyError`` si falta un cliente para una base_url declarada en
     ``serving_endpoints`` (config incoherente: fail-fast en el arranque).
     """
     clients = [clients_by_base_url[ep.base_url] for ep in config.serving_endpoints]
     return ClientPool(clients, FirstHealthy())
+
+
+def build_provider_pool(clients: Sequence[LLMClient]) -> ClientPool:
+    """Arma el ``ClientPool`` con proveedores por API en orden de prioridad (ADR-028).
+
+    El primero es el principal y los siguientes, el respaldo: el
+    ``ResilientClient`` pasa al siguiente ante una credencial rechazada, un 429
+    que no entra en el presupuesto, una caida (5xx, timeout, red) o un breaker
+    abierto. Cada proveedor anuncia sus alias (``serves_model``), asi que un
+    modelo que solo sirve el respaldo va directo a el.
+
+    Levanta ``ValueError`` si la lista esta vacia, si el mismo cliente aparece dos
+    veces (compartiria breaker y se reintentaria dos veces) o si dos proveedores
+    comparten ``name`` (los logs los distinguen por nombre): config incoherente,
+    fail-fast en el arranque. Un cliente sin ``name`` (p.ej. un fake) se acepta.
+    """
+    if not clients:
+        raise ValueError("el pool necesita al menos un proveedor")
+    if len({id(client) for client in clients}) != len(clients):
+        raise ValueError("el mismo cliente aparece dos veces en el pool")
+    names = [getattr(client, "name", None) for client in clients]
+    named = [name for name in names if name is not None]
+    if len(named) != len(set(named)):
+        raise ValueError("dos proveedores del pool tienen el mismo nombre")
+    return ClientPool(list(clients), FirstHealthy())

@@ -3,15 +3,18 @@
 Portan los casos del camino OpenAI de ``test_vllm_client.py`` (texto, timeouts, mapeo
 de errores, que nada filtre el host, health) y agregan lo propio de un proveedor por
 API: la credencial como ``Bearer`` (y que no aparezca en logs, ``repr`` ni
-excepciones), el alias del router -> id del modelo, 401/403/429 con ``Retry-After`` y
-el contexto excedido. Tools, razonamiento y respuestas raras están en
-``test_openai_compat_wire.py``; el streaming, en ``test_openai_compat_stream.py``.
+excepciones), el alias del router -> id del modelo, 401/403/429 con ``Retry-After``, el
+contexto excedido y, con el ``ResilientClient``, el respaldo: sin reintento ante la
+credencial rechazada y el paso al segundo proveedor. Tools, razonamiento y respuestas
+raras están en ``test_openai_compat_wire.py``; el streaming, en
+``test_openai_compat_stream.py``.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from pathlib import Path
@@ -23,7 +26,10 @@ from pydantic import SecretStr
 
 from app.core.llm_protocol import LLMClientProtocol
 from app.llm.clients.base import LLMClient
+from app.llm.clients.circuit import CircuitBreaker
+from app.llm.clients.pool import build_provider_pool
 from app.llm.clients.providers.openai_compat import OpenAICompatClient
+from app.llm.clients.resilient import ResilientClient
 from app.llm.errors import (
     LlmAuthError,
     LlmBadRequestError,
@@ -40,6 +46,7 @@ _FIXTURES = Path(__file__).parent / "fixtures"
 _BASE_URL = "https://proveedor.test/v1"
 _HOST = "proveedor.test"
 _API_KEY = "sk-test-0123456789abcdef"
+_BACKUP_KEY = "sk-test-respaldo-fedcba9876543210"
 _ALIAS = "qwen-3.5-9b"
 _MODEL_ID = "org/qwen3.5-9b-instruct"
 
@@ -361,3 +368,128 @@ async def test_aclose_closes_http_client() -> None:
     await client.aclose()
     assert http.is_closed
     assert _HOST not in repr(client)
+
+
+# ---------- con el ResilientClient: credencial sin reintento y respaldo ----------
+
+Step = Callable[[httpx.Request], httpx.Response]
+
+
+def _status(code: int, **headers: str) -> Step:
+    return lambda request: httpx.Response(code, headers=headers, json={"error": {"message": "x"}})
+
+
+def _raises(error: type[httpx.RequestError]) -> Step:
+    def step(request: httpx.Request) -> httpx.Response:
+        raise error("x", request=request)
+
+    return step
+
+
+def _ok(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(200, json=_load("completion_text.json"))
+
+
+class _RecordingSleep:
+    def __init__(self) -> None:
+        self.delays: list[float] = []
+
+    async def __call__(self, delay: float) -> None:
+        self.delays.append(delay)
+
+
+def _provider(name: str, key: str, steps: list[Step], calls: list[str]) -> OpenAICompatClient:
+    """Proveedor que responde ``steps`` en orden y anota su nombre en cada request."""
+    pending = list(steps)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(name)
+        assert request.headers["Authorization"] == f"Bearer {key}"
+        return pending.pop(0)(request)
+
+    return _client(handler, name=name, api_key=SecretStr(key))
+
+
+def _resilient_pair(
+    principal_steps: list[Step], backup_steps: list[Step], calls: list[str], **options: Any
+) -> ResilientClient:
+    principal = _provider("principal", _API_KEY, principal_steps, calls)
+    backup = _provider("respaldo", _BACKUP_KEY, backup_steps, calls)
+    return ResilientClient(build_provider_pool([principal, backup]), **options)
+
+
+@pytest.mark.parametrize(
+    ("principal_steps", "principal_calls", "error_name"),
+    [
+        ([_status(401)], 1, "LlmAuthError"),
+        ([_status(403)], 1, "LlmAuthError"),
+        ([_status(429, **{"Retry-After": "120"})], 1, "LlmRateLimitError"),
+        ([_status(503), _status(502), _status(500)], 3, "LlmUnavailableError"),
+        ([_raises(httpx.ReadTimeout)] * 3, 3, "LlmTimeoutError"),
+        ([_raises(httpx.ConnectError)] * 3, 3, "LlmUnavailableError"),
+    ],
+    ids=["401", "403", "429-sin-presupuesto", "5xx", "timeout", "red"],
+)
+async def test_failover_to_backup_provider(
+    principal_steps: list[Step],
+    principal_calls: int,
+    error_name: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    calls: list[str] = []
+    sleep = _RecordingSleep()
+    resilient = _resilient_pair(principal_steps, [_ok], calls, sleep=sleep)
+
+    with caplog.at_level(logging.DEBUG):
+        result = await resilient.complete(model=_ALIAS, messages=_messages())
+
+    assert result.text == "Hola, en que te puedo ayudar?"
+    assert calls == ["principal"] * principal_calls + ["respaldo"]
+    assert len(sleep.delays) == principal_calls - 1  # 401/403 y 429 sin presupuesto: 0
+    assert f"llm: candidato principal descartado ({error_name})" in caplog.text
+    assert _API_KEY not in caplog.text
+    assert _BACKUP_KEY not in caplog.text
+
+
+async def test_rate_limit_within_budget_waits_and_retries_principal() -> None:
+    calls: list[str] = []
+    sleep = _RecordingSleep()
+    resilient = _resilient_pair([_status(429, **{"Retry-After": "2"}), _ok], [], calls, sleep=sleep)
+    result = await resilient.complete(model=_ALIAS, messages=_messages())
+    assert result.finish_reason == "stop"
+    assert calls == ["principal", "principal"]
+    assert sleep.delays == [2.0]
+
+
+async def test_open_breaker_skips_principal() -> None:
+    calls: list[str] = []
+    resilient = _resilient_pair(
+        [_status(503)],
+        [_ok, _ok],
+        calls,
+        max_attempts=1,
+        sleep=_RecordingSleep(),
+        breaker_factory=lambda: CircuitBreaker(failure_threshold=1, recovery_timeout_s=999.0),
+    )
+    await resilient.complete(model=_ALIAS, messages=_messages())
+    await resilient.complete(model=_ALIAS, messages=_messages())
+    assert calls == ["principal", "respaldo", "respaldo"]
+
+
+async def test_both_providers_rejected_degrades() -> None:
+    calls: list[str] = []
+    resilient = _resilient_pair([_status(401)], [_status(403)], calls, sleep=_RecordingSleep())
+    result = await resilient.complete(model=_ALIAS, messages=_messages())
+    assert result.finish_reason == "degraded"
+    assert calls == ["principal", "respaldo"]
+
+
+async def test_context_exceeded_is_not_sent_to_backup() -> None:
+    body = {"error": {"message": "too long", "code": "context_length_exceeded"}}
+    calls: list[str] = []
+    resilient = _resilient_pair(
+        [lambda request: httpx.Response(400, json=body)], [_ok], calls, sleep=_RecordingSleep()
+    )
+    with pytest.raises(LlmContextOverflowError):
+        await resilient.complete(model=_ALIAS, messages=_messages())
+    assert calls == ["principal"]
