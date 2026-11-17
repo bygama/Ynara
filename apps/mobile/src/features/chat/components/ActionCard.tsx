@@ -3,9 +3,10 @@ import { View } from "react-native";
 import { Text } from "@/components/ui/Text";
 
 /**
- * Card de una acción ejecutada por el agente (modos Qwen) — `Action` del
- * contrato (`name` + `arguments` + `result`). Solo productividad/memoria
- * producen acciones; Gemma no (ver `cannedActions`/ADR-002).
+ * Card de una acción ejecutada por el agente — `Action` del contrato (`name`
+ * + `arguments` + `result`). Solo productividad/memoria (alias `agente`)
+ * producen acciones; los del alias `conversacional` no (ver `AGENT_MODES` y
+ * ADR-028).
  *
  * Sin emojis (regla del repo): el acento es el **diamante violeta** de marca
  * para memoria (símbolo de memoria del onboarding) y un dot azul para
