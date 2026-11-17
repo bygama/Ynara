@@ -56,18 +56,20 @@ Decisiones de diseno documentadas (M8 Ola 1 + Ola 2):
     envuelve en ``try/except``: ``route()`` degrada (``ChatResponse`` con
     ``finish_reason="degraded"``) ante los transitorios (``LlmTimeoutError``/
     ``LlmUnavailableError``/``LlmOverloadedError``), permanentes
-    (``LlmBadRequestError``/``LlmContextOverflowError``) y semanticos
+    (``LlmBadRequestError``/``LlmContextOverflowError``/``LlmAuthError``) y semanticos
     (``ToolParsingError``/``ToolExecutionError``), logueando SOLO
     ``type(exc).__name__`` (regla #4) para no degradar a ciegas. La UNICA excepcion
     es ``ModelNotServedError``: NO es degradacion del modelo sino una
     misconfiguracion de deploy (ningun backend del pool sirve el modelo del modo),
     asi que se RE-LANZA (500 + alerta) en vez de enmascararse como un turno
     degradado que el usuario veria como respuesta normal. El ``ResilientClient``
-    degrada los transitorios por su cuenta pero RE-LANZA los permanentes y
-    ``ModelNotServedError`` (estan en sus ``_PERMANENT_ERRORS``); un ``VllmClient``
-    pelado RE-LANZA todo. Asi la promesa "``route()`` nunca propaga un error
-    transitorio/permanente del modelo al caller" se cumple con cualquier cliente, y
-    un deploy roto sigue siendo ruidoso.
+    degrada por su cuenta los transitorios (reintento y respaldo) y la credencial
+    rechazada (respaldo sin reintento), pero RE-LANZA los errores del request
+    (``LlmBadRequestError``/``LlmContextOverflowError`` y ``ModelNotServedError``:
+    sus ``_REQUEST_ERRORS``); un ``VllmClient`` pelado RE-LANZA todo. Asi la
+    promesa "``route()`` nunca propaga un error transitorio/permanente del modelo
+    al caller" se cumple con cualquier cliente, y un deploy roto sigue siendo
+    ruidoso.
 
 (d) Encolado de consolidacion (Ola 2; movido en M10 Ola 0). El
     ``consolidate_turn.delay()`` ya NO vive en ``route()``: se movio al service
@@ -260,11 +262,12 @@ async def route(
     # deploy (ningun backend del pool sirve el modelo del modo) -> debe propagar
     # (500 + alerta), no enmascararse como turno degradado que el usuario ve normal.
     # El resto de la familia (transitorios timeout/unavailable/overloaded,
-    # permanentes bad-request/overflow, semanticos parse/exec) significa "el turno no
-    # se pudo completar" -> fallback degradado. El ResilientClient degrada los
-    # transitorios solo, pero RE-LANZA los permanentes y ModelNotServedError (estan en
-    # sus _PERMANENT_ERRORS) y un VllmClient pelado RE-LANZA todo: este except es la
-    # red real. Se loguea SOLO type(exc).__name__ (regla #4) para no degradar a ciegas.
+    # permanentes bad-request/overflow/auth, semanticos parse/exec) significa "el turno
+    # no se pudo completar" -> fallback degradado. El ResilientClient degrada solo los
+    # transitorios y la credencial rechazada, pero RE-LANZA los errores del request
+    # (bad-request/overflow y ModelNotServedError: sus _REQUEST_ERRORS) y un VllmClient
+    # pelado RE-LANZA todo: este except es la red real. Se loguea SOLO
+    # type(exc).__name__ (regla #4) para no degradar a ciegas.
     try:
         loop_result = await run_tool_loop(
             llm_client=llm_client,
