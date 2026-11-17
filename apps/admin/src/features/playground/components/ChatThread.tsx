@@ -23,7 +23,7 @@ type Props = {
  *
  * Renderiza la conversación COMPLETA de la sesión activa (no el último turno):
  * burbujas user (derecha) + assistant (izquierda) con su texto, el thinking
- * colapsable (qwen) y el footer de métricas (`tabular-nums`). El turno en vuelo
+ * colapsable (si el modelo razonó) y el footer de métricas (`tabular-nums`). El turno en vuelo
  * se pinta token-por-token desde `live` (cursor pulsante, thinking en vivo,
  * tok/s). Autoscroll al fondo en cada delta. Sin turno → empty state.
  */
@@ -43,7 +43,7 @@ export function ChatThread({ messages, live, agentPending, isReal, onRetry, clas
       <div className={cn("flex flex-1 items-center justify-center", className)}>
         <EmptyStateCard
           title="Serving fake: no hay generación real."
-          hint="Corré el backend con LLM_BACKEND=vllm para chatear con el modelo."
+          hint="Corré el backend con LLM_BACKEND=api para chatear con el modelo."
         />
       </div>
     );

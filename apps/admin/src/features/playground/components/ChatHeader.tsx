@@ -17,7 +17,7 @@ type Props = {
 
 /**
  * Cabecera del chat (tope de la columna protagonista). Mantiene SIEMPRE visible
- * qué modelo está activo (nombre mono + dot de salud + role) y, mientras
+ * qué modelo está activo (alias mono + dot de salud + alcance del role) y, mientras
  * streamea, el medidor de tokens/seg en vivo. A la derecha, badges de estado
  * (thinking / agente) y la acción de limpiar el hilo. Números con `tabular-nums`.
  */
@@ -53,10 +53,10 @@ export function ChatHeader({
               }}
             />
             <span className="font-mono text-body-sm text-[var(--color-ink)]">
-              {activeModel.served_name}
+              {activeModel.alias}
             </span>
             <span className="text-caption text-[var(--color-ink-soft)]">
-              {activeModel.role === "agent" ? "agente" : "conversacional"}
+              {activeModel.role === "agent" ? "memoria y tools" : "solo lee memoria"}
             </span>
           </div>
         ) : (

@@ -34,7 +34,7 @@ function mockFetch(resp: Response): ReturnType<typeof vi.fn> {
 
 const DONE_BASE = {
   finish_reason: "stop",
-  model_name: "qwen",
+  model_name: "agente",
   completion_tokens: 1,
   latency_ms: 100,
   tokens_per_second: 10,
@@ -46,7 +46,7 @@ function doneFrame(extra: Record<string, unknown> = {}): string {
 }
 
 const INPUT = {
-  model: "qwen",
+  model: "agente",
   message: "hola",
   params: { max_tokens: 64, temperature: 0.3, low_perf: false },
   thinking: true,

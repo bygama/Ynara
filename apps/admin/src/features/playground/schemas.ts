@@ -11,36 +11,34 @@ import { z } from "zod";
  *
  * Dos superficies:
  *  - `ServingOut` — estado read-only del serving (`GET /v1/admin/serving`). Sin
- *    secretos: NO trae `base_url` ni connection strings (regla #4); a lo sumo
- *    host, que F1 ni siquiera expone.
+ *    secretos: NO trae `base_url`, ids de modelo de los proveedores ni
+ *    credenciales (regla #4).
  *  - `PlaygroundIn`/`PlaygroundOut` — completion ad-hoc **sync** (no SSE)
  *    (`POST /v1/admin/playground`), aislada de memoria/tools/sesión.
  */
 
-/** Un modelo del catálogo de serving (estático del config + health runtime). */
+/**
+ * Un alias de modelo del catálogo (estático del config + health runtime). El
+ * panel conoce el alias, no el modelo: cada proveedor lo traduce a su id
+ * (ADR-028).
+ */
 export const ServingModelOut = z.object({
-  /** Key interna del modelo (`"gemma-4-12b"` | `"qwen-3.5-9b"`). */
-  key: z.string(),
-  /** Nombre servido, lo que se pasa a `complete()` (`"gemma4"` | `"qwen"`). */
-  served_name: z.string(),
+  /** Alias de modelo, lo que se pasa a `complete()` (`"conversacional"` | `"agente"`). */
+  alias: z.string(),
   role: z.enum(["conversational", "agent"]),
   writes_memory: z.boolean(),
-  context_window: z.number(),
-  /** `cfg.serving.max_model_len[key]`. */
-  max_model_len: z.number(),
-  /** Perfil de cuantización (`"awq_marlin"`); en Ollama se valida, no se pasa. */
-  quantization: z.string(),
-  tool_parser: z.string(),
-  /** `serves_model(served_name)` ∧ health agregada. */
+  /** Presupuesto de contexto del alias (`ynara.config.json[models]`). */
+  context_tokens: z.number(),
+  /** `serves_model(alias)` ∧ health agregada. */
   healthy: z.boolean(),
-  /** Default por role: `False` conversational / `True` agent (gotcha Gemma). */
+  /** Default por role: `False` conversational / `True` agent. */
   default_thinking: z.boolean(),
 });
 export type ServingModelOutT = z.infer<typeof ServingModelOut>;
 
 /** Estado read-only del serving. Sin secretos (regla #4). */
 export const ServingOut = z.object({
-  backend: z.enum(["fake", "vllm"]),
+  backend: z.enum(["fake", "api"]),
   /** `_wants_real_llm(settings)`: la UI lo usa para advertir "serving fake". */
   is_real: z.boolean(),
   /** `await llm_client.health().healthy`. */
@@ -64,7 +62,7 @@ export type PlaygroundParamsT = z.infer<typeof PlaygroundParams>;
 
 /** Body del completion ad-hoc. `message` ≤ 4000 (= CHAT_TEXT_MAX_LENGTH). */
 export const PlaygroundIn = z.object({
-  /** `served_name` — validado contra el catálogo en el server (422 si no). */
+  /** Alias de modelo — validado contra el catálogo en el server (422 si no). */
   model: z.string(),
   mode: z.string().nullable().optional(),
   message: z.string().min(1).max(4000),
@@ -82,7 +80,7 @@ export type PlaygroundInT = z.infer<typeof PlaygroundIn>;
  * completo ni `str(exc)`), regla #4.
  *
  *  - `name`: id del nodo (`"request" | "thinking" | "completion"`).
- *  - `detail`: texto humano ya armado en el server (`"qwen · max_tokens=256"`).
+ *  - `detail`: texto humano ya armado en el server (`"agente · max_tokens=256"`).
  *  - `duration_ms`: solo el step `completion` lo trae hoy; el resto es `null`.
  */
 export const TraceStep = z.object({
@@ -177,9 +175,10 @@ export type PlaygroundStreamTokenT = z.infer<typeof PlaygroundStreamToken>;
 
 /**
  * `event: reasoning` — un fragmento del canal de razonamiento SEPARADO del modelo
- * (qwen thinking vía Ollama: viaja en `delta.reasoning`, APARTE del `content`). El
- * hook lo acumula y lo muestra en vivo como "qué piensa el modelo"; NO cuenta como
- * token de respuesta. El `thinking` final autoritativo llega en `done`.
+ * (el proveedor lo manda APARTE del `content`; el evento existe solo si el
+ * proveedor devuelve razonamiento). El hook lo acumula y lo muestra en vivo como
+ * "qué piensa el modelo"; NO cuenta como token de respuesta. El `thinking` final
+ * autoritativo llega en `done`.
  */
 export const PlaygroundStreamReasoning = z.object({
   delta: z.string(),

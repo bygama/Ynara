@@ -32,7 +32,7 @@ type Props = {
 };
 
 /** Hint del preset bajo rendimiento (la materialización del toggle, §2.2 paso 4). */
-const LOW_PERF_HINT = "256 tokens · sin thinking · temp 0.2 · timeout 30s";
+const LOW_PERF_HINT = "256 tokens · sin thinking · temp 0.2 · timeout 10s";
 
 /** Hint del modo agente (Fase B): qué hace el tool-loop observado. */
 const AGENT_MODE_HINT = "Corre el tool-loop con tools observadas (sin efecto real)";
@@ -47,13 +47,13 @@ const THINKING_OPTIONS: readonly { value: ThinkingChoice; label: string }[] = [
  * Banda 1 del Playground (ADR-018 §3): selector de modelo + bajo rendimiento +
  * params.
  *
- * - **ModelSelect**: `ChipGroup<served_name>` alimentado por `useServing` (NUNCA
+ * - **ModelSelect**: `ChipGroup<alias>` alimentado por `useServing` (NUNCA
  *   hardcode); deshabilita el modelo si `!healthy`.
  * - **LowPerfToggle**: `Switch` a11y con el hint del preset. En `on` deshabilita
  *   visualmente los sliders (el preset los pisa server-side).
  * - **MaxTokens / Temperature**: sliders nativos con valor `tabular-nums`.
  * - **ThinkingChip**: `ChipGroup ["Auto","On","Off"]`; muestra un warning si el
- *   modelo es Gemma (conversational) y se fuerza `On` (content vacío, ADR-012 D4).
+ *   alias es `conversacional` y se fuerza `On` (no razona por defecto).
  * - **AgentModeToggle** (Fase B): `Switch` que rutea el envío al tool-loop
  *   observado (`/playground/agent`) en vez del probe crudo; el hint deja claro
  *   que las tools son no-op (`not_wired`, sin efecto real).
@@ -62,10 +62,10 @@ export function PlaygroundControls({ models, config, onChange, className }: Prop
   const set = <K extends keyof PlaygroundConfig>(key: K, value: PlaygroundConfig[K]) =>
     onChange({ ...config, [key]: value });
 
-  const modelOptions = models.map((m) => ({ value: m.served_name, label: m.served_name }));
-  const selectedModel = models.find((m) => m.served_name === config.model);
-  const isGemma = selectedModel?.role === "conversational";
-  const gemmaThinkingWarning = isGemma && config.thinking === "on";
+  const modelOptions = models.map((m) => ({ value: m.alias, label: m.alias }));
+  const selectedModel = models.find((m) => m.alias === config.model);
+  const isConversational = selectedModel?.role === "conversational";
+  const forcedThinkingWarning = isConversational && config.thinking === "on";
 
   return (
     <Card className={cn("flex flex-col gap-6", className)}>
@@ -124,9 +124,10 @@ export function PlaygroundControls({ models, config, onChange, className }: Prop
           value={config.thinking}
           onChange={(v) => set("thinking", v)}
         />
-        {gemmaThinkingWarning ? (
+        {forcedThinkingWarning ? (
           <p className="text-caption" style={{ color: "var(--color-error)" }}>
-            Gemma es conversacional: forzar thinking puede devolver contenido vacío.
+            El alias conversacional no razona por defecto: según el proveedor, forzar thinking puede
+            fallar o no tener efecto.
           </p>
         ) : null}
       </div>

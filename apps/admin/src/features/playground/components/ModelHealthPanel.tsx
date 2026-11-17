@@ -6,21 +6,25 @@ import type { ServingModelOutT, ServingOutT } from "../schemas";
 
 type Props = {
   serving: ServingOutT;
-  /** `served_name` del modelo activo (el elegido en los controles). */
+  /** Alias del modelo activo (el elegido en los controles). */
   activeModel: string;
   className?: string;
 };
 
-const ROLE_LABEL: Record<ServingModelOutT["role"], string> = {
-  conversational: "Conversacional",
-  agent: "Agente",
+/**
+ * Qué puede hacer cada role. El alias ya nombra el role (`conversacional` /
+ * `agente`), así que la fila muestra su alcance en vez de repetirlo.
+ */
+const ROLE_SCOPE: Record<ServingModelOutT["role"], string> = {
+  conversational: "Solo lee memoria",
+  agent: "Lee y escribe memoria, llama tools",
 };
 
 /**
  * Panel "qué IA está activa" (riel derecho del Playground rediseñado).
  *
- * Responde de un vistazo: ¿el serving es real?, ¿qué modelos hay y cuáles están
- * sanos (gemma4/qwen)?, ¿cuál está activo en el turno? El dot late
+ * Responde de un vistazo: ¿el serving es real?, ¿qué alias hay y cuáles están
+ * sanos (conversacional/agente)?, ¿cuál está activo en el turno? El dot late
  * (`anim-pulse-soft`) cuando el modelo está sano; el activo lleva un anillo azul
  * de marca. Sin verde/ámbar (decisión de marca: OK = azul plano). Sin secretos
  * (sin base_url, regla #4). Embedder/reranker al pie.
@@ -38,7 +42,7 @@ export function ModelHealthPanel({ serving, activeModel, className }: Props) {
 
       <ul className="flex flex-col gap-2">
         {serving.models.map((model) => (
-          <ModelRow key={model.key} model={model} active={model.served_name === activeModel} />
+          <ModelRow key={model.alias} model={model} active={model.alias === activeModel} />
         ))}
       </ul>
 
@@ -90,7 +94,7 @@ function BackendBadge({ isReal, healthy }: { isReal: boolean; healthy: boolean }
   );
 }
 
-/** Fila de un modelo: dot de salud + served_name + role + marca de activo. */
+/** Fila de un modelo: dot de salud + alias + alcance del role + marca de activo. */
 function ModelRow({ model, active }: { model: ServingModelOutT; active: boolean }) {
   return (
     <li
@@ -113,11 +117,9 @@ function ModelRow({ model, active }: { model: ServingModelOutT; active: boolean 
           }}
         />
         <span className="flex flex-col">
-          <span className="font-mono text-body-sm text-[var(--color-ink)]">
-            {model.served_name}
-          </span>
+          <span className="font-mono text-body-sm text-[var(--color-ink)]">{model.alias}</span>
           <span className="text-caption text-[var(--color-ink-soft)]">
-            {ROLE_LABEL[model.role]}
+            {ROLE_SCOPE[model.role]}
             {model.healthy ? "" : " · caído"}
           </span>
         </span>

@@ -33,11 +33,11 @@ export type ChatTurn = {
   latencyMs?: number;
   tokensPerSecond?: number;
   thinkingUsed?: boolean;
-  /** El `<think>…</think>` separado (qwen), o `null`. */
+  /** El `<think>…</think>` separado, o `null`. */
   thinking?: string | null;
   /** `true` si el turno corrió en modo agente (tool-loop observado). */
   agent?: boolean;
-  /** Tool-calls observadas del loop agente (qwen), si `agent===true`. */
+  /** Tool-calls observadas del loop agente, si `agent===true`. */
   actions?: ToolCallOutT[];
   /** Status HTTP del error (para mapear copy neutro), si `status==="error"`. */
   errorStatus?: number | null;
