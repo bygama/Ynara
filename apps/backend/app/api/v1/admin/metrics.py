@@ -30,6 +30,7 @@ from app.core.config import get_settings
 from app.core.db_guard import _host_of, is_prod_db_host
 from app.core.deps import CurrentAdmin, DbSession
 from app.enums import AuditOperation, LlmModel, MemoryLayer, Mode, enum_values
+from app.llm.clients.reranker import RERANKER_PASSTHROUGH
 from app.llm.config import load_llm_config
 from app.schemas.admin import (
     AdminMoatOut,
@@ -206,7 +207,7 @@ async def admin_system(
         modes=enum_values(Mode),
         schema_head=_schema_head(),
         embedder=settings.embedding_model,
-        reranker=settings.reranker_model,
+        reranker=RERANKER_PASSTHROUGH,
         build_version=__version__,
     )
 

@@ -92,15 +92,6 @@ class Settings(BaseSettings):
     # suyo de PROVIDER_REQUEST_TIMEOUT_S (app/llm/clients/factory.py).
     embedding_timeout_s: float = Field(30.0, gt=0, alias="EMBEDDING_TIMEOUT_S")
 
-    # Reranker (cross-encoder). `reranker_backend` elige el Fake passthrough
-    # (default) vs el `VllmReranker` real contra la API `/rerank` de vLLM. Ollama
-    # NO sirve cross-encoders: en dev se queda en 'fake'. El modelo companion de
-    # bge-m3 es bge-reranker-v2-m3 (ADR-008 lo deja como palanca de re-ranking).
-    reranker_backend: Literal["fake", "vllm"] = Field("fake", alias="RERANKER_BACKEND")
-    reranker_base_url: str = Field("http://localhost:8004/v1", alias="RERANKER_BASE_URL")
-    reranker_model: str = Field("bge-reranker-v2-m3", alias="RERANKER_MODEL")
-    reranker_timeout_s: float = Field(30.0, gt=0, alias="RERANKER_TIMEOUT_S")
-
     # Conexión / Compartir (control plane del admin, /v1/admin/connectivity): puertos
     # de los servicios que se exponen a otra máquina por el tailnet de Tailscale. El
     # panel arma las URLs para compartir con el IP del tailnet + estos puertos. Defaults:

@@ -16,11 +16,10 @@
 - ``embedding`` define el Protocol ``EmbeddingClient`` y el
   ``FakeEmbeddingClient`` determinista que consumen los wrappers de memoria (M7).
 - ``reranker`` define el Protocol ``Reranker`` (reordena el top-K ANN) con el
-  ``FakeReranker`` passthrough y el ``VllmReranker`` real (Ollama no sirve
-  cross-encoders, asi que en dev se usa el Fake).
+  ``FakeReranker`` passthrough, el reranker de todos los entornos (ADR-028 D5).
 - ``factory`` centraliza la decision Fakes (dev/test) vs. clientes reales por
-  settings (``LLM_BACKEND`` / ``EMBEDDING_BACKEND`` / ``RERANKER_BACKEND`` o
-  ``environment == 'production'``), sin hardcodear los Fakes en el lifespan.
+  settings (``LLM_BACKEND`` / ``EMBEDDING_BACKEND``; production exige ``api`` en
+  los dos), sin hardcodear los Fakes en el lifespan.
 
 El router (``router.py``) solo conoce el Protocol ``LLMClient``, nunca la
 implementacion concreta (ADR-009 D1).
