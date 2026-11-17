@@ -36,6 +36,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.constants import MODEL_ALIAS_AGENT
 from app.enums import AuditOperation, LlmModel, MemoryLayer, Mode
 from app.llm.clients.base import LLMClient
 from app.llm.schemas import ChatMessage
@@ -338,7 +339,7 @@ class QwenMemoryEngine:
     contaminaria ``result.text`` y degradaria el parseo en silencio (#235).
     """
 
-    def __init__(self, llm_client: LLMClient, model: str = "qwen") -> None:
+    def __init__(self, llm_client: LLMClient, model: str = MODEL_ALIAS_AGENT) -> None:
         self._client = llm_client
         self._model = model
 

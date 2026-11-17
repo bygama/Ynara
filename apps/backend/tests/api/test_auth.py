@@ -357,7 +357,7 @@ async def test_token_usable_contra_ruta_protegida(db_session: AsyncSession) -> N
     """El token de /token autentica contra POST /v1/chat (ruta con CurrentUser)."""
     email = "e2e.loop@example.com"
     password = "supersecreta1"
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
     fake.queue_result(
         CompletionResult(
             text="hola",

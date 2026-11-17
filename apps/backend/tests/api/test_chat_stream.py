@@ -195,7 +195,7 @@ def _done(events: list[tuple[str, dict]]) -> dict:
 async def test_happy_gemma_tokens_y_done(db_session: AsyncSession) -> None:
     """200 + tokens que reconstruyen el texto + done con actions vacias."""
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
     fake.queue_result(_completion(text="hola, todo bien?", model_name="gemma4"))
 
     client = await _client(db_session, llm_client=fake)
@@ -238,7 +238,7 @@ async def test_happy_gemma_tokens_y_done(db_session: AsyncSession) -> None:
 async def test_happy_qwen_actions_en_done(db_session: AsyncSession) -> None:
     """200 + actions en done (tool loop). Encola consolidacion (mockeada)."""
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"agente"}))
     # Vuelta 1: tool_call memory.search; vuelta 2: stop con texto.
     tc = ToolCall(id="tc-1", name="memory.search", arguments={"query": "reuniones"})
     fake.queue_result(
@@ -294,7 +294,7 @@ async def test_stream_enqueues_consolidate_post_commit(db_session: AsyncSession)
     (productividad) tiene ``writes_memory=True``.
     """
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(models=frozenset({"qwen"}))
+    fake = FakeLlmClient(models=frozenset({"agente"}))
     fake.queue_result(_completion(text="Hecho", finish_reason="stop", model_name="qwen"))
 
     client = await _client(db_session, llm_client=fake)
@@ -341,7 +341,7 @@ async def test_stream_enqueues_consolidate_post_commit(db_session: AsyncSession)
 async def test_reuso_session_id(db_session: AsyncSession) -> None:
     """El session_id devuelto reusa la misma ChatSession (mismo id)."""
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
     fake.queue_result(_completion(text="uno", model_name="gemma4"))
     fake.queue_result(_completion(text="dos", model_name="gemma4"))
 
@@ -381,7 +381,7 @@ async def test_reuso_session_id(db_session: AsyncSession) -> None:
 
 
 async def test_missing_auth_401(db_session: AsyncSession) -> None:
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
     client = await _client(db_session, llm_client=fake)
     try:
         async with client:
@@ -394,7 +394,7 @@ async def test_missing_auth_401(db_session: AsyncSession) -> None:
 
 
 async def test_invalid_token_401(db_session: AsyncSession) -> None:
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
     client = await _client(db_session, llm_client=fake)
     try:
         async with client:
@@ -415,7 +415,7 @@ async def test_invalid_token_401(db_session: AsyncSession) -> None:
 
 async def test_empty_text_422(db_session: AsyncSession) -> None:
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
     client = await _client(db_session, llm_client=fake)
     try:
         async with client:
@@ -432,7 +432,7 @@ async def test_empty_text_422(db_session: AsyncSession) -> None:
 
 async def test_text_too_long_422(db_session: AsyncSession) -> None:
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
     client = await _client(db_session, llm_client=fake)
     try:
         async with client:
@@ -449,7 +449,7 @@ async def test_text_too_long_422(db_session: AsyncSession) -> None:
 
 async def test_invalid_mode_422(db_session: AsyncSession) -> None:
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
     client = await _client(db_session, llm_client=fake)
     try:
         async with client:
@@ -473,7 +473,7 @@ async def test_session_otro_user_404(db_session: AsyncSession) -> None:
     owner = await _seed_user(db_session)
     intruder = await _seed_user(db_session)
 
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
     fake.queue_result(_completion(text="hola", model_name="gemma4"))
     client = await _client(db_session, llm_client=fake)
     try:
@@ -508,7 +508,7 @@ async def test_session_otro_user_404(db_session: AsyncSession) -> None:
 
 async def test_mode_mismatch_409(db_session: AsyncSession) -> None:
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
     fake.queue_result(_completion(text="hola", model_name="gemma4"))
     client = await _client(db_session, llm_client=fake)
     try:
@@ -552,7 +552,7 @@ async def test_mode_mismatch_409(db_session: AsyncSession) -> None:
 async def test_invariante_join_igual_text(db_session: AsyncSession, payload_text: str) -> None:
     """El wire nunca se parte por newlines: ''.join(deltas) == text EXACTO."""
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
     fake.queue_result(_completion(text=payload_text, model_name="gemma4"))
 
     client = await _client(db_session, llm_client=fake)
@@ -588,7 +588,7 @@ async def test_finish_reason_none_coerciona_stop(db_session: AsyncSession) -> No
     borde del router es la unica forma honesta de ejercitar la coercion.
     """
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
 
     none_resp = ChatResponse(
         text="respuesta",
@@ -629,7 +629,7 @@ async def test_finish_reason_degraded_se_preserva(db_session: AsyncSession) -> N
     respuesta 200 valida con texto de fallback.
     """
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
     fake.queue_error(LlmBadRequestError())
 
     client = await _client(db_session, llm_client=fake)
@@ -664,7 +664,7 @@ async def test_text_vacio_cero_tokens_un_done(db_session: AsyncSession) -> None:
     fuerza en el borde del router.
     """
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
 
     empty_resp = ChatResponse(text="", actions=[], session_id="opaco", finish_reason="stop")
     client = await _client(db_session, llm_client=fake)
@@ -694,7 +694,7 @@ async def test_text_vacio_cero_tokens_un_done(db_session: AsyncSession) -> None:
 async def test_wire_estructura(db_session: AsyncSession) -> None:
     """El wire arranca con 'event: token\\ndata: ', cierra en '\\n\\n', parsea ok."""
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
     fake.queue_result(_completion(text="hola mundo", model_name="gemma4"))
 
     client = await _client(db_session, llm_client=fake)
@@ -747,7 +747,7 @@ async def test_commit_falla_500_sin_stream_parcial(
     helper compartido.
     """
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
     fake.queue_result(_completion(text="hola", model_name="gemma4"))
 
     async def _boom() -> None:
@@ -803,7 +803,7 @@ async def test_error_mid_stream_emite_event_error_neutro(
     PII ni texto de usuario (regla #4): es la constante neutra del modulo.
     """
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
     # Texto largo (>1 ventana de _TOKEN_CHUNK_SIZE=6 code-points) -> el for itera
     # varias veces, asi hay un 1er token antes de que falle la 2da invocacion.
     fake.queue_result(_completion(text="hola mundo, esto es largo", model_name="gemma4"))
@@ -871,7 +871,7 @@ async def test_reasoning_events_antes_de_tokens(db_session: AsyncSession) -> Non
     ``''.join`` de cada canal reconstruye su texto exacto.
     """
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
     fake.queue_result(
         _completion(text="respuesta final", reasoning="estoy pensando esto", model_name="gemma4")
     )
@@ -908,7 +908,7 @@ async def test_reasoning_events_antes_de_tokens(db_session: AsyncSession) -> Non
 async def test_sin_reasoning_no_emite_eventos_reasoning(db_session: AsyncSession) -> None:
     """Sin reasoning (``resp.reasoning`` None): 0 eventos ``reasoning``, solo token + done."""
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
     # Sin reasoning encolado -> CompletionResult.reasoning None -> ChatResponse.reasoning None.
     fake.queue_result(_completion(text="hola mundo", model_name="gemma4"))
 
@@ -941,7 +941,7 @@ async def test_turno_degradado_no_emite_reasoning(db_session: AsyncSession) -> N
     eventos ``reasoning`` igual.
     """
     user = await _seed_user(db_session)
-    fake = FakeLlmClient(models=frozenset({"gemma4"}))
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
 
     degraded_resp = ChatResponse(
         text="respuesta de fallback",

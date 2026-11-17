@@ -29,9 +29,9 @@ from app.models.user import User
 from app.schemas.task import TaskCreate
 from app.workflows.agent_pass import _async_agent_pass
 
-# Modo real con 'task' en tools_enabled (ynara.config.json): productividad (qwen).
+# Modo real con 'task' en tools_enabled (ynara.config.json): productividad (agente).
 MODE_WITH_TASK = "productividad"
-# Modo sin tools de agente accionables: vida (gemma, tools_enabled=[]).
+# Modo sin tools de agente accionables: vida (conversacional, tools_enabled=[]).
 MODE_WITHOUT_AGENT_TOOLS = "vida"
 
 USER_ID = str(uuid.uuid4())
@@ -40,7 +40,7 @@ SESSION_ID = str(uuid.uuid4())
 
 def _make_llm_with_create_task(*, title: str = "Comprar pan") -> FakeLlmClient:
     """FakeLlmClient guionado: 1ra completion = tool_call task.create_task; 2da = stop."""
-    client = FakeLlmClient(models=frozenset({"qwen"}))
+    client = FakeLlmClient(models=frozenset({"agente"}))
     tc = ToolCall(
         id="tc-1",
         name="task.create_task",

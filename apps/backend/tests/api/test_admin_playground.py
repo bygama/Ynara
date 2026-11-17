@@ -50,9 +50,9 @@ from app.models.user import User
 
 pytestmark = pytest.mark.integration
 
-# served_names reales del catálogo (ynara.config.json): gemma4 (conversational) +
-# qwen (agent). El Fake del lifespan anuncia ambos.
-_SERVED = frozenset({"gemma4", "qwen"})
+# Alias reales del catálogo (ynara.config.json): conversacional (conversational) +
+# agente (agent). El Fake del lifespan anuncia ambos.
+_SERVED = frozenset({"conversacional", "agente"})
 
 
 def _real_settings() -> Settings:
@@ -96,7 +96,7 @@ def _completion(
     *,
     text: str = "respuesta de prueba",
     finish_reason: str = "stop",
-    model_name: str = "gemma4",
+    model_name: str = "conversacional",
 ) -> CompletionResult:
     """``CompletionResult`` mínimo para programar el ``FakeLlmClient``."""
     return CompletionResult(
@@ -169,21 +169,29 @@ async def test_serving_real_backend_inventory(db_session: AsyncSession) -> None:
         assert body["embedder"] == "bge-m3"
         assert body["reranker"] == "bge-reranker-v2-m3"
 
-        served_names = {m["served_name"] for m in body["models"]}
-        assert served_names == {"gemma4", "qwen"}
-        by_served = {m["served_name"]: m for m in body["models"]}
-        # gemma4 = conversational (default_thinking False); qwen = agent (True).
-        assert by_served["gemma4"]["role"] == "conversational"
-        assert by_served["gemma4"]["default_thinking"] is False
-        assert by_served["gemma4"]["max_model_len"] == 8192
-        assert by_served["gemma4"]["tool_parser"] == "gemma4"
-        assert by_served["qwen"]["role"] == "agent"
-        assert by_served["qwen"]["default_thinking"] is True
-        assert by_served["qwen"]["max_model_len"] == 32768
-        assert by_served["qwen"]["tool_parser"] == "hermes"
-        # Todos sanos: el Fake reporta healthy y sirve ambos served_names.
+        by_alias = {m["alias"]: m for m in body["models"]}
+        assert set(by_alias) == {"conversacional", "agente"}
+        # conversacional = conversational (default_thinking False); agente = agent (True).
+        assert by_alias["conversacional"]["role"] == "conversational"
+        assert by_alias["conversacional"]["default_thinking"] is False
+        assert by_alias["conversacional"]["writes_memory"] is False
+        assert by_alias["conversacional"]["context_tokens"] == 8192
+        assert by_alias["agente"]["role"] == "agent"
+        assert by_alias["agente"]["default_thinking"] is True
+        assert by_alias["agente"]["writes_memory"] is True
+        assert by_alias["agente"]["context_tokens"] == 32768
+        # Todos sanos: el Fake reporta healthy y sirve los dos alias.
         assert all(m["healthy"] for m in body["models"])
-        assert all(m["quantization"] == "awq_marlin" for m in body["models"])
+        # El inventario no lleva datos del serving local ni del proveedor.
+        fields = {
+            "alias",
+            "role",
+            "writes_memory",
+            "context_tokens",
+            "healthy",
+            "default_thinking",
+        }
+        assert all(set(m) == fields for m in body["models"])
     finally:
         app.dependency_overrides.clear()
 
@@ -239,7 +247,7 @@ async def test_playground_happy_path(db_session: AsyncSession) -> None:
     """200 + PlaygroundOut con el CompletionResult del Fake; llama complete() directo."""
     admin = await _seed_admin(db_session)
     fake = FakeLlmClient(models=_SERVED)
-    fake.queue_result(_completion(text="hola desde el playground", model_name="gemma4"))
+    fake.queue_result(_completion(text="hola desde el playground", model_name="conversacional"))
 
     client = _client(db_session, llm_client=fake)
     try:
@@ -247,7 +255,7 @@ async def test_playground_happy_path(db_session: AsyncSession) -> None:
             async with client:
                 resp = await client.post(
                     "/v1/admin/playground",
-                    json={"model": "gemma4", "message": "hola"},
+                    json={"model": "conversacional", "message": "hola"},
                     headers=_bearer(admin.id),
                 )
 
@@ -255,11 +263,11 @@ async def test_playground_happy_path(db_session: AsyncSession) -> None:
         body = resp.json()
         assert body["text"] == "hola desde el playground"
         assert body["finish_reason"] == "stop"
-        assert body["model_name"] == "gemma4"
+        assert body["model_name"] == "conversacional"
         assert body["prompt_tokens"] == 12
         assert body["completion_tokens"] == 7
         assert body["latency_ms"] == 33.0
-        # gemma4 = conversational -> default thinking False.
+        # conversacional = conversational -> default thinking False.
         assert body["thinking_used"] is False
         # Sin <think> en el text -> thinking separado es None.
         assert body["thinking"] is None
@@ -268,11 +276,11 @@ async def test_playground_happy_path(db_session: AsyncSession) -> None:
         trace = body["trace"]
         assert [step["name"] for step in trace] == ["request", "thinking", "completion"]
         by_name = {step["name"]: step for step in trace}
-        # request: served_name + params públicos; sin preset low_perf por default.
-        assert "gemma4" in by_name["request"]["detail"]
+        # request: alias + params públicos; sin preset low_perf por default.
+        assert "conversacional" in by_name["request"]["detail"]
         assert "max_tokens=1024" in by_name["request"]["detail"]
         assert "preset low_perf" not in by_name["request"]["detail"]
-        # thinking off (gemma4 conversational sin override).
+        # thinking off (conversacional es conversational y no hay override).
         assert by_name["thinking"]["detail"] == "off"
         # completion: finish_reason + tokens totales + duration_ms == latency_ms.
         assert "stop" in by_name["completion"]["detail"]
@@ -284,10 +292,10 @@ async def test_playground_happy_path(db_session: AsyncSession) -> None:
         assert "asistente útil" not in resp.text
         assert "base_url" not in resp.text
 
-        # Aislamiento: se llamó complete() con el served_name, sin tools.
+        # Aislamiento: se llamó complete() con el alias, sin tools.
         assert len(fake.complete_calls) == 1
         call = fake.complete_calls[0]
-        assert call["model"] == "gemma4"
+        assert call["model"] == "conversacional"
         assert call["tools"] is None
         # messages = [system, user]; el user trae el mensaje del operador.
         messages = call["messages"]
@@ -299,10 +307,10 @@ async def test_playground_happy_path(db_session: AsyncSession) -> None:
 
 
 async def test_playground_thinking_default_per_role_agent(db_session: AsyncSession) -> None:
-    """qwen = agent -> default thinking True cuando el body no lo overridea."""
+    """agente = agent -> default thinking True cuando el body no lo overridea."""
     admin = await _seed_admin(db_session)
     fake = FakeLlmClient(models=_SERVED)
-    fake.queue_result(_completion(model_name="qwen"))
+    fake.queue_result(_completion(model_name="agente"))
 
     client = _client(db_session, llm_client=fake)
     try:
@@ -310,7 +318,7 @@ async def test_playground_thinking_default_per_role_agent(db_session: AsyncSessi
             async with client:
                 resp = await client.post(
                     "/v1/admin/playground",
-                    json={"model": "qwen", "message": "que onda"},
+                    json={"model": "agente", "message": "que onda"},
                     headers=_bearer(admin.id),
                 )
 
@@ -322,10 +330,10 @@ async def test_playground_thinking_default_per_role_agent(db_session: AsyncSessi
 
 
 async def test_playground_thinking_manual_override(db_session: AsyncSession) -> None:
-    """El override manual del body gana sobre el default por role (gemma4 + thinking=True)."""
+    """El override del body gana sobre el default por role (conversacional + thinking=True)."""
     admin = await _seed_admin(db_session)
     fake = FakeLlmClient(models=_SERVED)
-    fake.queue_result(_completion(model_name="gemma4"))
+    fake.queue_result(_completion(model_name="conversacional"))
 
     client = _client(db_session, llm_client=fake)
     try:
@@ -333,7 +341,7 @@ async def test_playground_thinking_manual_override(db_session: AsyncSession) -> 
             async with client:
                 resp = await client.post(
                     "/v1/admin/playground",
-                    json={"model": "gemma4", "message": "hola", "thinking": True},
+                    json={"model": "conversacional", "message": "hola", "thinking": True},
                     headers=_bearer(admin.id),
                 )
 
@@ -354,7 +362,7 @@ async def test_playground_splits_thinking_block(db_session: AsyncSession) -> Non
     admin = await _seed_admin(db_session)
     fake = FakeLlmClient(models=_SERVED)
     raw = "<think>razonando un toque</think>Hola, esta es la respuesta final."
-    fake.queue_result(_completion(text=raw, model_name="qwen"))
+    fake.queue_result(_completion(text=raw, model_name="agente"))
 
     client = _client(db_session, llm_client=fake)
     try:
@@ -362,7 +370,7 @@ async def test_playground_splits_thinking_block(db_session: AsyncSession) -> Non
             async with client:
                 resp = await client.post(
                     "/v1/admin/playground",
-                    json={"model": "qwen", "message": "hola", "thinking": True},
+                    json={"model": "agente", "message": "hola", "thinking": True},
                     headers=_bearer(admin.id),
                 )
 
@@ -373,7 +381,7 @@ async def test_playground_splits_thinking_block(db_session: AsyncSession) -> Non
         assert "<think>" not in body["text"]
         # el thinking crudo (con tags) viaja aparte.
         assert body["thinking"] == "<think>razonando un toque</think>"
-        # qwen + thinking override True -> step thinking "on".
+        # agente + thinking override True -> step thinking "on".
         by_name = {step["name"]: step for step in body["trace"]}
         assert by_name["thinking"]["detail"] == "on"
     finally:
@@ -384,7 +392,7 @@ async def test_playground_trace_request_step_flags_low_perf(db_session: AsyncSes
     """Con low_perf el step 'request' del trace marca el preset (detail público)."""
     admin = await _seed_admin(db_session)
     fake = FakeLlmClient(models=_SERVED)
-    fake.queue_result(_completion(model_name="qwen"))
+    fake.queue_result(_completion(model_name="agente"))
 
     client = _client(db_session, llm_client=fake)
     try:
@@ -393,7 +401,7 @@ async def test_playground_trace_request_step_flags_low_perf(db_session: AsyncSes
                 resp = await client.post(
                     "/v1/admin/playground",
                     json={
-                        "model": "qwen",
+                        "model": "agente",
                         "message": "hola",
                         "params": {"max_tokens": 4096, "temperature": 1.5, "low_perf": True},
                     },
@@ -422,7 +430,7 @@ async def test_playground_low_perf_applies_preset(db_session: AsyncSession) -> N
     """low_perf pisa max_tokens<=256, temp<=0.2 y thinking=False, sea cual sea el body."""
     admin = await _seed_admin(db_session)
     fake = FakeLlmClient(models=_SERVED)
-    fake.queue_result(_completion(model_name="qwen"))
+    fake.queue_result(_completion(model_name="agente"))
 
     client = _client(db_session, llm_client=fake)
     try:
@@ -431,7 +439,7 @@ async def test_playground_low_perf_applies_preset(db_session: AsyncSession) -> N
                 resp = await client.post(
                     "/v1/admin/playground",
                     json={
-                        "model": "qwen",  # agent -> default thinking True, pero low_perf lo pisa
+                        "model": "agente",  # agent -> default thinking True, pero low_perf lo pisa
                         "message": "hola",
                         "thinking": True,  # también pisado por el preset
                         "params": {"max_tokens": 4096, "temperature": 1.5, "low_perf": True},
@@ -453,7 +461,7 @@ async def test_playground_low_perf_applies_preset(db_session: AsyncSession) -> N
 
 
 async def test_playground_invalid_model_422(db_session: AsyncSession) -> None:
-    """Un served_name fuera del catálogo -> 422 con detail neutro 'modelo no servido'."""
+    """Un alias fuera del catálogo -> 422 con detail neutro 'modelo no servido'."""
     admin = await _seed_admin(db_session)
     fake = FakeLlmClient(models=_SERVED)
 
@@ -488,7 +496,7 @@ async def test_playground_fake_backend_409(db_session: AsyncSession) -> None:
             async with client:
                 resp = await client.post(
                     "/v1/admin/playground",
-                    json={"model": "gemma4", "message": "hola"},
+                    json={"model": "conversacional", "message": "hola"},
                     headers=_bearer(admin.id),
                 )
 
@@ -530,7 +538,7 @@ async def test_playground_llm_error_mapping(
             async with client:
                 resp = await client.post(
                     "/v1/admin/playground",
-                    json={"model": "gemma4", "message": "hola"},
+                    json={"model": "conversacional", "message": "hola"},
                     headers=_bearer(admin.id),
                 )
 
@@ -554,7 +562,7 @@ async def test_playground_error_detail_never_echoes_payload(db_session: AsyncSes
             async with client:
                 resp = await client.post(
                     "/v1/admin/playground",
-                    json={"model": "gemma4", "message": "hola"},
+                    json={"model": "conversacional", "message": "hola"},
                     headers=_bearer(admin.id),
                 )
 
@@ -577,7 +585,7 @@ def _tool_call(name: str, arguments: dict[str, object], *, call_id: str = "call-
 
 
 def _completion_with_tools(
-    tool_calls: list[ToolCall], *, model_name: str = "qwen"
+    tool_calls: list[ToolCall], *, model_name: str = "agente"
 ) -> CompletionResult:
     """CompletionResult con tool_calls + finish_reason NO terminal: el loop ejecuta las tools."""
     return CompletionResult(
@@ -611,7 +619,7 @@ async def test_playground_agent_captures_tool_calls(db_session: AsyncSession) ->
         )
     )
     fake.queue_result(
-        _completion(text="Listo, lo agendé.", finish_reason="stop", model_name="qwen")
+        _completion(text="Listo, lo agendé.", finish_reason="stop", model_name="agente")
     )
 
     client = _client(db_session, llm_client=fake)
@@ -620,14 +628,14 @@ async def test_playground_agent_captures_tool_calls(db_session: AsyncSession) ->
             async with client:
                 resp = await client.post(
                     "/v1/admin/playground/agent",
-                    json={"model": "qwen", "message": "agendá una reunión el martes"},
+                    json={"model": "agente", "message": "agendá una reunión el martes"},
                     headers=_bearer(admin.id),
                 )
 
         assert resp.status_code == 200
         body = resp.json()
         assert body["finish_reason"] == "stop"
-        assert body["model_name"] == "qwen"
+        assert body["model_name"] == "agente"
         actions = body["actions"]
         assert len(actions) == 1
         assert actions[0]["name"] == "calendar.create_event"
@@ -645,7 +653,7 @@ async def test_playground_agent_memory_tool_unreachable(db_session: AsyncSession
     fake.queue_result(
         _completion_with_tools([_tool_call("memory.update", {"id": "x", "content": "nuevo"})])
     )
-    fake.queue_result(_completion(text="ok", finish_reason="stop", model_name="qwen"))
+    fake.queue_result(_completion(text="ok", finish_reason="stop", model_name="agente"))
 
     client = _client(db_session, llm_client=fake)
     try:
@@ -653,7 +661,7 @@ async def test_playground_agent_memory_tool_unreachable(db_session: AsyncSession
             async with client:
                 resp = await client.post(
                     "/v1/admin/playground/agent",
-                    json={"model": "qwen", "message": "actualizá mi memoria"},
+                    json={"model": "agente", "message": "actualizá mi memoria"},
                     headers=_bearer(admin.id),
                 )
 
@@ -676,7 +684,7 @@ async def test_playground_agent_never_builds_memory_registry(db_session: AsyncSe
     admin = await _seed_admin(db_session)
     fake = FakeLlmClient(models=_SERVED)
     fake.queue_result(_completion_with_tools([_tool_call("memory.delete", {"id": "x"})]))
-    fake.queue_result(_completion(text="ok", finish_reason="stop", model_name="qwen"))
+    fake.queue_result(_completion(text="ok", finish_reason="stop", model_name="agente"))
 
     client = _client(db_session, llm_client=fake)
     try:
@@ -687,7 +695,7 @@ async def test_playground_agent_never_builds_memory_registry(db_session: AsyncSe
             async with client:
                 resp = await client.post(
                     "/v1/admin/playground/agent",
-                    json={"model": "qwen", "message": "borrá una memoria"},
+                    json={"model": "agente", "message": "borrá una memoria"},
                     headers=_bearer(admin.id),
                 )
 
@@ -731,7 +739,7 @@ async def test_playground_agent_fake_backend_409(db_session: AsyncSession) -> No
             async with client:
                 resp = await client.post(
                     "/v1/admin/playground/agent",
-                    json={"model": "qwen", "message": "hola"},
+                    json={"model": "agente", "message": "hola"},
                     headers=_bearer(admin.id),
                 )
 
@@ -787,7 +795,7 @@ async def test_playground_stream_emits_tokens_and_done(db_session: AsyncSession)
             async with client:
                 resp = await client.post(
                     "/v1/admin/playground/stream",
-                    json={"model": "gemma4", "message": "hola"},
+                    json={"model": "conversacional", "message": "hola"},
                     headers=_bearer(admin.id),
                 )
 
@@ -797,7 +805,7 @@ async def test_playground_stream_emits_tokens_and_done(db_session: AsyncSession)
         assert [d["delta"] for ev, d in events if ev == "token"] == ["Hola", ", ", "mundo"]
         done = next(d for ev, d in events if ev == "done")
         assert done["finish_reason"] == "stop"
-        assert done["model_name"] == "gemma4"
+        assert done["model_name"] == "conversacional"
         assert done["completion_tokens"] == 3
         assert done["thinking_used"] is False
         # Sin canal reasoning ni <think> -> thinking vacío; ningún evento reasoning.
@@ -808,10 +816,10 @@ async def test_playground_stream_emits_tokens_and_done(db_session: AsyncSession)
 
 
 async def test_playground_stream_captures_reasoning_channel(db_session: AsyncSession) -> None:
-    """qwen: el canal ``reasoning`` separado -> eventos ``reasoning`` + thinking final en ``done``.
+    """agente con canal ``reasoning`` aparte: eventos ``reasoning`` + thinking en ``done``.
 
-    Reproduce el caso real (Ollama): el razonamiento llega en ``delta.reasoning`` APARTE
-    del ``content``. El endpoint lo emite como eventos ``reasoning`` y lo acumula en
+    Reproduce el caso de los proveedores que mandan el razonamiento en ``delta.reasoning``
+    APARTE del ``content``. El endpoint lo emite como eventos ``reasoning`` y lo acumula en
     ``done.thinking``; los ``completion_tokens`` cuentan SOLO los chunks de texto.
     """
     admin = await _seed_admin(db_session)
@@ -830,7 +838,7 @@ async def test_playground_stream_captures_reasoning_channel(db_session: AsyncSes
             async with client:
                 resp = await client.post(
                     "/v1/admin/playground/stream",
-                    json={"model": "qwen", "message": "pensá y respondé", "thinking": True},
+                    json={"model": "agente", "message": "pensá y respondé", "thinking": True},
                     headers=_bearer(admin.id),
                 )
 
@@ -844,14 +852,14 @@ async def test_playground_stream_captures_reasoning_channel(db_session: AsyncSes
         # completion_tokens cuenta SOLO el chunk de texto, no los de reasoning.
         assert done["completion_tokens"] == 1
         assert done["thinking_used"] is True
-        # el thinking pasado al cliente fue True (qwen agent + override).
+        # el thinking pasado al cliente fue True (agente es agent + override).
         assert fake.stream_calls[0]["thinking"] is True
     finally:
         app.dependency_overrides.clear()
 
 
 async def test_playground_stream_reasoning_only_empty_answer(db_session: AsyncSession) -> None:
-    """El caso que confundía: qwen gasta el budget razonando y no emite texto.
+    """El caso que confundía: agente gasta el budget razonando y no emite texto.
 
     Sin chunks de ``content`` el answer queda vacío (``completion_tokens == 0``) pero el
     razonamiento SÍ se captura: eventos ``reasoning`` + ``done.thinking`` poblado.
@@ -868,7 +876,7 @@ async def test_playground_stream_reasoning_only_empty_answer(db_session: AsyncSe
             async with client:
                 resp = await client.post(
                     "/v1/admin/playground/stream",
-                    json={"model": "qwen", "message": "pensá mucho", "thinking": True},
+                    json={"model": "agente", "message": "pensá mucho", "thinking": True},
                     headers=_bearer(admin.id),
                 )
 
@@ -885,8 +893,8 @@ async def test_playground_stream_reasoning_only_empty_answer(db_session: AsyncSe
 
 
 async def test_playground_stream_inline_think_block(db_session: AsyncSession) -> None:
-    """Fallback: si el modelo embebe <think>...</think> en el ``content`` (vLLM sin
-    reasoning-parser), el thinking final se separa de ahí (precedencia: reasoning > inline)."""
+    """Fallback: si el modelo embebe <think>...</think> en el ``content`` (proveedor sin
+    canal de reasoning), el thinking final se separa de ahí (precedencia: reasoning > inline)."""
     admin = await _seed_admin(db_session)
     fake = FakeLlmClient(models=_SERVED)
     fake.queue_chunks(
@@ -902,7 +910,7 @@ async def test_playground_stream_inline_think_block(db_session: AsyncSession) ->
             async with client:
                 resp = await client.post(
                     "/v1/admin/playground/stream",
-                    json={"model": "qwen", "message": "hola", "thinking": True},
+                    json={"model": "agente", "message": "hola", "thinking": True},
                     headers=_bearer(admin.id),
                 )
 
@@ -929,7 +937,7 @@ async def test_playground_stream_error_event_neutral(db_session: AsyncSession) -
             async with client:
                 resp = await client.post(
                     "/v1/admin/playground/stream",
-                    json={"model": "gemma4", "message": "hola"},
+                    json={"model": "conversacional", "message": "hola"},
                     headers=_bearer(admin.id),
                 )
 
@@ -980,7 +988,7 @@ async def test_playground_stream_fake_backend_409(db_session: AsyncSession) -> N
             async with client:
                 resp = await client.post(
                     "/v1/admin/playground/stream",
-                    json={"model": "gemma4", "message": "hola"},
+                    json={"model": "conversacional", "message": "hola"},
                     headers=_bearer(admin.id),
                 )
 

@@ -1,15 +1,14 @@
 """Carga y validacion de la config de runtime del LLM.
 
-Lee el contrato de producto de ``ynara.config.json``: ``models`` (con
-``served_name``), ``modes`` y el bloque ``llm.serving`` (parsers,
-quantization, ``max_model_len``, timeouts). Los proveedores de IA y sus
-credenciales no van aca: son valores por entorno (``Settings``, ADR-028).
+Lee el contrato de producto de ``ynara.config.json``: ``models`` (un alias lógico por
+rol, ADR-028 D3) y ``modes`` (cada modo apunta a un alias). Qué proveedor y qué id de
+modelo atienden cada alias no va acá: son valores por entorno (``LLM_PROVIDERS`` en
+``Settings``), igual que las credenciales.
 
-``load_llm_config()`` es fail-fast: levanta ``LlmConfigError`` con un
-mensaje claro si la config es incoherente (modo que apunta a un modelo
-inexistente, modelo sin ``served_name``, o ``max_model_len`` /
-``tool_parser`` faltante para un modelo). Esta cacheado a nivel de modulo
-para no releer el JSON en cada llamada.
+``load_llm_config()`` es fail-fast: levanta ``LlmConfigError`` con un mensaje claro
+si la config es incoherente (modo que apunta a un alias inexistente, alias
+desconocido o faltante, rol cambiado, o el alias conversacional escribiendo memoria
+o con tools). Esta cacheado a nivel de modulo para no releer el JSON en cada llamada.
 """
 
 from __future__ import annotations
@@ -21,49 +20,40 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.constants import MODEL_ALIAS_AGENT, MODEL_ALIAS_CONVERSATIONAL, MODEL_ALIASES
 from app.core.paths import resolve_config_path
+
+# Rol de cada alias (ADR-028 D3): ``conversacional`` solo lee memoria y no llama tools;
+# ``agente`` lee, escribe y llama tools.
+_ALIAS_ROLES: dict[str, str] = {
+    MODEL_ALIAS_CONVERSATIONAL: "conversational",
+    MODEL_ALIAS_AGENT: "agent",
+}
 
 
 class LlmConfigError(RuntimeError):
     """Config de LLM incoherente o ilegible. Fail-fast en el arranque."""
 
 
-class ServingConfig(BaseModel):
-    """Bloque ``llm.serving`` de ``ynara.config.json``.
-
-    Perfil de serving para vLLM/24GB+ (ADR-014 D5); en Ollama estos campos se
-    validan pero no se pasan al servidor (Ollama maneja quantization/kv-cache
-    internamente). El schema los admite tal cual vienen del JSON.
-    """
-
-    model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
-
-    tool_parsers: dict[str, str]
-    quantization: str
-    kv_cache_dtype: str
-    max_model_len: dict[str, int]
-    request_timeout_s: int = Field(gt=0)
-
-
 class ModelConfig(BaseModel):
-    """Un modelo de ``ynara.config.json[models][<key>]``.
+    """Un alias de modelo de ``ynara.config.json[models][<alias>]`` (ADR-028 D3).
 
-    ``key`` es la clave del dict (p.ej. ``qwen-3.5-9b``); ``served_name``
-    es el alias del modelo publicado por Ollama (o el ``--served-model-name``
-    en vLLM/24GB+).
+    ``alias`` es la clave del dict (``conversacional`` | ``agente``) y la identidad del
+    modelo en el código: es lo que se le pide al cliente LLM, y cada proveedor lo
+    traduce a su id de modelo. ``context_tokens`` es el presupuesto de contexto que el
+    router reparte entre el system prompt, la memoria, el historial y la respuesta.
     """
 
     model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
 
-    key: str
+    alias: str
     role: Literal["conversational", "agent"]
     writes_memory: bool
-    served_name: str
-    context_window: int = Field(gt=0)
+    context_tokens: int = Field(gt=0)
 
 
 class ModeConfig(BaseModel):
-    """Un modo de ``ynara.config.json[modes][<key>]``."""
+    """Un modo de ``ynara.config.json[modes][<key>]``. ``model`` es un alias."""
 
     model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
 
@@ -75,27 +65,22 @@ class ModeConfig(BaseModel):
 
 
 class LlmRuntimeConfig(BaseModel):
-    """Config de runtime ya fusionada y validada.
+    """Config de runtime ya validada.
 
     Inmutable: se construye una vez en el arranque via ``load_llm_config()``.
     """
 
     model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
 
-    serving: ServingConfig
     models: dict[str, ModelConfig]
     modes: dict[str, ModeConfig]
 
     def model_for_mode(self, mode: str) -> ModelConfig:
-        """Devuelve la config del modelo que sirve un modo dado."""
+        """Devuelve la config del alias de modelo que sirve un modo dado."""
         mode_cfg = self.modes.get(mode)
         if mode_cfg is None:
             raise LlmConfigError(f"modo desconocido: {mode!r}")
         return self.models[mode_cfg.model]
-
-    def tool_parser_for(self, model_key: str) -> str:
-        """``--tool-call-parser`` (flag del server vLLM) para un modelo."""
-        return self.serving.tool_parsers[model_key]
 
 
 def _read_config_file(path: Path) -> dict[str, object]:
@@ -115,19 +100,15 @@ def _read_config_file(path: Path) -> dict[str, object]:
 def _build_runtime_config(data: dict[str, object]) -> LlmRuntimeConfig:
     raw_models = data.get("models")
     raw_modes = data.get("modes")
-    raw_llm = data.get("llm")
     if not isinstance(raw_models, dict):
         raise LlmConfigError("falta el bloque 'models' en ynara.config.json")
     if not isinstance(raw_modes, dict):
         raise LlmConfigError("falta el bloque 'modes' en ynara.config.json")
-    if not isinstance(raw_llm, dict) or not isinstance(raw_llm.get("serving"), dict):
-        raise LlmConfigError("falta el bloque 'llm.serving' en ynara.config.json")
 
     try:
-        serving = ServingConfig.model_validate(raw_llm["serving"])
         models = {
-            key: ModelConfig.model_validate({"key": key, **value})
-            for key, value in raw_models.items()
+            alias: ModelConfig.model_validate({"alias": alias, **value})
+            for alias, value in raw_models.items()
         }
         modes = {
             name: ModeConfig.model_validate({"name": name, **value})
@@ -138,24 +119,38 @@ def _build_runtime_config(data: dict[str, object]) -> LlmRuntimeConfig:
         # para que el caller solo tenga que atrapar LlmConfigError.
         raise LlmConfigError(f"ynara.config.json invalido: {exc}") from exc
 
-    _validate_coherence(serving, models, modes)
+    _validate_coherence(models, modes)
 
-    return LlmRuntimeConfig(
-        serving=serving,
-        models=models,
-        modes=modes,
-    )
+    return LlmRuntimeConfig(models=models, modes=modes)
 
 
 def _validate_coherence(
-    serving: ServingConfig,
     models: dict[str, ModelConfig],
     modes: dict[str, ModeConfig],
 ) -> None:
     """Chequeos cross-field que Pydantic no puede hacer aislado."""
+    for alias, model in models.items():
+        expected_role = _ALIAS_ROLES.get(alias)
+        if expected_role is None:
+            raise LlmConfigError(
+                f"alias de modelo desconocido: {alias!r} (van {', '.join(MODEL_ALIASES)})"
+            )
+        if model.role != expected_role:
+            raise LlmConfigError(f"el alias {alias!r} tiene que tener role {expected_role!r}")
+    missing = [alias for alias in MODEL_ALIASES if alias not in models]
+    if missing:
+        raise LlmConfigError(f"falta el alias de modelo: {', '.join(missing)}")
+    # ``conversacional`` solo lee memoria (AGENTS.md, routing LLM y memoria).
+    if models[MODEL_ALIAS_CONVERSATIONAL].writes_memory:
+        raise LlmConfigError(f"el alias {MODEL_ALIAS_CONVERSATIONAL!r} no escribe memoria")
+
     for name, mode in modes.items():
         if mode.model not in models:
             raise LlmConfigError(f"modo {name!r} apunta a un modelo inexistente: {mode.model!r}")
+        if mode.model == MODEL_ALIAS_CONVERSATIONAL and mode.tools_enabled:
+            raise LlmConfigError(
+                f"modo {name!r} usa el alias {MODEL_ALIAS_CONVERSATIONAL!r}, que no llama tools"
+            )
         # Si el modo tiene 'memory' en tools_enabled, debe tener 'semantic' en
         # memory_layers: sin semantic_store no se puede construir memory_registry
         # y memory.search quedaria silenciosamente sin backend (decision #4 M8).
@@ -164,23 +159,6 @@ def _validate_coherence(
                 f"modo {name!r} tiene 'memory' en tools_enabled pero le falta "
                 f"'semantic' en memory_layers (sin semantic store, memory.search "
                 f"no tiene backend)"
-            )
-
-    for key, model in models.items():
-        if not model.served_name:
-            raise LlmConfigError(f"modelo {key!r} no tiene served_name")
-        if key not in serving.tool_parsers:
-            raise LlmConfigError(
-                f"falta tool_parser para el modelo {key!r} en llm.serving.tool_parsers"
-            )
-        if key not in serving.max_model_len:
-            raise LlmConfigError(
-                f"falta max_model_len para el modelo {key!r} en llm.serving.max_model_len"
-            )
-        if serving.max_model_len[key] > model.context_window:
-            raise LlmConfigError(
-                f"max_model_len para {key!r} ({serving.max_model_len[key]}) supera el "
-                f"context_window del modelo ({model.context_window})"
             )
 
 

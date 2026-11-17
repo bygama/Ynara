@@ -200,7 +200,7 @@ async def admin_system(
     postgres = await _probe_postgres(session)
     redis = await _probe_redis(request)
 
-    models = sorted(model.served_name for model in load_llm_config().models.values())
+    models = sorted(load_llm_config().models)
     runtime = SystemRuntime(
         models=models,
         modes=enum_values(Mode),

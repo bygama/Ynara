@@ -96,7 +96,7 @@ def _sha256(value: str) -> str:
 
 
 def _make_llm_with_ops(ops_json: str) -> FakeLlmClient:
-    client = FakeLlmClient(models=frozenset({"qwen"}))
+    client = FakeLlmClient(models=frozenset({"agente"}))
     client.queue_result(
         CompletionResult(
             text=ops_json,
