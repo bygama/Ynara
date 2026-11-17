@@ -36,48 +36,71 @@ WezTerm, ConEmu).
 - Reset de memoria local (DESTRUCTIVO):
   `make reset-memory`.
 
-## Trabajar con serving real (Ollama / vLLM)
+## IA en desarrollo: fake por default
 
-> **Hoy el backend usa `FakeLlmClient` y `FakeEmbeddingClient`** por
-> defecto (`LLM_BACKEND=fake`) — no se necesita ningún servidor de
-> inferencia para desarrollar o correr los tests. Apuntar al serving real
-> es **opcional**.
+El backend arranca con `LLM_BACKEND=fake` y `EMBEDDING_BACKEND=fake`, los
+valores que trae `apps/backend/.env.example`: sin credenciales, GPU,
+servidor de modelos ni red. Así corren los tests y anda el resto del
+backend (auth, sesiones, memoria, agenda), pero el chat no contesta:
 
-El motor de serving local en 16 GB (4080 Super) es **Ollama/GGUF**
-(ADR-014): un solo endpoint (`:11434`) que sirve todos los modelos
-co-residentes. vLLM queda reservado a GPU de **24 GB+** (en 16 GB no
-entran dos LLM por proceso, medido en #207).
+- `FakeEmbeddingClient` da vectores deterministas (mismo texto, mismo
+  vector), sin similitud semántica real.
+- `FakeLlmClient` responde solo lo que un test le programa. En el servidor
+  de dev no tiene nada programado, así que un turno de `/v1/chat` o
+  `/v1/chat/stream` termina en 500 y el playground del panel admin
+  responde 409. Para chatear hace falta un proveedor: ver
+  [Probar contra un proveedor de IA](#probar-contra-un-proveedor-de-ia).
 
-Para apuntar al serving real, configurá en `apps/backend/.env`:
+El reranker es siempre un passthrough (ADR-028 D5).
 
-```sh
-# LLM_SERVING (ADR-013): lista JSON de endpoints, cada uno {base_url, models}.
-# Los served_name (gemma4/qwen) salen de ynara.config.json[models].
-# Default (Ollama, 16 GB): UN endpoint sirve todos los modelos.
-LLM_SERVING=[{"base_url":"http://localhost:11434/v1","models":["gemma4","qwen"]}]
-# vLLM (24 GB+): un proceso por modelo, distintos puertos.
-# LLM_SERVING=[{"base_url":"http://localhost:8001/v1","models":["gemma4"]},{"base_url":"http://localhost:8002/v1","models":["qwen"]}]
+## Probar contra un proveedor de IA
 
-# Prender el cliente real: REEMPLAZÁ el LLM_BACKEND=fake que trae .env.example
-# por 'vllm' (no agregues una segunda línea). 'vllm' es el nombre legacy del
-# cliente OpenAI-compatible: NO implica vLLM, hoy apunta a Ollama.
-LLM_BACKEND=vllm
-```
+Es opcional. La IA se consume por API de proveedores compatibles con
+OpenAI ([ADR-028](../architecture/adrs/ADR-028-inferencia-por-api.md)):
+no se levanta ningún modelo en tu máquina. **Hasta cerrar las compuertas
+de ADR-028, al proveedor van solo datos sintéticos** (regla #4b): nada de
+datos personales reales, tampoco los tuyos.
 
-Si usás Ollama (default 16 GB):
+En `apps/backend/.env`, editando las líneas que ya trae `.env.example` (no
+agregues una segunda línea de la misma variable):
 
 ```sh
-ollama serve
-ollama pull gemma2:9b-instruct-q5_K_M  # ejemplo, no es el modelo final
-ollama pull qwen2.5:7b-instruct-q5_K_M
+# Chat, agente y consolidación.
+LLM_BACKEND=api
+# Una sola línea, en orden de prioridad: el primero es el principal y el resto,
+# respaldo. Para probar alcanza con uno, y su models cubre los dos alias.
+LLM_PROVIDERS=[{"name":"principal","base_url":"https://api.example.com/v1","models":{"conversacional":"proveedor/modelo-chat","agente":"proveedor/modelo-agente"},"supports_reasoning_effort":false}]
+# La credencial de cada proveedor: LLM_API_KEY_ más su name en mayúsculas.
+LLM_API_KEY_PRINCIPAL=
+
+# Embeddings (opcional: si quedan en fake, la memoria usa vectores del fake).
+EMBEDDING_BACKEND=api
+EMBEDDING_BASE_URL=https://api.example.com/v1
+EMBEDDING_API_KEY=
+EMBEDDING_MODEL=BAAI/bge-m3
 ```
 
-Si tenés GPU de 24 GB+ y vLLM instalado (3 procesos: gemma :8001 /
-qwen :8002 / bge :8003):
-
-```sh
-./infra/vllm/start-vllm.sh
-```
+- Los valores son de ejemplo: la URL base va por https e incluye el `/v1`, y
+  los ids de modelo son los del proveedor. El código solo conoce los alias
+  `conversacional` y `agente`.
+- `.env.example` trae dos proveedores de ejemplo, `principal` y `respaldo`:
+  si dejás los dos, cada uno necesita su credencial. Con uno solo, la
+  `LLM_API_KEY_RESPALDO` que sobra no molesta.
+- Con `LLM_BACKEND=api` el backend no arranca si `LLM_PROVIDERS` está vacía
+  o si falta la credencial de un proveedor; con `EMBEDDING_BACKEND=api`, si
+  falta la URL, la credencial o el modelo. El error nombra la variable.
+- Las credenciales son secretas (regla #2): solo en tu `.env`, nunca en el
+  repo, en `ynara.config.json` ni en un log.
+- Pasar los embeddings de `fake` a `api` sobre una DB que ya tiene memoria
+  guardada mezcla vectores del fake con los del proveedor, y la búsqueda
+  por similitud no encuentra los viejos. Probá con una DB de dev limpia
+  (re-embeddear es una migración de datos, ADR-028 D4).
+- Un `.env` de antes de ADR-028 con `LLM_BACKEND=vllm` o
+  `EMBEDDING_BACKEND=vllm` no arranca: esos valores ya no son válidos.
+  `LLM_SERVING` y las `RERANKER_*` que hayan quedado se ignoran.
+- Para probar un modelo sin pasar por un modo, el playground del panel
+  admin (`/playground`) llama al proveedor sin sesión ni memoria; con
+  `LLM_BACKEND=fake` responde 409.
 
 ## Hot reload
 

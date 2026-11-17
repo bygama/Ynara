@@ -11,10 +11,14 @@
 - Python 3.12+
 - uv (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
 - Docker + Docker Compose (para Redis local y dev del backend)
-- (Opcional) Para apuntar al serving real en local: GPU NVIDIA. El motor
-  de serving local en 16 GB es **Ollama/GGUF** (ADR-014), no vLLM. vLLM
-  (CUDA 12.x) queda reservado a GPU de 24 GB+. Para desarrollo y tests no
-  hace falta GPU: el default es `FakeLlmClient`.
+
+No hace falta GPU ni un servidor de modelos: la IA se consume por API de
+proveedores externos
+([ADR-028](../architecture/adrs/ADR-028-inferencia-por-api.md)), y en
+desarrollo y en los tests corren los clientes fake (`LLM_BACKEND=fake` y
+`EMBEDDING_BACKEND=fake`, el default de `apps/backend/.env.example`). Con
+el fake el chat no contesta: ver
+[`LOCAL-DEV.md`](./LOCAL-DEV.md#ia-en-desarrollo-fake-por-default).
 
 ## Pasos
 
@@ -122,10 +126,6 @@ pnpm --filter mobile dev
 ## Próximos pasos
 
 - Crear el primer usuario de prueba: `make seed`.
-- (Opcional) Apuntar al serving real: el motor local es **Ollama**
-  (`:11434`), ya corriendo como stack de dev. Para conectarlo se setea
-  `LLM_SERVING` y se cambia `LLM_BACKEND=fake` (el default que trae
-  `.env.example`) por `LLM_BACKEND=vllm` en `apps/backend/.env`
-  (`vllm` es el nombre legacy del cliente OpenAI-compatible: sirve igual a
-  Ollama). Ver [`LOCAL-DEV.md`](./LOCAL-DEV.md). La ruta vLLM (24 GB+) está
-  en `infra/vllm/README.md`.
+- (Opcional) Probar contra un proveedor de IA por API, con datos sintéticos
+  hasta cerrar las compuertas de ADR-028: ver
+  [`LOCAL-DEV.md`](./LOCAL-DEV.md#probar-contra-un-proveedor-de-ia).
