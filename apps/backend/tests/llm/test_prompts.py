@@ -10,8 +10,9 @@ clave, no el texto entero palabra por palabra (snapshot liviano):
 - Ningun system que ve el modelo promete inferencia local ni que los datos "no
   salen" de un perimetro (ADR-028: la inferencia es por API).
 - El protocolo de crisis de Bienestar sigue entero.
-- Los modos Gemma (estudio, bienestar, vida) NO mencionan tools ni escritura de
-  memoria; los Qwen (productividad, memoria) si habilitan tools.
+- Los modos del alias ``conversacional`` (estudio, bienestar, vida) NO mencionan
+  tools ni escritura de memoria; los del alias ``agente`` (productividad,
+  memoria) si habilitan tools.
 - ``load_prompt`` con un modo invalido levanta ``ValueError``.
 - Coherencia: todos los miembros de ``Mode`` tienen prompt.
 """
@@ -41,10 +42,10 @@ from app.llm.prompts.shared import (
 from app.llm.prompts.vida import SYSTEM_PROMPT as VIDA_PROMPT
 from app.workflows.agent_pass import _AGENT_PASS_SYSTEM_BODY
 
-# Modos conversacionales Gemma: solo leen memoria, no escriben, no llaman tools.
-_GEMMA_MODES = (Mode.ESTUDIO, Mode.BIENESTAR, Mode.VIDA)
-# Modos agente Qwen: leen y escriben memoria, llaman tools.
-_QWEN_MODES = (Mode.PRODUCTIVIDAD, Mode.MEMORIA)
+# Modos del alias conversacional: solo leen memoria, no escriben, no llaman tools.
+_CONVERSATIONAL_MODES = (Mode.ESTUDIO, Mode.BIENESTAR, Mode.VIDA)
+# Modos del alias agente: leen y escriben memoria, llaman tools.
+_AGENT_MODES = (Mode.PRODUCTIVIDAD, Mode.MEMORIA)
 
 # SYSTEM_PROMPT de modo (sin los fragmentos compartidos) para asserts de modo.
 _MODE_ONLY_PROMPTS = {
@@ -160,9 +161,10 @@ def test_every_mode_has_a_prompt() -> None:
     assert set(_MODE_ONLY_PROMPTS) == set(Mode)
 
 
-@pytest.mark.parametrize("mode", _GEMMA_MODES)
-def test_gemma_modes_do_not_enable_tools_or_memory_writes(mode: Mode) -> None:
-    """Gemma solo lee: el prompt de modo no menciona tools ni escritura."""
+@pytest.mark.parametrize("mode", _CONVERSATIONAL_MODES)
+def test_conversational_modes_do_not_enable_tools_or_memory_writes(mode: Mode) -> None:
+    """El alias conversacional solo lee: el prompt de modo no menciona tools ni
+    escritura."""
     mode_prompt = _MODE_ONLY_PROMPTS[mode].lower()
     assert "tool" not in mode_prompt
     assert "escrib" not in mode_prompt
@@ -172,21 +174,21 @@ def test_gemma_modes_do_not_enable_tools_or_memory_writes(mode: Mode) -> None:
     assert "no ejecutás acciones externas" in normalized
 
 
-@pytest.mark.parametrize("mode", _QWEN_MODES)
-def test_qwen_modes_enable_tools(mode: Mode) -> None:
-    """Qwen es agente: el prompt de modo habilita tools (la escritura de
+@pytest.mark.parametrize("mode", _AGENT_MODES)
+def test_agent_modes_enable_tools(mode: Mode) -> None:
+    """El alias agente llama tools: el prompt de modo las habilita (la escritura de
     memoria la cubren test_productividad/test_memoria por separado)."""
     mode_prompt = _MODE_ONLY_PROMPTS[mode].lower()
     assert "tool" in mode_prompt
 
 
 def test_productividad_mentions_memory_write() -> None:
-    """Productividad (Qwen) declara que puede escribir memoria."""
+    """Productividad (alias agente) declara que puede escribir memoria."""
     assert "escrib" in PRODUCTIVIDAD_PROMPT.lower()
 
 
 def test_memoria_mentions_memory_write() -> None:
-    """Memoria (Qwen) declara que puede escribir / borrar memoria."""
+    """Memoria (alias agente) declara que puede escribir / borrar memoria."""
     text = MEMORIA_PROMPT.lower()
     assert "escrib" in text or "borrar" in text
 
