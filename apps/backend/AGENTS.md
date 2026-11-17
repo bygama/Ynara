@@ -87,18 +87,25 @@ auth cruce el umbral de peso (ver ADR-011 D5).
 llm/
 ├── config.py          # LlmRuntimeConfig + load_llm_config() — fusiona ynara.config.json + Settings, fail-fast
 ├── schemas.py         # ChatRequest/Response, ChatMessage, ToolSpec/ToolCall, CompletionResult/Chunk, ModelHealth
-├── errors.py          # taxonomía LlmError (transient/permanent/semantic) + degraded_response(); NUNCA filtra texto de usuario
+├── errors.py          # taxonomía LlmError (transient/permanent/semantic, con LlmAuthError y LlmRateLimitError) + degraded_response(); NUNCA filtra texto de usuario
 ├── context.py         # build_memory_context() + render_context_block(): recupera capas, formatea en Markdown, aplica presupuesto de tokens
 ├── memory_engine.py   # QwenMemoryEngine: extrae MemoryOp del turno, aplica contra los stores vía apply_ops(); el módulo más grande de llm/
 ├── tool_loop.py       # run_tool_loop(): itera LLM call + ejecución de tools (guard MAX_TOOL_ITERATIONS=5) hasta finish_reason stop/length/degraded
 ├── clients/
 │   ├── base.py        # Protocols LLMClient + ToolCallParser
 │   ├── vllm.py        # VllmClient (httpx inyectado; default_timeout_s desde config; SSE streaming)
+│   ├── providers/     # clientes de proveedores de IA por API (regla #4b, ADR-028); sin SDKs, httpx inyectado
+│   │   ├── openai_compat.py  # OpenAICompatClient: Chat Completions con Bearer (SecretStr), alias → model_id, reasoning_effort por proveedor, health GET /models
+│   │   ├── _http.py          # BearerAuth + status HTTP → LlmError (401/403 credencial, 429 con Retry-After, 400 contexto excedido, 5xx) + errores de transporte
+│   │   ├── _wire.py          # mensajes, tools y respuestas en el formato de Chat Completions
+│   │   ├── _stream.py        # SSE de Chat Completions → CompletionChunk
+│   │   ├── _think.py         # separa el razonamiento inline (<think>) del texto, también en streaming
+│   │   └── _tool_names.py    # nombres de tools `.` ↔ `__` (la API no acepta puntos), también en streaming
 │   ├── parsers.py     # OpenAIToolCallParser (parse + accumulate de tool calls OpenAI)
 │   ├── fakes.py       # FakeLlmClient (tests, sin red)
 │   ├── circuit.py     # CircuitBreaker (stdlib, sin libs)
-│   ├── pool.py        # ClientPool + RoutingStrategy + build_pool (topología → clientes)
-│   ├── resilient.py   # ResilientClient: retry+backoff → fallback on-prem → respuesta degradada
+│   ├── pool.py        # ClientPool + RoutingStrategy + build_pool (topología → clientes) + build_provider_pool (proveedores en orden de prioridad)
+│   ├── resilient.py   # ResilientClient: retry+backoff → respaldo → respuesta degradada; credencial rechazada sin reintento, 429 según el presupuesto, breaker solo por caídas
 │   ├── embedding.py   # Protocol EmbeddingClient + FakeEmbeddingClient determinista + VllmEmbeddingClient real (bge-m3, POST /v1/embeddings; prende por EMBEDDING_BACKEND=vllm)
 │   ├── factory.py     # build_llm_client() / build_embedder() / build_reranker(): Fakes por default, clientes reales por flag (LLM_BACKEND/EMBEDDING_BACKEND/RERANKER_BACKEND=vllm) o en prod
 │   └── reranker.py    # Protocol Reranker + FakeReranker passthrough + VllmReranker real (API /rerank de vLLM; prende por RERANKER_BACKEND=vllm)
