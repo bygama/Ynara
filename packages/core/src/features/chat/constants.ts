@@ -7,14 +7,15 @@ import type { Action, Mode } from "@ynara/shared-schemas";
  */
 
 /**
- * Modos que corren sobre Qwen (agente): ejecutan tools y producen `actions`.
- * Los demás (Gemma) solo conversan → `actions: []`. Fuente: ADR-002 +
- * `ynara.config.json[modes]`. Acá se listan explícitos porque el frontend no
- * lee `ynara.config.json` en runtime; si cambia el routing, actualizar acá.
+ * Modos del alias de modelo `agente`: ejecutan tools y producen `actions`.
+ * Los del alias `conversacional` solo conversan → `actions: []`. Fuente:
+ * ADR-028 (D3 y D9) + el `model` de cada modo en `ynara.config.json[modes]`.
+ * Acá se listan explícitos porque el frontend no lee `ynara.config.json` en
+ * runtime; si un modo cambia de alias, actualizar acá en el mismo PR.
  */
 export const AGENT_MODES: readonly Mode[] = ["productividad", "memoria"] as const;
 
-/** True si el modo ejecuta tools (Qwen) y por ende puede emitir `actions`. */
+/** True si el modo ejecuta tools (alias `agente`) y por ende puede emitir `actions`. */
 export function isAgentMode(mode: Mode): boolean {
   return AGENT_MODES.includes(mode);
 }
@@ -50,9 +51,10 @@ export function cannedReply(mode: Mode, userText: string): string {
 }
 
 /**
- * Acciones canned del mock para modos Qwen. `result` queda en el stub
- * `{ status: "not_wired" }` igual que `ToolRegistry.execute` hoy en el
- * backend; el real llega cuando se cableen las tools. Gemma → `[]`.
+ * Acciones canned del mock para los modos del alias `agente`. `result` queda
+ * en el stub `{ status: "not_wired" }` igual que `ToolRegistry.execute` hoy en
+ * el backend; el real llega cuando se cableen las tools. Los del alias
+ * `conversacional` → `[]`.
  */
 export function cannedActions(mode: Mode): Action[] {
   switch (mode) {
