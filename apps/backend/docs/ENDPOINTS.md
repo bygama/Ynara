@@ -39,7 +39,7 @@ seguridad en el docstring de [`../app/api/v1/auth.py`](../app/api/v1/auth.py).
   - Response 422: validación (password corto, email malformado, etc.). El eco del
     `input` de campos sensibles (`password`) se scrubea (regla #4, handler en `main.py`).
   - El 409 **revela que el email existe**: es un trade-off de enumeración
-    **consciente y aceptado** en on-prem / mono-tenant (el alternativo —aceptar
+    **consciente y aceptado** en un despliegue mono-tenant (el alternativo —aceptar
     siempre + mail de "ya tenés cuenta"— exige infra de mail que el MVP no tiene).
 - **POST** `/v1/auth/token` — verifica credenciales y devuelve un access token JWT.
   - Request: `LoginRequest = { email: EmailStr, password: string }`. `password`
