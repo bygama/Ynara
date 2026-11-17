@@ -1,6 +1,9 @@
-"""Tests del Settings de core/config.py: guardia del JWT secret en production."""
+"""Tests del Settings de core/config.py: fail-fast de production y parseo del env."""
 
 from __future__ import annotations
+
+import json
+from pathlib import Path
 
 import pytest
 
@@ -16,6 +19,14 @@ def _settings(**overrides: object) -> Settings:
     }
     kwargs.update(overrides)
     return Settings(**kwargs)  # type: ignore[arg-type]
+
+
+# Un proveedor de IA válido (ADR-028).
+_PROVIDER: dict[str, object] = {
+    "name": "principal",
+    "base_url": "https://api.proveedor.test/v1",
+    "models": {"conversacional": "org/chat", "agente": "org/agent"},
+}
 
 
 def test_dev_allows_weak_secret() -> None:
@@ -283,3 +294,113 @@ def test_celery_urls_respected_when_set() -> None:
     )
     assert s.celery_broker_url == "redis://broker:6379/1"
     assert s.celery_result_backend == "redis://backend:6379/2"
+
+
+# ---------------------------------------------------------------------------
+# Proveedores de IA (ADR-028): LLM_PROVIDERS y LLM_API_KEY_<NAME>
+# ---------------------------------------------------------------------------
+
+_SECOND_PROVIDER: dict[str, object] = {
+    "name": "respaldo",
+    "base_url": "https://api.respaldo.test/v1",
+    "models": {"conversacional": "otro/chat", "agente": "otro/agent"},
+    "supports_reasoning_effort": True,
+}
+
+
+def _provider_settings(providers: list[dict[str, object]], **overrides: object) -> Settings:
+    return _settings(LLM_PROVIDERS=json.dumps(providers), **overrides)
+
+
+def test_llm_defaults_to_fake_without_providers() -> None:
+    s = _settings()
+    assert s.llm_backend == "fake"
+    assert s.llm_providers == []
+    assert s.llm_api_keys == {}
+
+
+def test_provider_keys_are_read_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_API_KEY_PRINCIPAL", "sk-env-principal")
+    monkeypatch.setenv("LLM_API_KEY_RESPALDO", "  sk-env-respaldo  ")
+    s = _provider_settings([_PROVIDER, _SECOND_PROVIDER])
+    keys = {name: key.get_secret_value() for name, key in s.llm_api_keys.items()}
+    assert keys == {"principal": "sk-env-principal", "respaldo": "sk-env-respaldo"}
+
+
+def test_provider_keys_from_the_env_file_yield_to_the_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Las credenciales del archivo de entorno también cuentan; el entorno lo pisa."""
+    env_file = tmp_path / "proveedores.env"
+    env_file.write_text(
+        "LLM_API_KEY_PRINCIPAL=sk-file-principal\nLLM_API_KEY_RESPALDO=sk-file-respaldo\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LLM_API_KEY_PRINCIPAL", "sk-env-principal")
+    s = _provider_settings([_PROVIDER, _SECOND_PROVIDER], _env_file=env_file)
+    keys = {name: key.get_secret_value() for name, key in s.llm_api_keys.items()}
+    assert keys == {"principal": "sk-env-principal", "respaldo": "sk-file-respaldo"}
+
+
+def test_provider_empty_key_is_left_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_API_KEY_PRINCIPAL", "   ")
+    assert _provider_settings([_PROVIDER]).llm_api_keys == {}
+
+
+def test_provider_keys_are_masked_in_repr(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_API_KEY_PRINCIPAL", "sk-env-principal-que-no-se-ve")
+    s = _provider_settings([_PROVIDER])
+    assert "sk-env-principal-que-no-se-ve" not in repr(s)
+    assert "sk-env-principal-que-no-se-ve" not in str(s.model_dump())
+
+
+def test_providers_keep_priority_order_and_reasoning_flag() -> None:
+    s = _provider_settings([_PROVIDER, _SECOND_PROVIDER])
+    assert [p.name for p in s.llm_providers] == ["principal", "respaldo"]
+    assert [p.supports_reasoning_effort for p in s.llm_providers] == [False, True]
+    assert s.llm_providers[1].api_key_env == "LLM_API_KEY_RESPALDO"
+
+
+def test_providers_empty_env_is_an_empty_list() -> None:
+    assert _settings(LLM_PROVIDERS="").llm_providers == []
+
+
+def test_providers_invalid_json_is_rejected_without_echoing_it() -> None:
+    with pytest.raises(ValueError, match="LLM_PROVIDERS no es JSON válido") as excinfo:
+        _settings(LLM_PROVIDERS='[{"name": "principal", "base_url": "sk-roto')
+    assert "sk-roto" not in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"models": {"agente": "org/agent"}}, "no cubre el alias: conversacional"),
+        ({"models": {"conversacional": "org/chat"}}, "no cubre el alias: agente"),
+        ({"models": {"conversacional": "", "agente": "org/agent"}}, "id de modelo vacío"),
+        ({"name": "Principal"}, "minúsculas"),
+        ({"name": "principal-1"}, "minúsculas"),
+        ({"base_url": "http://api.proveedor.test/v1"}, "tiene que ser https"),
+        ({"api_key": "sk-no-va-en-el-json"}, "Extra inputs"),
+    ],
+)
+def test_provider_entry_is_validated_at_startup(change: dict[str, object], message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        _provider_settings([{**_PROVIDER, **change}])
+
+
+def test_provider_extra_alias_is_accepted() -> None:
+    provider = {**_PROVIDER, "models": {"conversacional": "a", "agente": "b", "otro": "c"}}
+    s = _provider_settings([provider])
+    assert s.llm_providers[0].models["otro"] == "c"
+
+
+def test_provider_base_url_with_credentials_is_rejected_without_echoing_it() -> None:
+    provider = {**_PROVIDER, "base_url": "https://usuario:clave-secreta@api.proveedor.test/v1"}
+    with pytest.raises(ValueError, match="no lleva usuario ni clave") as excinfo:
+        _provider_settings([provider])
+    assert "clave-secreta" not in str(excinfo.value)
+
+
+def test_providers_reject_a_repeated_name() -> None:
+    with pytest.raises(ValueError, match="repite el proveedor: principal"):
+        _provider_settings([_PROVIDER, _PROVIDER])
