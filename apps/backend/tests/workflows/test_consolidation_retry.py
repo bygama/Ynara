@@ -11,6 +11,7 @@ programado, sin red.
 - Un 401 es permanente: un solo intento, sin reintento y sin escribir.
 - Una respuesta degradada es transitoria: se reintenta.
 - Agotados los reintentos, la task termina sin propagar y loguea sin contenido.
+- Cada intento cierra el cliente HTTP que armo.
 - El chat no cambia: el mismo 429 le llega como respuesta degradada.
 """
 
@@ -81,6 +82,7 @@ class _ScriptedProvider:
     def __init__(self, *responses: httpx.Response) -> None:
         self._responses = list(responses)
         self.requests: list[httpx.Request] = []
+        self.clients: list[httpx.AsyncClient] = []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -149,10 +151,13 @@ def provider(monkeypatch: pytest.MonkeyPatch) -> Callable[..., _ScriptedProvider
     def _program(*responses: httpx.Response) -> _ScriptedProvider:
         scripted = _ScriptedProvider(*responses)
         real_async_client = httpx.AsyncClient
-        monkeypatch.setattr(
-            "app.llm.clients.factory.httpx.AsyncClient",
-            lambda: real_async_client(transport=httpx.MockTransport(scripted)),
-        )
+
+        def _client() -> httpx.AsyncClient:
+            client = real_async_client(transport=httpx.MockTransport(scripted))
+            scripted.clients.append(client)
+            return client
+
+        monkeypatch.setattr("app.llm.clients.factory.httpx.AsyncClient", _client)
         monkeypatch.setattr(consolidation, "get_settings", _api_settings)
         return scripted
 
@@ -201,6 +206,18 @@ def test_a_401_is_not_retried(
     assert "memory_engine: extraccion descartada (LlmAuthError)" in caplog.messages
     assert not any("se reintenta" in m for m in caplog.messages)
     assert _SECRET not in caplog.text
+
+
+def test_each_attempt_closes_its_http_client(
+    semantic_add: AsyncMock, provider: Callable[..., _ScriptedProvider]
+) -> None:
+    """El intento que falla y el que anda cierran el cliente HTTP que armaron."""
+    scripted = provider(_rate_limited(), _rate_limited(), _rate_limited(), _completion(_OPS))
+
+    consolidate_turn.apply(kwargs=_TURN)
+
+    assert len(scripted.clients) == 2  # uno por intento (un solo proveedor)
+    assert all(client.is_closed for client in scripted.clients)
 
 
 def test_a_degraded_response_is_retried(semantic_add: AsyncMock) -> None:
