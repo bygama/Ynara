@@ -250,8 +250,7 @@ ynara/
 │
 ├── infra/
 │   ├── docker/              # docker-compose dev/prod + Dockerfile.backend
-│   ├── vllm/                # start-vllm.sh para Gemma + Qwen
-│   └── prod/                # systemd, Cloudflare Tunnel, backups (TODO)
+│   └── prod/                # Redis con auth, proveedores de IA, Cloudflare Tunnel, backups (TODO)
 │
 ├── skills/                  # 6 SKILL.md reutilizables
 │   ├── add-new-mode/        # agregar un modo al producto
