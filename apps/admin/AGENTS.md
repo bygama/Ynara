@@ -12,10 +12,10 @@
 `apps/admin` es el **panel interno del equipo** (operadores técnicos y
 founders): un *control plane* de observabilidad para **ver y operar** Ynara —
 cuántos usuarios hay, qué modos se usan, si el moat (la memoria) está sano, qué
-pasó en el `audit_log`, si el guard anti-prod está activo y si el serving LLM
-responde. Es Next.js 16 + TS strict + Tailwind v4 (CSS-first) + TanStack Query
-+ Zustand, **consistente 1:1 con [`apps/web`](../web/)** en stack, tokens y
-primitivos.
+pasó en el `audit_log`, si el guard anti-prod está activo y si los proveedores
+de IA responden. Es Next.js 16 + TS strict + Tailwind v4 (CSS-first) + TanStack
+Query + Zustand, **consistente 1:1 con [`apps/web`](../web/)** en stack, tokens
+y primitivos.
 
 **NO es la app del usuario final.** No hay chat, no hay memoria personal, no hay
 contenido del usuario. Es un dashboard de **métricas agregadas cross-tenant** y
@@ -31,7 +31,7 @@ contenido descifrado de memoria ni PII.
 |---|---|---|
 | **Perímetro de datos** (regla #2/#4) | Cualquier intento de exponer en una pantalla, schema, fixture o request: `record_hash`, `target_id`, contenido/`summary` descifrado de memoria, mensajes, emails u otra PII | **Prohibido.** El panel muestra solo agregados y metadata exponible. El `record_hash` y `target_id` se omiten en el **Zod schema** (no solo en el render). Si un endpoint nuevo los devuelve, no los parsees ni los pintes. |
 | **Cliente Supabase** (regla #5) | `import "@supabase/supabase-js"` en cualquier archivo de este app | **Prohibido.** Todo dato pasa por la API de FastAPI (`/v1/admin/*`). Sin Supabase Auth/Storage/Realtime/RLS. |
-| **IA externa** (regla #4) | `openai`, `anthropic`, `@google/generative-ai` desde este app | **Prohibido.** La inferencia es on-prem en el backend; el panel solo lee su salud. |
+| **IA externa** (regla #4b) | `openai`, `anthropic`, `@google/generative-ai` o HTTP directo a un proveedor de IA desde este app | **Prohibido.** La inferencia corre en el backend, el único que habla con los proveedores (ADR-028); el panel solo lee su salud en System Health: host, modelos y estado, nunca credenciales. |
 | **Tablas sagradas** (regla #3) | El panel consume vistas derivadas de `semantic_memory`/`episodic_memory`/`procedural_memory`/`audit_log` | El front es **read-only** sobre agregados: nunca escribe, nunca descifra, nunca expone hash. Los endpoints `/v1/admin/*` hacen COUNT/GROUP BY sin tocar las columnas sensibles. Cualquier cambio del **backend** sobre esas tablas sigue el gate de la regla #3 (tests + 1 aprobación humana). |
 | **Instalación / commit** (regla #1) | `pnpm add`/`pnpm install`, `git commit`/`push` | Confirmación humana explícita. En esta app **no se corre gate**: solo se escriben archivos. |
 | **Secrets** (regla #2) | `.env`, tokens, JWT admin | Nunca leer, copiar ni commitear. El token admin vive en `stores/admin.ts` (Zustand persist), nunca hardcodeado. |
@@ -40,11 +40,13 @@ contenido descifrado de memoria ni PII.
 
 ## 2. Reglas duras heredadas (del contrato global)
 
-1. **Soberanía del dato (regla #4).** El panel **nunca** saca dato del
-   perímetro ni expone contenido del usuario. Solo agregados y metadata.
+1. **Soberanía del dato (regla #4a).** El panel **nunca** expone contenido
+   del usuario ni PII. Solo agregados y metadata.
 2. **Sin cliente Supabase (regla #5).** Todo va por FastAPI. Prohibido
    `@supabase/supabase-js`.
-3. **Sin IA externa (regla #4).** Nada de `openai`/`anthropic`/`@google/*`.
+3. **Sin llamadas directas a IA (regla #4b).** Nada de
+   `openai`/`anthropic`/`@google/*` ni HTTP a un proveedor: la inferencia va
+   por el backend.
 4. **Read-only sobre tablas sagradas (regla #3).** Cero escritura, cero
    descifrado, cero `record_hash`/`target_id`/PII en la superficie.
 5. **TypeScript strict.** Sin `any`, sin `// @ts-ignore` salvo justificación.
@@ -71,7 +73,7 @@ src/
 │   ├── login/                  # pantalla PÚBLICA de login (fuera de (panel), sin shell ni guard)
 │   └── (panel)/                # shell + guard + las 6 pantallas (Overview, Usuarios, Modos, Moat, Audit, Sistema)
 ├── components/
-│   ├── shell/                  # AdminShell, AuthGuard, Sidebar, Topbar, AdminMenu, RangeSelector, ThemeToggle, PerimeterBadge, ApiStatusFooter
+│   ├── shell/                  # AdminShell, AuthGuard, Sidebar, Topbar, AdminMenu, RangeSelector, ThemeToggle, ApiStatusFooter
 │   ├── ui/                     # primitivos PORTADOS de apps/web/src/components/ui (copia 1:1, color plano por token)
 │   └── charts/                 # data-viz por token, CERO gradiente (Sparkline, AreaTimeSeries, ModeDonut, UsageHeatmap, …)
 ├── features/                   # un dir por pantalla: overview/ users/ modes/ moat/ audit/ system/ + auth/ (login/logout wire)

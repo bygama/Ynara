@@ -1,10 +1,9 @@
 # SCREENS.md — Las 6 pantallas del panel
 
 Catálogo de las pantallas de `apps/admin` y de los datos que muestra cada una.
-Todas viven bajo `app/(panel)/` y comparten el shell (sidebar + topbar con rango
-temporal global + `PerimeterBadge`). El rango (`24h`/`7d`/`30d`/`90d`) vive en el
-topbar y se inyecta como query param `range=` en todas las pantallas salvo
-System Health.
+Todas viven bajo `app/(panel)/` y comparten el shell (sidebar + topbar con el
+rango temporal global). El rango (`24h`/`7d`/`30d`/`90d`) vive en el topbar y se
+inyecta como query param `range=` en todas las pantallas salvo System Health.
 
 > Invariante: cada pantalla muestra **agregados** o **metadata exponible**.
 > Nunca contenido descifrado, `record_hash`, `target_id` ni PII (reglas #2/#4).
@@ -16,8 +15,6 @@ System Health.
 
 Vista de un vistazo del estado del sistema.
 
-- **StatusHero**: `PerimeterBadge variant="hero"` + estado del perímetro
-  (`intact`/`attention`/`verifying`) + `LivingField` ambiental con el rango activo.
 - **KpiStrip** (4 KPIs): usuarios totales (+delta), sesiones en rango
   (+sparkline), memorias consolidadas (suma de las 3 capas), eventos de audit en
   rango.
@@ -93,7 +90,12 @@ Estado de runtime e infra (sin métricas de negocio, sin `range`).
   calma; DB de prod en dev → franja roja (incidente 2026-05-31).
 - **StatusCard** ×2: Postgres (`SELECT 1`) + Redis (PING). Dot de estado
   (**azul plano = OK**, error = down), latencia `tabular-nums`, último check.
+- **AiProviders** ("Proveedores de IA"): una tarjeta con dos grupos. LLM: un
+  bloque por proveedor de `LLM_PROVIDERS`, en su orden (principal y respaldo),
+  con host, modo (`fake`/`api`), alias → id de modelo y estado. Embeddings:
+  modelo, host, modo, dimensión y estado. Estados: OK (azul plano), caído
+  (error) y sin configurar (`ink-soft`, backend `fake`). Nunca muestra una URL
+  entera ni una credencial.
 - **RuntimeInventory**: config no sensible — los alias de modelo
-  (agente/conversacional), los 5 modos, head de Alembic, embedder/reranker
-  cargados, build version.
+  (agente/conversacional), los 5 modos, head de Alembic y build version.
 - **Datos**: `useSystem()` → `GET /v1/admin/system` (sin `range`).
