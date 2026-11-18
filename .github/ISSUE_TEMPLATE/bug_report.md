@@ -50,7 +50,7 @@ para texto, attachment para visual.
 
 - [ ] Toca tablas sagradas — `semantic_memory` / `episodic_memory` / `procedural_memory` (regla #3)
 - [ ] Toca secrets, auth o JWT (regla #2)
-- [ ] Datos de usuario podrían haber salido a APIs externas (regla #4)
+- [ ] Contenido o PII en logs, o datos de usuario hacia un tercero que no es un proveedor de IA aprobado (regla #4)
 - [ ] Cliente `@supabase/supabase-js` involucrado en frontend (regla #5)
 - [ ] Ninguna de las anteriores
 
