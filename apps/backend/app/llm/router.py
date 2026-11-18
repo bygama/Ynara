@@ -27,7 +27,8 @@ Flujo de ``route()``:
 3. Construye el ``MemoryContext`` con SOLO los stores de las layers del modo
    y renderiza el bloque de contexto de memoria respetando un presupuesto de
    tokens (``context_tokens`` - estimacion(prompt + preambulo) -
-   ``COMPLETION_RESERVE``).
+   ``COMPLETION_RESERVE``). Si fallan los embeddings de esa busqueda, el turno
+   degrada sin llamar al modelo (nota (c)).
 4. Arma el system en un STRING NUEVO (NO muta el prompt cacheado) con lo fijo
    primero y lo variable al final: el prompt del modo, el preambulo de fecha y
    hora, y el bloque de memoria si no esta vacio. Asi la cache de prefijos del
@@ -62,8 +63,13 @@ Decisiones de diseno documentadas (M8 Ola 1 + Ola 2):
     (``LlmBadRequestError``/``LlmContextOverflowError``/``LlmAuthError``/
     ``LlmProviderRejectedError``) y semanticos (``ToolParsingError``/
     ``ToolExecutionError``), logueando SOLO
-    ``type(exc).__name__`` (regla #4) para no degradar a ciegas. La UNICA excepcion
-    es ``ModelNotServedError``: NO es degradacion del modelo sino una
+    ``type(exc).__name__`` (regla #4) para no degradar a ciegas. La recuperacion de
+    memoria va envuelta igual: las busquedas semantica y episodica embeddean el mensaje
+    con el proveedor de embeddings ANTES de llamar al modelo, y un error de ese
+    proveedor (429, timeout, 5xx, credencial, ``EmbeddingDimensionError``) degrada el
+    turno con el MISMO fallback. No se sigue con el bloque de memoria vacio: en los
+    modos que leen la memoria el modelo le diria al usuario que no tiene nada guardado.
+    La UNICA excepcion es ``ModelNotServedError``: NO es degradacion del modelo sino una
     misconfiguracion de deploy (ningun backend del pool sirve el modelo del modo),
     asi que se RE-LANZA (500 + alerta) en vez de enmascararse como un turno
     degradado que el usuario veria como respuesta normal. El ``ResilientClient``
@@ -71,9 +77,10 @@ Decisiones de diseno documentadas (M8 Ola 1 + Ola 2):
     del proveedor (credencial o 4xx propio: respaldo sin reintento), pero RE-LANZA
     los errores del request (``LlmBadRequestError``/``LlmContextOverflowError`` y
     ``ModelNotServedError``: sus ``REQUEST_ERRORS``); un ``OpenAICompatClient``
-    pelado RE-LANZA todo. Asi la promesa "``route()`` nunca propaga un error
-    transitorio/permanente del modelo al caller" se cumple con cualquier cliente, y
-    un deploy roto sigue siendo ruidoso.
+    pelado RE-LANZA todo, y el cliente de embeddings no reintenta ni degrada. Asi la
+    promesa "``route()`` nunca propaga un error transitorio/permanente del modelo ni de
+    los embeddings al caller" se cumple con cualquier cliente, y un deploy roto sigue
+    siendo ruidoso.
 
 (d) Encolado de consolidacion (Ola 2; movido en M10 Ola 0). El
     ``consolidate_turn.delay()`` ya NO vive en ``route()``: se movio al service
@@ -119,6 +126,22 @@ _FALLBACK_TEXT = (
     "Perdon, no pude procesar tu mensaje en este momento. "
     "Proba de nuevo en un rato o reformulalo mas corto."
 )
+
+
+def _degraded_response(session_id: str) -> ChatResponse:
+    """``ChatResponse`` del turno que no se pudo completar (nota (c) del modulo).
+
+    El mismo para un error del modelo y para uno de la recuperacion de memoria.
+    ``reasoning=None``: no hubo razonamiento util que surfacear (el modelo no completo el
+    turno) y el endpoint NO debe emitir eventos reasoning.
+    """
+    return ChatResponse(
+        text=_FALLBACK_TEXT,
+        actions=[],
+        session_id=session_id,
+        finish_reason="degraded",
+        reasoning=None,
+    )
 
 
 def _thinking_for_role(role: str) -> bool | None:
@@ -189,8 +212,9 @@ async def route(
             como ``source_session_id`` en el ADD semantic.
         (b) historial multi-turno inyectado vía param ``history`` y recortado
             al presupuesto de tokens por ``trim_history_to_budget``.
-        (c) cualquier error de la familia ``LlmError`` (permanente O transitorio)
-            -> ``ChatResponse`` degradado con fallback (no se propaga la excepcion).
+        (c) cualquier error de la familia ``LlmError`` (permanente O transitorio), del
+            modelo o de los embeddings de la memoria -> ``ChatResponse`` degradado con
+            fallback (no se propaga la excepcion), salvo ``ModelNotServedError``.
     """
     cfg = config if config is not None else load_llm_config()
 
@@ -236,7 +260,23 @@ async def route(
     # (reserva el preambulo) y final_system se arma sobre la misma base.
     base_system = f"{system_prompt}\n\n{now_preamble}"
     budget = context_budget(context_tokens=context_tokens, system_prompt=base_system)
-    context_block = await render_context_block(mem_ctx, query=request.text, budget_tokens=budget)
+    session_id = request.session_id or str(uuid4())
+
+    # Recuperacion de memoria (nota (c)): las busquedas semantica y episodica embeddean el
+    # mensaje con el proveedor de embeddings, que no tiene respaldo ni reintento. Si falla,
+    # el turno degrada con el MISMO fallback que un error del modelo, sin llamarlo: seguir
+    # con el bloque vacio haria que el modelo le diga al usuario que no tiene nada
+    # guardado. ModelNotServedError sigue propagando, como en el tool loop. Se loguea SOLO
+    # type(exc).__name__ (regla #4).
+    try:
+        context_block = await render_context_block(
+            mem_ctx, query=request.text, budget_tokens=budget
+        )
+    except ModelNotServedError:
+        raise
+    except LlmError as exc:
+        logger.warning("route degrado al recuperar la memoria: %s", type(exc).__name__)
+        return _degraded_response(session_id)
 
     # Si el bloque de memoria esta vacio, final_system es solo la base (prompt + preambulo).
     if context_block:
@@ -269,8 +309,6 @@ async def route(
         ChatMessage(role="user", content=request.text),
     ]
 
-    session_id = request.session_id or str(uuid4())
-
     # Envolver el tool loop capturando la familia LlmError, con UNA excepcion: un
     # ModelNotServedError NO es degradacion del modelo sino misconfiguracion de
     # deploy (ningun backend del pool sirve el modelo del modo) -> debe propagar
@@ -299,15 +337,7 @@ async def route(
         raise
     except LlmError as exc:
         logger.warning("route degrado por error LLM: %s", type(exc).__name__)
-        # reasoning=None en el turno degradado: no hubo razonamiento util que surfacear
-        # (el modelo no completo el turno) y el endpoint NO debe emitir eventos reasoning.
-        return ChatResponse(
-            text=_FALLBACK_TEXT,
-            actions=[],
-            session_id=session_id,
-            finish_reason="degraded",
-            reasoning=None,
-        )
+        return _degraded_response(session_id)
 
     # NO se encola consolidacion aca (M10 Ola 0): el enqueue se movio al service
     # (``ChatService.run_turn`` en ``app.services.chat``), DESPUES del ``session.commit()``,
