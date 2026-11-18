@@ -52,15 +52,7 @@ export const metadata: Metadata = {
   applicationName: "Ynara",
   alternates: { canonical: "/" },
   robots: { index: true, follow: true, googleBot: { index: true, follow: true } },
-  keywords: [
-    "Ynara",
-    "asistente personal",
-    "IA",
-    "memoria",
-    "productividad",
-    "bienestar",
-    "self-hosted",
-  ],
+  keywords: ["Ynara", "asistente personal", "IA", "memoria", "productividad", "bienestar"],
   authors: [{ name: "Ynara" }],
   openGraph: {
     type: "website",
