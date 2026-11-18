@@ -27,6 +27,11 @@ class AdminAuditRow(YnaraBaseModel):
     Campos exponibles del audit log per-user: metadata de la operación + su modo/modelo
     de origen + ``sensitive``. NUNCA incluye ``record_hash`` (cadena de integridad) ni
     ``target_id`` (apunta a memoria interna): ambos están ausentes del schema a propósito.
+
+    Modelo de origen: ``origin_model_id`` es el id de texto del modelo que originó la op
+    (el que informó el proveedor, o el alias; ADR-028), el mismo dato que ``/admin/system``
+    ya muestra por alias. ``origin_model`` es el enum de antes (``gemma``/``qwen``) y solo
+    viene en las filas viejas. Los dos son ``None`` en las acciones por HTTP y en el seed.
     """
 
     id: UUID
@@ -35,6 +40,7 @@ class AdminAuditRow(YnaraBaseModel):
     target_layer: MemoryLayer
     origin_mode: Mode | None
     origin_model: LlmModel | None
+    origin_model_id: str | None
     origin_tool: str | None
     sensitive: bool
 

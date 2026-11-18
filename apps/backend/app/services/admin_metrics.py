@@ -31,7 +31,7 @@ from typing import Literal
 from sqlalchemy import Float, Select, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.enums import AuditOperation, LlmModel, MemoryLayer, Mode
+from app.enums import AuditOperation, MemoryLayer, Mode
 from app.models.audit import AuditLog
 from app.models.memory import EpisodicMemory, ProceduralMemory, SemanticMemory
 from app.models.session import ChatSession
@@ -525,7 +525,7 @@ class AdminMetricsService:
         operation: AuditOperation | None,
         target_layer: MemoryLayer | None,
         origin_mode: Mode | None,
-        origin_model: LlmModel | None,
+        origin_model_id: str | None,
         sensitive: bool | None,
         limit: int,
         offset: int,
@@ -535,6 +535,8 @@ class AdminMetricsService:
         El SELECT trae solo los campos exponibles; ``record_hash``/``target_id`` no entran
         ni en la query ni en el schema. Filtra por rango (``created_at``) + facets
         opcionales, ordena por ``created_at`` DESC, pagina con ``limit``/``offset``.
+        ``origin_model_id`` matchea el id exacto del modelo (ADR-028); las filas de antes,
+        que solo tienen el enum ``origin_model``, no entran en ese filtro.
         """
         _, start, _ = _window(range_id)
 
@@ -545,8 +547,8 @@ class AdminMetricsService:
             filters.append(AuditLog.target_layer == target_layer)
         if origin_mode is not None:
             filters.append(AuditLog.origin_mode == origin_mode)
-        if origin_model is not None:
-            filters.append(AuditLog.origin_model == origin_model)
+        if origin_model_id is not None:
+            filters.append(AuditLog.origin_model_id == origin_model_id)
         if sensitive is not None:
             filters.append(AuditLog.sensitive.is_(sensitive))
 
@@ -567,6 +569,7 @@ class AdminMetricsService:
                     AuditLog.target_layer,
                     AuditLog.origin_mode,
                     AuditLog.origin_model,
+                    AuditLog.origin_model_id,
                     AuditLog.origin_tool,
                     AuditLog.sensitive,
                 )
@@ -584,6 +587,7 @@ class AdminMetricsService:
                 target_layer=row.target_layer,
                 origin_mode=row.origin_mode,
                 origin_model=row.origin_model,
+                origin_model_id=row.origin_model_id,
                 origin_tool=row.origin_tool,
                 sensitive=row.sensitive,
             )
