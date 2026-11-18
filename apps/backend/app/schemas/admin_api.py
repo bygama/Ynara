@@ -75,7 +75,7 @@ class ServingModelOut(YnaraBaseModel):
     writes_memory: bool
     context_tokens: int  # presupuesto de contexto del alias (ynara.config.json)
     healthy: bool  # serves_model(alias) ∧ health agregada
-    default_thinking: bool  # False conversational, True agent (gotcha Gemma, ADR-012 D4)
+    default_thinking: bool  # False conversational, True agent (intención por rol, ADR-028 D3)
 
 
 class ServingOut(YnaraBaseModel):
@@ -130,7 +130,7 @@ class TraceStep(YnaraBaseModel):
     """
 
     name: str  # "request" | "thinking" | "completion"
-    detail: str  # texto humano: "qwen · max_tokens=256 · temp=0.2"
+    detail: str  # texto humano: "agente · max_tokens=256 · temp=0.2"
     duration_ms: float | None = None  # hoy solo el step "completion" lo trae
 
 
