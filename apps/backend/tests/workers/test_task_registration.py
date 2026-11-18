@@ -46,8 +46,8 @@ def test_agent_turn_pass_registered() -> None:
 
     Bajo la config de modos actual nadie la encola (el chat ejecuta las tools síncronas),
     pero la task se mantiene registrada y funcional para una futura pasada de agente en
-    modos gemma. Si dejara de registrarse y luego se reactivara el encolador, el worker
-    rechazaría cada turno como ``Received unregistered task``. Este test lockea el
-    registro (fuera de scope borrarla en este PR).
+    los modos del alias conversacional. Si dejara de registrarse y luego se reactivara
+    el encolador, el worker rechazaría cada turno como ``Received unregistered task``.
+    Este test lockea el registro (fuera de scope borrarla en este PR).
     """
     assert "workflows.agent_turn_pass" in celery_app.tasks

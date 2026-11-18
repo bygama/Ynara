@@ -101,7 +101,7 @@ def _make_llm_with_ops(ops_json: str) -> FakeLlmClient:
             finish_reason="stop",
             prompt_tokens=10,
             completion_tokens=20,
-            model_name="qwen",
+            model_name="org/agent",
             latency_ms=5.0,
         )
     )
@@ -212,7 +212,7 @@ class TestAsyncConsolidateUnit:
     """Tests unit de ``_async_consolidate`` con session inyectada (sin DB real)."""
 
     async def test_returns_zero_when_llm_returns_noop(self) -> None:
-        """Si Qwen devuelve solo NOOP, ``_async_consolidate`` retorna 0."""
+        """Si el modelo devuelve solo NOOP, ``_async_consolidate`` retorna 0."""
         ops_json = json.dumps([{"op": "NOOP", "layer": "semantic"}])
         client = _make_llm_with_ops(ops_json)
         session = MagicMock(spec=AsyncSession)
@@ -348,7 +348,7 @@ class TestAsyncConsolidateUnit:
         assert captured_payloads[0].source_session_id is None
 
     async def test_invalid_json_from_llm_returns_zero(self) -> None:
-        """JSON invalido de Qwen -> parseo defensivo -> 0 ops aplicadas, sin crash."""
+        """JSON invalido del modelo -> parseo defensivo -> 0 ops aplicadas, sin crash."""
         client = FakeLlmClient(models=frozenset({"agente"}))
         client.queue_result(
             CompletionResult(
@@ -356,7 +356,7 @@ class TestAsyncConsolidateUnit:
                 finish_reason="stop",
                 prompt_tokens=5,
                 completion_tokens=10,
-                model_name="qwen",
+                model_name="org/agent",
                 latency_ms=2.0,
             )
         )
@@ -751,7 +751,7 @@ class TestAsyncConsolidateIntegration:
                 finish_reason="stop",
                 prompt_tokens=5,
                 completion_tokens=5,
-                model_name="qwen",
+                model_name="org/agent",
                 latency_ms=1.0,
             )
         )
