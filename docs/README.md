@@ -11,7 +11,7 @@ docs/
 │   ├── adrs/          # Architecture Decision Records (uno por decisión)
 │   ├── diagrams/      # Diagramas del sistema (markdown + mermaid)
 │   ├── informe-tecnico.pdf   # Informe técnico fundacional (Mayo 2026) con bitácora de versiones
-│   └── fine-tuning-plan.pdf  # Plan de fine-tuning de los modelos (Gemma/Qwen)
+│   └── fine-tuning-plan.pdf  # Plan de fine-tuning de Gemma/Qwen en GPU propia (histórico, anterior a ADR-028)
 ├── product/           # Visión, modos, memoria, voz
 ├── operations/        # Instalación, deploy, runbook, migraciones
 ├── conventions/       # Commits, glosario, AI guidelines, code style
