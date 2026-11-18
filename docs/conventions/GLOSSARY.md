@@ -57,7 +57,9 @@ con un PR.
 - **Gemma / Qwen** — los modelos propios de antes de ADR-028 (Gemma 4
   12B conversacional, Qwen 3.5 9B agente), hoy reemplazados por los
   alias. Queda un nombre histórico: el enum `llm_model_enum`
-  (`gemma` / `qwen`) de `audit_log.origin_model`.
+  (`gemma` / `qwen`) de `audit_log.origin_model`, que solo traen las
+  filas viejas; el audit nuevo guarda el id del modelo en
+  `audit_log.origin_model_id`.
 - **bge-m3** — modelo de embeddings, 1024 dimensiones. Lo sirve un
   proveedor por API (`EMBEDDING_MODEL`, default `BAAI/bge-m3`; ADR-028
   D4) a través de `ApiEmbeddingClient`.
