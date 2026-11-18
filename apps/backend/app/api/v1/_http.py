@@ -28,3 +28,19 @@ def too_many_requests(retry_after: int) -> HTTPException:
         detail="demasiados intentos, intente mas tarde",
         headers={"Retry-After": str(retry_after)},
     )
+
+
+def service_unavailable(retry_after: int | None = None) -> HTTPException:
+    """503 uniforme cuando falta una dependencia externa (p.ej. el proveedor de embeddings).
+
+    Mismo shape que ``too_many_requests``: un ``detail`` neutro (regla #4: ni el texto
+    del usuario ni el que devolvió el proveedor) y, si el call site sabe cuánto esperar,
+    el header ``Retry-After`` en segundos. Sin esa espera no se manda el header: un
+    valor inventado haría que el cliente reintente a ciegas.
+    """
+    headers = {"Retry-After": str(retry_after)} if retry_after is not None else None
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="servicio no disponible, intente mas tarde",
+        headers=headers,
+    )
