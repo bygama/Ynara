@@ -27,7 +27,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.enums import AuditOperation, LlmModel, MemoryLayer, Mode
+from app.enums import AuditOperation, MemoryLayer, Mode
 from app.llm.clients.embedding import FakeEmbeddingClient
 from app.llm.clients.fakes import FakeLlmClient
 from app.llm.clients.reranker import FakeReranker
@@ -95,6 +95,10 @@ def _sha256(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+# Id de modelo como lo informa un proveedor (ADR-028): va a ``origin_model_id``.
+_MODEL_ID = "org/agent-model-2026-06"
+
+
 def _make_llm_with_ops(ops_json: str) -> FakeLlmClient:
     client = FakeLlmClient(models=frozenset({"agente"}))
     client.queue_result(
@@ -128,7 +132,7 @@ async def test_apply_ops_add_semantic_writes_audit(db_session: AsyncSession) -> 
         semantic_store=semantic,
         procedural_store=procedural,
         audit_store=audit,
-        origin_model=LlmModel.QWEN,
+        origin_model_id=_MODEL_ID,
         origin_mode=Mode.VIDA,
     )
     assert applied == 1
@@ -138,7 +142,8 @@ async def test_apply_ops_add_semantic_writes_audit(db_session: AsyncSession) -> 
     row = rows[0]
     assert row.operation == AuditOperation.WRITE
     assert row.target_layer == MemoryLayer.SEMANTIC
-    assert row.origin_model == LlmModel.QWEN
+    assert row.origin_model is None
+    assert row.origin_model_id == _MODEL_ID
     assert row.origin_mode == Mode.VIDA
     assert row.sensitive is False
     assert row.record_hash == _sha256(content)
@@ -171,7 +176,7 @@ async def test_apply_ops_update_semantic_writes_audit(db_session: AsyncSession) 
         semantic_store=semantic,
         procedural_store=procedural,
         audit_store=audit,
-        origin_model=LlmModel.QWEN,
+        origin_model_id=_MODEL_ID,
         origin_mode=Mode.ESTUDIO,
     )
     assert applied == 1
@@ -206,7 +211,7 @@ async def test_apply_ops_delete_semantic_writes_audit(db_session: AsyncSession) 
         semantic_store=semantic,
         procedural_store=procedural,
         audit_store=audit,
-        origin_model=LlmModel.QWEN,
+        origin_model_id=_MODEL_ID,
         origin_mode=Mode.VIDA,
     )
     assert applied == 1
@@ -239,7 +244,7 @@ async def test_apply_ops_add_procedural_writes_audit(db_session: AsyncSession) -
         semantic_store=semantic,
         procedural_store=procedural,
         audit_store=audit,
-        origin_model=LlmModel.QWEN,
+        origin_model_id=_MODEL_ID,
         origin_mode=Mode.VIDA,
     )
     assert applied == 1
@@ -273,7 +278,7 @@ async def test_apply_ops_update_procedural_writes_audit(db_session: AsyncSession
         semantic_store=semantic,
         procedural_store=procedural,
         audit_store=audit,
-        origin_model=LlmModel.QWEN,
+        origin_model_id=_MODEL_ID,
         origin_mode=Mode.VIDA,
     )
     assert applied == 1
@@ -314,7 +319,7 @@ async def test_apply_ops_delete_procedural_writes_audit_null_target(
         semantic_store=semantic,
         procedural_store=procedural,
         audit_store=audit,
-        origin_model=LlmModel.QWEN,
+        origin_model_id=_MODEL_ID,
         origin_mode=Mode.VIDA,
     )
     assert applied == 1
@@ -355,7 +360,7 @@ async def test_apply_ops_noop_and_skipped_write_no_audit(db_session: AsyncSessio
         semantic_store=semantic,
         procedural_store=procedural,
         audit_store=audit,
-        origin_model=LlmModel.QWEN,
+        origin_model_id=_MODEL_ID,
         origin_mode=Mode.VIDA,
     )
     assert applied == 0
@@ -382,7 +387,7 @@ async def test_audit_row_never_contains_plaintext(db_session: AsyncSession) -> N
         semantic_store=semantic,
         procedural_store=procedural,
         audit_store=audit,
-        origin_model=LlmModel.QWEN,
+        origin_model_id=_MODEL_ID,
         origin_mode=Mode.VIDA,
     )
 
@@ -398,6 +403,7 @@ async def test_audit_row_never_contains_plaintext(db_session: AsyncSession) -> N
             row.target_layer,
             row.target_id,
             row.origin_model,
+            row.origin_model_id,
             row.origin_mode,
             row.origin_tool,
             row.record_hash,
@@ -480,7 +486,9 @@ async def test_consolidate_end_to_end_writes_n_audit_rows(db_session: AsyncSessi
     layers = {row.target_layer for row in rows}
     assert layers == {MemoryLayer.SEMANTIC, MemoryLayer.PROCEDURAL}
     assert all(row.operation == AuditOperation.WRITE for row in rows)
-    assert all(row.origin_model == LlmModel.QWEN for row in rows)
+    # El id que informó el cliente (model_name del CompletionResult), no el enum viejo.
+    assert all(row.origin_model is None for row in rows)
+    assert all(row.origin_model_id == "org/agent" for row in rows)
     assert all(row.origin_mode == Mode.VIDA for row in rows)
 
 
@@ -500,24 +508,26 @@ async def test_consolidate_with_fake_engine_writes_audit(db_session: AsyncSessio
             MemoryOp(op="ADD", layer="semantic", content="El usuario nació en Córdoba."),
             MemoryOp(op="ADD", layer="procedural", key="ciudad", value={"ciudad": "Córdoba"}),
             MemoryOp(op="NOOP", layer="semantic"),
-        ]
+        ],
+        model_id=_MODEL_ID,
     )
-    ops = await engine.consolidate(
+    extraction = await engine.consolidate(
         user_msg="nací en Córdoba", model_response="qué lindo", mode="vida"
     )
 
     applied = await apply_ops(
-        ops,
+        extraction.ops,
         semantic_store=semantic,
         procedural_store=procedural,
         audit_store=audit,
-        origin_model=LlmModel.QWEN,
+        origin_model_id=extraction.model_id,
         origin_mode=Mode.VIDA,
     )
     assert applied == 2
 
     rows = await _fetch_audit_rows(db_session, user.id)
     assert len(rows) == 2
+    assert all(row.origin_model_id == _MODEL_ID for row in rows)
 
 
 # ---------------------------------------------------------------------------
@@ -567,7 +577,7 @@ async def test_audit_failure_is_isolated_by_savepoint(db_session: AsyncSession) 
         semantic_store=semantic,
         procedural_store=procedural,
         audit_store=bad_audit,
-        origin_model=LlmModel.QWEN,
+        origin_model_id=_MODEL_ID,
         origin_mode=Mode.VIDA,
     )
     # El audit falló -> el savepoint revirtió la op -> no contó ni persistió.

@@ -48,7 +48,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.core.constants import MODEL_ALIAS_AGENT
-from app.enums import LlmModel, Mode
+from app.enums import Mode
 from app.llm.clients.base import LLMClient
 from app.llm.clients.embedding import EmbeddingClient
 from app.llm.clients.factory import build_embedder, build_llm_client, build_reranker
@@ -158,7 +158,7 @@ async def _consolidate_turn_in_db(
     """
     mem_engine = AgentMemoryEngine(llm_client, model=MODEL_ALIAS_AGENT)
     # Una falla transitoria del LLM (LlmTransientError) sale de aca, antes de tocar la DB.
-    ops = await mem_engine.consolidate(
+    extraction = await mem_engine.consolidate(
         user_msg=user_msg,
         model_response=model_response,
         mode=mode,
@@ -182,13 +182,14 @@ async def _consolidate_turn_in_db(
                     turn_seq,
                 )
         return await apply_ops(
-            ops,
+            extraction.ops,
             session=session,
             semantic_store=SemanticMemoryStore(session, user_id, embedder, reranker),
             procedural_store=ProceduralMemoryStore(session, user_id),
             source_session_id=source_session_id,
             audit_store=AuditStore(session, user_id),
-            origin_model=LlmModel.QWEN,
+            # El modelo real que extrajo las ops (ADR-028); el enum origin_model queda NULL.
+            origin_model_id=extraction.model_id,
             origin_mode=origin_mode,
         )
 

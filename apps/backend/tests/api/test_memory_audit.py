@@ -1,10 +1,11 @@
 """Tests de INTEGRACIÓN: las mutaciones de memoria por ENDPOINT auditan en ``audit_log`` (#161).
 
 Complementan ``tests/integration/test_audit_writes.py`` (que cubre la sede de la
-CONSOLIDACIÓN — ``apply_ops`` con ``origin_model=QWEN``): acá se cubre la sede del
-ENDPOINT HTTP (``app/api/v1/memory.py``), donde el DUEÑO muta su propia memoria con
-su JWT y cada PATCH/DELETE/wipe EFECTIVO deja su fila de auditoría con
-``origin_model=None`` (acción del usuario por HTTP, sin LLM).
+CONSOLIDACIÓN — ``apply_ops`` con el id del modelo en ``origin_model_id``): acá se
+cubre la sede del ENDPOINT HTTP (``app/api/v1/memory.py``), donde el DUEÑO muta su
+propia memoria con su JWT y cada PATCH/DELETE/wipe EFECTIVO deja su fila de
+auditoría con ``origin_model`` y ``origin_model_id`` en ``None`` (acción del usuario
+por HTTP, sin LLM).
 
 Setup espejado EXACTO de ``tests/api/test_memory.py`` (``httpx.AsyncClient`` +
 ``ASGITransport(app=app)``, override de ``get_db`` con el ``db_session`` del fixture,
@@ -164,6 +165,7 @@ async def test_patch_semantic_writes_audit_update(db_session: AsyncSession) -> N
         assert row.sensitive is False
         # Acción del usuario por HTTP: sin LLM/tool (distingue del audit de consolidación).
         assert row.origin_model is None
+        assert row.origin_model_id is None
         assert row.origin_mode is None
         assert row.origin_tool is None
     finally:
@@ -202,6 +204,7 @@ async def test_patch_procedural_writes_audit_update(db_session: AsyncSession) ->
         assert row.record_hash == compute_record_hash(procedural_hash_payload(entry.key, new_value))
         assert row.sensitive is False
         assert row.origin_model is None
+        assert row.origin_model_id is None
     finally:
         app.dependency_overrides.clear()
 
@@ -233,6 +236,7 @@ async def test_delete_semantic_writes_audit_delete(db_session: AsyncSession) -> 
         assert row.record_hash == compute_record_hash(str(item.id))
         assert row.sensitive is False
         assert row.origin_model is None
+        assert row.origin_model_id is None
     finally:
         app.dependency_overrides.clear()
 
@@ -284,6 +288,7 @@ async def test_delete_episodic_writes_audit_delete_sensitive(
         # Conservador: episódica -> sensitive=True SIEMPRE, sin descifrar para leer is_sensitive.
         assert row.sensitive is True
         assert row.origin_model is None
+        assert row.origin_model_id is None
     finally:
         app.dependency_overrides.clear()
 
@@ -318,6 +323,7 @@ async def test_delete_procedural_writes_audit_null_target(db_session: AsyncSessi
         assert row.record_hash == compute_record_hash(entry.key)
         assert row.sensitive is False
         assert row.origin_model is None
+        assert row.origin_model_id is None
     finally:
         app.dependency_overrides.clear()
 
@@ -366,6 +372,7 @@ async def test_wipe_execute_writes_one_audit_row_per_layer(db_session: AsyncSess
         assert all(row.operation == AuditOperation.DELETE for row in rows)
         assert all(row.target_id is None for row in rows)
         assert all(row.origin_model is None for row in rows)
+        assert all(row.origin_model_id is None for row in rows)
 
         by_layer = {row.target_layer: row for row in rows}
         assert set(by_layer) == {

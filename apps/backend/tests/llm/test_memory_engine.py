@@ -6,7 +6,8 @@ UNIT (sin DB ni red):
 - AgentMemoryEngine con respuesta no-lista -> [].
 - AgentMemoryEngine con ops malformadas -> solo las validas.
 - AgentMemoryEngine: fallo del LLM -> [] sin propagar.
-- FakeMemoryEngine devuelve sus ops prefijadas y registra la llamada.
+- FakeMemoryEngine devuelve sus ops prefijadas (y su model_id) y registra la llamada.
+- El id de modelo para la auditoria tiene sus tests en ``test_memory_engine_model_id.py``.
 - MemoryOp es frozen (inmutable).
 - Protocol runtime_checkable: FakeMemoryEngine satisface MemoryEngine.
 
@@ -37,6 +38,7 @@ from app.llm.memory_engine import (
     MemoryEngine,
     MemoryOp,
     SessionSummary,
+    TurnExtraction,
     apply_ops,
 )
 from app.llm.schemas import CompletionResult
@@ -96,7 +98,13 @@ async def test_fake_memory_engine_returns_preset_ops() -> None:
     result = await engine.consolidate(
         user_msg="me llamo Ana", model_response="Hola Ana!", mode="vida"
     )
-    assert result == preset
+    assert result == TurnExtraction(ops=preset, model_id=None)
+
+
+async def test_fake_memory_engine_returns_its_model_id() -> None:
+    engine = FakeMemoryEngine(ops=[], model_id="org/fake-model")
+    result = await engine.consolidate(user_msg="hola", model_response="hola!", mode="vida")
+    assert result.model_id == "org/fake-model"
 
 
 async def test_fake_memory_engine_records_calls() -> None:
@@ -113,9 +121,9 @@ async def test_fake_memory_engine_multiple_calls_independent() -> None:
     engine = FakeMemoryEngine(ops=preset)
     r1 = await engine.consolidate(user_msg="a", model_response="b", mode="vida")
     r2 = await engine.consolidate(user_msg="c", model_response="d", mode="vida")
-    # Cada llamada devuelve una copia independiente.
+    # Cada llamada devuelve una copia independiente de las ops.
     assert r1 == r2
-    assert r1 is not r2
+    assert r1.ops is not r2.ops
 
 
 async def test_fake_memory_engine_summarize_returns_preset() -> None:
@@ -162,9 +170,10 @@ async def test_agent_engine_valid_json_add_semantic() -> None:
         )
     )
     engine = AgentMemoryEngine(llm_client=fake_llm, model="agente")
-    ops = await engine.consolidate(
+    extraction = await engine.consolidate(
         user_msg="soy medico", model_response="interesante!", mode="vida"
     )
+    ops = extraction.ops
     assert len(ops) == 1
     assert ops[0].op == "ADD"
     assert ops[0].layer == "semantic"
@@ -188,7 +197,8 @@ async def test_agent_engine_consolidate_tolerates_think_block() -> None:
     )
     fake_llm.queue_result(_make_result(raw))
     engine = AgentMemoryEngine(llm_client=fake_llm, model="agente")
-    ops = await engine.consolidate(user_msg="soy medico", model_response="ok", mode="vida")
+    extraction = await engine.consolidate(user_msg="soy medico", model_response="ok", mode="vida")
+    ops = extraction.ops
     assert len(ops) == 1
     assert ops[0].op == "ADD"
     assert ops[0].content == "El usuario es medico."
@@ -200,7 +210,8 @@ async def test_agent_engine_consolidate_tolerates_markdown_fence() -> None:
     raw = "```json\n" + _json_ops([{"op": "NOOP", "layer": "semantic"}]) + "\n```"
     fake_llm.queue_result(_make_result(raw))
     engine = AgentMemoryEngine(llm_client=fake_llm, model="agente")
-    ops = await engine.consolidate(user_msg="hola", model_response="hola!", mode="vida")
+    extraction = await engine.consolidate(user_msg="hola", model_response="hola!", mode="vida")
+    ops = extraction.ops
     assert len(ops) == 1
     assert ops[0].op == "NOOP"
 
@@ -222,9 +233,10 @@ async def test_agent_engine_valid_json_add_procedural() -> None:
         )
     )
     engine = AgentMemoryEngine(llm_client=fake_llm, model="agente")
-    ops = await engine.consolidate(
+    extraction = await engine.consolidate(
         user_msg="prefiero tono informal", model_response="dale!", mode="vida"
     )
+    ops = extraction.ops
     assert len(ops) == 1
     assert ops[0].op == "ADD"
     assert ops[0].layer == "procedural"
@@ -241,9 +253,10 @@ async def test_agent_engine_multiple_ops() -> None:
     ]
     fake_llm.queue_result(_make_result(_json_ops(raw_ops)))
     engine = AgentMemoryEngine(llm_client=fake_llm, model="agente")
-    ops = await engine.consolidate(
+    extraction = await engine.consolidate(
         user_msg="vivo en Buenos Aires", model_response="genial", mode="vida"
     )
+    ops = extraction.ops
     assert len(ops) == 3
     assert ops[2].op == "NOOP"
 
@@ -255,9 +268,10 @@ async def test_agent_engine_delete_semantic_with_target_id() -> None:
         _make_result(_json_ops([{"op": "DELETE", "layer": "semantic", "target_id": target}]))
     )
     engine = AgentMemoryEngine(llm_client=fake_llm, model="agente")
-    ops = await engine.consolidate(
+    extraction = await engine.consolidate(
         user_msg="eso ya no aplica", model_response="ok, lo elimino", mode="vida"
     )
+    ops = extraction.ops
     assert len(ops) == 1
     assert ops[0].op == "DELETE"
     assert ops[0].target_id == target
@@ -280,9 +294,10 @@ async def test_agent_engine_update_procedural() -> None:
         )
     )
     engine = AgentMemoryEngine(llm_client=fake_llm, model="agente")
-    ops = await engine.consolidate(
+    extraction = await engine.consolidate(
         user_msg="ahora prefiero mexicano", model_response="anotado", mode="vida"
     )
+    ops = extraction.ops
     assert len(ops) == 1
     assert ops[0].op == "UPDATE"
     assert ops[0].key == "idioma_preferido"
@@ -297,7 +312,8 @@ async def test_agent_engine_invalid_json_returns_empty() -> None:
     fake_llm = FakeLlmClient(models=frozenset({"agente"}))
     fake_llm.queue_result(_make_result("esto no es json {{{"))
     engine = AgentMemoryEngine(llm_client=fake_llm, model="agente")
-    ops = await engine.consolidate(user_msg="hola", model_response="hola!", mode="vida")
+    extraction = await engine.consolidate(user_msg="hola", model_response="hola!", mode="vida")
+    ops = extraction.ops
     assert ops == []
 
 
@@ -309,7 +325,8 @@ async def test_agent_engine_free_text_returns_empty() -> None:
         )
     )
     engine = AgentMemoryEngine(llm_client=fake_llm, model="agente")
-    ops = await engine.consolidate(user_msg="hola", model_response="hola!", mode="vida")
+    extraction = await engine.consolidate(user_msg="hola", model_response="hola!", mode="vida")
+    ops = extraction.ops
     assert ops == []
 
 
@@ -318,7 +335,8 @@ async def test_agent_engine_non_list_json_returns_empty() -> None:
     fake_llm = FakeLlmClient(models=frozenset({"agente"}))
     fake_llm.queue_result(_make_result('{"op": "ADD", "layer": "semantic", "content": "x"}'))
     engine = AgentMemoryEngine(llm_client=fake_llm, model="agente")
-    ops = await engine.consolidate(user_msg="x", model_response="y", mode="vida")
+    extraction = await engine.consolidate(user_msg="x", model_response="y", mode="vida")
+    ops = extraction.ops
     assert ops == []
 
 
@@ -331,7 +349,8 @@ async def test_agent_engine_invalid_op_value_skipped() -> None:
     ]
     fake_llm.queue_result(_make_result(_json_ops(raw_ops)))
     engine = AgentMemoryEngine(llm_client=fake_llm, model="agente")
-    ops = await engine.consolidate(user_msg="x", model_response="y", mode="vida")
+    extraction = await engine.consolidate(user_msg="x", model_response="y", mode="vida")
+    ops = extraction.ops
     assert len(ops) == 1
     assert ops[0].content == "hecho valido"
 
@@ -345,7 +364,8 @@ async def test_agent_engine_invalid_layer_skipped() -> None:
     ]
     fake_llm.queue_result(_make_result(_json_ops(raw_ops)))
     engine = AgentMemoryEngine(llm_client=fake_llm, model="agente")
-    ops = await engine.consolidate(user_msg="x", model_response="y", mode="vida")
+    extraction = await engine.consolidate(user_msg="x", model_response="y", mode="vida")
+    ops = extraction.ops
     assert len(ops) == 1
     assert ops[0].layer == "semantic"
 
@@ -355,7 +375,8 @@ async def test_agent_engine_llm_failure_returns_empty() -> None:
     fake_llm = FakeLlmClient(models=frozenset({"agente"}))
     fake_llm.queue_error(RuntimeError("timeout del proveedor"))
     engine = AgentMemoryEngine(llm_client=fake_llm, model="agente")
-    ops = await engine.consolidate(user_msg="x", model_response="y", mode="vida")
+    extraction = await engine.consolidate(user_msg="x", model_response="y", mode="vida")
+    ops = extraction.ops
     assert ops == []
 
 
