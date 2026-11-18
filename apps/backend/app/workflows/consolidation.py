@@ -17,7 +17,7 @@ Reglas no negociables (ADR-010 + critica adversarial M8):
    cierra los clientes que armo al terminar cada intento (``_aclose_quietly``).
    El engine de DB usa ``NullPool`` obligatorio (sin el, reusar conexiones
    entre event loops distintos da 'Future attached to a different loop').
-5. Parseo defensivo heredado de ``QwenMemoryEngine._parse_ops``: JSON
+5. Parseo defensivo heredado de ``AgentMemoryEngine`` (``_parse_ops``): JSON
    invalido / ops malformadas -> [] sin crashear el worker.
 6. Ningun dato de usuario a logs (regla #4): el payload (turno del usuario)
    queda en Redis y el worker; al proveedor de IA va solo lo que pide la
@@ -60,7 +60,7 @@ from app.llm.clients.factory import build_embedder, build_llm_client, build_rera
 from app.llm.clients.reranker import Reranker
 from app.llm.config import load_llm_config
 from app.llm.errors import LlmTransientError
-from app.llm.memory_engine import QwenMemoryEngine, apply_ops
+from app.llm.memory_engine import AgentMemoryEngine, apply_ops
 from app.memory.audit import AuditStore
 from app.memory.config import MemoryConfigError, RetentionConfig, load_retention_config
 from app.memory.conversation_turns import ConversationTurnStore
@@ -96,7 +96,7 @@ def _build_consolidation_llm(settings: Settings) -> LLMClient:
     """Construye el cliente LLM para consolidacion (alias ``agente``).
 
     Delega en la factory (``build_llm_client``): en dev/test devuelve el
-    ``FakeLlmClient`` (sin resultados encolados -> el ``QwenMemoryEngine``
+    ``FakeLlmClient`` (sin resultados encolados -> el ``AgentMemoryEngine``
     aplica 0 ops y commitea sin efectos, comportamiento historico de M8); con
     ``LLM_BACKEND=api`` devuelve el ``ResilientClient`` sobre los proveedores de
     ``LLM_PROVIDERS`` (ADR-028). El fake sirve los alias de ``ynara.config.json``.
@@ -241,7 +241,7 @@ async def _consolidate_turn_in_db(
     saltearlo perderia el turno. La extraccion con el LLM corre ANTES de tomar la fila,
     asi el lock dura lo que tarda ``apply_ops`` y no la llamada al modelo.
     """
-    mem_engine = QwenMemoryEngine(llm_client, model=MODEL_ALIAS_AGENT)
+    mem_engine = AgentMemoryEngine(llm_client, model=MODEL_ALIAS_AGENT)
     # Una falla transitoria del LLM (LlmTransientError) sale de aca, antes de tocar la DB.
     ops = await mem_engine.consolidate(
         user_msg=user_msg,
@@ -529,7 +529,7 @@ def consolidate_turn(
 # - Idempotencia: si ya existe un episodio para session_id -> no-op (un doble
 #   cierre no duplica el episodio). Ademas degrada el IntegrityError de la UNIQUE
 #   (session_id) de episodic_memory a no-op (carrera entre dos workers).
-# - Resume el transcript con Qwen (QwenMemoryEngine.summarize), persiste via
+# - Resume el transcript con el alias agente (AgentMemoryEngine.summarize), persiste via
 #   EpisodicMemoryStore.add (embeddea+cifra), audita (AuditStore.record), y purga
 #   los turnos. summary+purge son atomicos (mismo commit).
 # - is_sensitive = (mode == BIENESTAR); el retention queda capeado por el
@@ -611,7 +611,7 @@ async def _consolidate_session_in_db(
         return 0
 
     transcript = _build_transcript(turns)
-    mem_engine = QwenMemoryEngine(llm_client, model=MODEL_ALIAS_AGENT)
+    mem_engine = AgentMemoryEngine(llm_client, model=MODEL_ALIAS_AGENT)
     summary = await mem_engine.summarize(transcript=transcript, mode=mode)
     if not summary.summary:
         # Resumen vacio (JSON corrupto o un error permanente del LLM; lo transitorio y

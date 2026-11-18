@@ -8,13 +8,13 @@ usuario/modelo y las aplica via ``SemanticMemoryStore`` /
 Componentes:
 - ``MemoryOp``: op atómica que describe qué escribir/borrar.
 - ``MemoryEngine`` (Protocol): contrato de extraccion.
-- ``QwenMemoryEngine``: implementacion real via Qwen (LLM call + parseo
-  defensivo).
+- ``AgentMemoryEngine``: implementacion real via el alias ``agente`` (LLM call +
+  parseo defensivo).
 - ``FakeMemoryEngine``: implementacion para tests (sin LLM).
 - ``apply_ops()``: aplica una lista de ``MemoryOp`` contra los stores.
 
 Decisiones (ADR-010 + critica adversarial M8, NO re-litigar):
-1. Solo Qwen escribe. ``route()`` solo encola si ``model_cfg.writes_memory``.
+1. Solo el alias agente escribe. ``route()`` solo encola si ``model_cfg.writes_memory``.
 2. source_session_id (provenance, M10 Ola 1): ``apply_ops`` recibe el
    ``source_session_id`` (UUID de la ``ChatSession``) y lo persiste SOLO en el
    ADD semantic (no en UPDATE/DELETE). Es FK opcional a ``sessions.id``.
@@ -232,7 +232,7 @@ Devuelve SOLO el objeto JSON con "summary" y "topics". Nada mas."""
 
 
 # ---------------------------------------------------------------------------
-# QwenMemoryEngine
+# AgentMemoryEngine
 # ---------------------------------------------------------------------------
 
 _VALID_OPS: frozenset[str] = frozenset({"ADD", "UPDATE", "DELETE", "NOOP"})
@@ -251,10 +251,10 @@ _THINK_BLOCK_RE = THINK_BLOCK_RE
 def _strip_reasoning_and_fences(raw_text: str) -> str:
     """Quita bloques ``<think>...</think>`` y fences markdown del texto del LLM.
 
-    Defensa en profundidad del parseo (Qwen es thinking model): aunque
-    ``consolidate``/``summarize`` mandan ``thinking=False``, esto tolera que el
-    server emita razonamiento igual o devuelva el JSON dentro de un fence
-    ```` ```json ... ``` ````.
+    Defensa en profundidad del parseo (el alias ``agente`` puede caer en un modelo
+    thinking): aunque ``consolidate``/``summarize`` mandan ``thinking=False``, esto
+    tolera que el proveedor emita razonamiento igual o devuelva el JSON dentro de un
+    fence ```` ```json ... ``` ````.
     """
     cleaned = _THINK_BLOCK_RE.sub("", raw_text).strip()
     if cleaned.startswith("```"):
@@ -264,20 +264,20 @@ def _strip_reasoning_and_fences(raw_text: str) -> str:
 
 
 def _parse_ops(raw_text: str) -> list[MemoryOp]:
-    """Parseo defensivo del JSON de ops devuelto por Qwen.
+    """Parseo defensivo del JSON de ops devuelto por el modelo.
 
     Regla #6 (critica adversarial M8): si el parse falla o el resultado
     no es lista, devuelve [] sin propagar. El worker jamas debe caerse
-    por un JSON malo de Qwen.
+    por un JSON malo del modelo.
     """
     try:
         data = json.loads(_strip_reasoning_and_fences(raw_text))
     except (json.JSONDecodeError, ValueError):
-        logger.debug("memory_engine: JSON invalido en respuesta de Qwen (descartado)")
+        logger.debug("memory_engine: JSON invalido en respuesta del modelo (descartado)")
         return []
 
     if not isinstance(data, list):
-        logger.debug("memory_engine: respuesta de Qwen no es lista (descartado)")
+        logger.debug("memory_engine: respuesta del modelo no es lista (descartado)")
         return []
 
     ops: list[MemoryOp] = []
@@ -310,26 +310,26 @@ def _parse_ops(raw_text: str) -> list[MemoryOp]:
 
 
 def _parse_summary(raw_text: str) -> SessionSummary:
-    """Parseo defensivo del JSON de resumen episodico devuelto por Qwen.
+    """Parseo defensivo del JSON de resumen episodico devuelto por el modelo.
 
     Espejo de ``_parse_ops`` (regla #6): si el parse falla, el resultado no es un
     objeto, o ``summary`` no es un str no-vacio, devuelve un ``SessionSummary``
     vacio (``summary=""``) sin propagar. El worker episodico jamas debe caerse por
-    un JSON malo de Qwen; con ``summary=""`` el caller decide no crear el episodio.
+    un JSON malo del modelo; con ``summary=""`` el caller decide no crear el episodio.
     """
     try:
         data = json.loads(_strip_reasoning_and_fences(raw_text))
     except (json.JSONDecodeError, ValueError):
-        logger.debug("memory_engine: JSON invalido en resumen de Qwen (descartado)")
+        logger.debug("memory_engine: JSON invalido en resumen del modelo (descartado)")
         return SessionSummary()
 
     if not isinstance(data, dict):
-        logger.debug("memory_engine: resumen de Qwen no es objeto (descartado)")
+        logger.debug("memory_engine: resumen del modelo no es objeto (descartado)")
         return SessionSummary()
 
     summary = data.get("summary", "")
     if not isinstance(summary, str) or not summary.strip():
-        logger.debug("memory_engine: resumen de Qwen sin 'summary' valido (descartado)")
+        logger.debug("memory_engine: resumen del modelo sin 'summary' valido (descartado)")
         return SessionSummary()
 
     topics = data.get("topics", {})
@@ -351,13 +351,13 @@ def _raise_if_degraded(result: CompletionResult) -> None:
         raise LlmTransientError("respuesta degradada")
 
 
-class QwenMemoryEngine:
-    """Extractor de memoria usando Qwen via ``LLMClient``.
+class AgentMemoryEngine:
+    """Extractor de memoria usando el alias ``agente`` via ``LLMClient``.
 
     Llama al modelo con un prompt de extraccion y parsea la respuesta JSON
     de forma defensiva (decision #6 M8): nunca propaga errores de parseo.
     Fuerza ``thinking=False`` en ambas llamadas (ADR-012 D4): la extraccion y el
-    resumen necesitan JSON puro, y el razonamiento de Qwen (thinking model)
+    resumen necesitan JSON puro, y el razonamiento de un modelo thinking
     contaminaria ``result.text`` y degradaria el parseo en silencio (#235).
     """
 
@@ -372,7 +372,7 @@ class QwenMemoryEngine:
         model_response: str,
         mode: str,
     ) -> list[MemoryOp]:
-        """Extrae ops de memoria del turno via Qwen.
+        """Extrae ops de memoria del turno via el alias ``agente``.
 
         El contenido del turno NO se loguea (regla #4: ningun dato de
         usuario a logs). Si el LLM falla por algo permanente o devuelve JSON
@@ -393,9 +393,10 @@ class QwenMemoryEngine:
                 model=self._model,
                 messages=messages,
                 temperature=0.1,  # baja temperatura para extraccion estructurada
-                # thinking OFF (ADR-012 D4): la extraccion quiere JSON puro. Qwen es
-                # thinking model y su razonamiento contaminaria result.text y rompria
-                # el parseo (-> [] mudo). El default del server no es confiable aca.
+                # thinking OFF (ADR-012 D4): la extraccion quiere JSON puro. Si el alias
+                # cae en un modelo thinking, su razonamiento contaminaria result.text y
+                # romperia el parseo (-> [] mudo). El default del proveedor no es
+                # confiable aca.
                 thinking=False,
                 max_tokens=512,
             )
@@ -413,7 +414,7 @@ class QwenMemoryEngine:
         return _parse_ops(result.text)
 
     async def summarize(self, *, transcript: str, mode: str) -> SessionSummary:
-        """Resume un transcript de sesion completo a un ``SessionSummary`` via Qwen.
+        """Resume un transcript de sesion a un ``SessionSummary`` via el alias ``agente``.
 
         Lo usa el worker episodico (``consolidate_session``) al cerrar la sesion:
         recibe el transcript reconstruido de los turnos descifrados y devuelve el
@@ -435,8 +436,8 @@ class QwenMemoryEngine:
                 model=self._model,
                 messages=messages,
                 temperature=0.2,  # baja temperatura para un resumen estable
-                # thinking OFF (ADR-012 D4): el resumen quiere JSON puro; el <think>
-                # de Qwen romperia el parseo (-> summary vacio mudo).
+                # thinking OFF (ADR-012 D4): el resumen quiere JSON puro; un <think>
+                # del modelo romperia el parseo (-> summary vacio mudo).
                 thinking=False,
                 max_tokens=512,
             )

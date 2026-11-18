@@ -27,7 +27,7 @@ from app.llm.errors import (
     LlmTransientError,
     degraded_response,
 )
-from app.llm.memory_engine import MemoryOp, QwenMemoryEngine, SessionSummary, apply_ops
+from app.llm.memory_engine import AgentMemoryEngine, MemoryOp, SessionSummary, apply_ops
 
 _SECRET = "mi diagnostico es privado"
 
@@ -36,15 +36,15 @@ def _llm() -> FakeLlmClient:
     return FakeLlmClient(models=frozenset({"agente"}))
 
 
-def _engine(client: object) -> QwenMemoryEngine:
-    return QwenMemoryEngine(llm_client=client, model="agente")  # type: ignore[arg-type]
+def _engine(client: object) -> AgentMemoryEngine:
+    return AgentMemoryEngine(llm_client=client, model="agente")  # type: ignore[arg-type]
 
 
-async def _consolidate(engine: QwenMemoryEngine) -> list[MemoryOp]:
+async def _consolidate(engine: AgentMemoryEngine) -> list[MemoryOp]:
     return await engine.consolidate(user_msg=_SECRET, model_response="anotado", mode="vida")
 
 
-async def _summarize(engine: QwenMemoryEngine) -> SessionSummary:
+async def _summarize(engine: AgentMemoryEngine) -> SessionSummary:
     return await engine.summarize(transcript=f"Usuario: {_SECRET}", mode="vida")
 
 
