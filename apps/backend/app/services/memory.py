@@ -318,7 +318,7 @@ class MemoryService:
     async def export_all(self) -> MemoryExport:
         """Las 3 capas COMPLETAS descifradas + ``version`` + ``exported_at``.
 
-        Sin paginar (on-prem, pocos hechos por user) y en UN query por capa
+        Sin paginar (pocos hechos por user) y en UN query por capa
         (``list_all`` sin ``limit`` trae todo): evita el ``count()``-para-el-limit y
         su TOCTOU. El router lo envuelve en un ``JSONResponse`` con header de descarga.
         """
