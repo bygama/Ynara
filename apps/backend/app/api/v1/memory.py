@@ -268,7 +268,7 @@ async def search_memory(
 
     - ``q`` es la query (requerida; 1..200 chars → 422 fuera de rango). Una query en
       blanco tras ``strip`` devuelve un resultado vacío (200, no 422) SIN consumir cuota.
-    - Rate-limit (el search dispara el pipeline caro embed → ANN → rerank): bucket por
+    - Rate-limit (el search dispara el pipeline caro embed por API → ANN): bucket por
       ``user_id``, DESPUÉS del short-circuit de query en blanco y ANTES de instanciar
       stores o correr el pipeline; fail-open si Redis cae; 429 con ``Retry-After``.
 

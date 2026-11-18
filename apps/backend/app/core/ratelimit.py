@@ -341,10 +341,10 @@ async def check_memory_search_rate_limit(store: TokenStore, *, user_id: str) -> 
     """``True`` si la búsqueda de memoria está permitida; ``False`` si excede el límite.
 
     Bucket por ``user_id`` para el endpoint que dispara el pipeline caro
-    embed → ANN → rerank (GPU/CPU) en cada query. Un techo amplio por minuto corta el
-    abuso sin molestar la búsqueda interactiva legítima. Chequea + incrementa en una
-    sola op. fail-open: si Redis cae, ``incr_with_ttl`` => 0 => permite (baseline sin
-    freno, nunca auto-DoS).
+    embed por API (costo por token) → ANN en cada query. Un techo amplio por
+    minuto corta el abuso sin molestar la búsqueda interactiva legítima. Chequea +
+    incrementa en una sola op. fail-open: si Redis cae, ``incr_with_ttl`` => 0 =>
+    permite (baseline sin freno, nunca auto-DoS).
 
     El ``user_id`` es un UUID opaco (no PII directa): va crudo en la key, sin hashear
     (ver ``_memory_search_counter_key``).
