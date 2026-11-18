@@ -6,12 +6,16 @@
 
 ## Qué es Ynara
 
-Ynara es un asistente personal adaptativo con memoria propia. Acompaña
-a estudiantes y profesionales jóvenes de LATAM en su día a día: les
-ayuda a producir, estudiar, descomprimir y recordar. No es un chatbot
-genérico ni un wrapper de otro modelo: la inferencia corre sobre
-modelos e infraestructura propios y aprende **del usuario**, no del
-mercado. En fase MVP la persistencia vive en una DB gestionada
+Ynara es un asistente personal adaptativo con memoria y modos propios.
+Acompaña a estudiantes y profesionales jóvenes de LATAM en su día a
+día: les ayuda a producir, estudiar, descomprimir y recordar. No es un
+chatbot genérico: para entender y responder usa modelos de lenguaje de
+proveedores externos, pero la memoria, los modos y la voz son de Ynara.
+Aprende **del usuario**, no del mercado. Solo trabaja con proveedores
+con contrato de tratamiento de datos y que no entrenan con los datos
+del usuario (ver
+[`ADR-028`](./docs/architecture/adrs/ADR-028-inferencia-por-api.md)).
+En fase MVP la persistencia vive en una DB gestionada
 (Supabase como Postgres); el self-host de la base es el objetivo de V2
 (ver [`ADR-005`](./docs/architecture/adrs/ADR-005-supabase-mvp-postgres-selfhosted-v2.md)).
 
@@ -20,7 +24,7 @@ mercado. En fase MVP la persistencia vive en una DB gestionada
 1. **Productividad** — Ynara ejecuta. Agenda, recuerda, organiza,
    actúa. No solo conversa: cierra loops.
 2. **Memoria** — Ynara recuerda. Lo importante, lo útil, lo personal.
-   Memoria propia y soberana, controlada por el usuario; self-host de la
+   Memoria propia, controlada por el usuario; self-host de la
    base como objetivo de V2 (hoy DB gestionada en fase MVP).
 3. **Compañía** — Ynara está. Acompaña en lo cotidiano sin invadir,
    sin moralizar, sin terapizar. Presencia, no presión.
@@ -44,14 +48,16 @@ mercado. En fase MVP la persistencia vive en una DB gestionada
 - Una herramienta de trabajo real, con tools que ejecutan.
 - Una memoria personal a largo plazo.
 - Una presencia conversacional sobria, cálida cuando hace falta.
-- Soberanía: los datos son del usuario, la inferencia es propia.
+- Datos con reglas: son del usuario, no se venden, y a los proveedores
+  de IA va solo lo que cada llamada necesita.
 
 ## Lo que Ynara **no es**
 
 - No es un terapeuta. No diagnostica, no medica, no moraliza.
 - No es un coach motivacional. No te dice qué hacer con tu vida.
-- No es un wrapper de GPT/Claude/Gemini. Es modelo propio sobre infra
-  propia.
+- No es un chat genérico con otra cara. Los modelos de lenguaje son de
+  proveedores externos; lo que hace a Ynara (la memoria, los modos y la
+  voz) es propio.
 - No es infantil. No usa emojis en mensajes serios, no es ñoña, no es
   zalamera.
 - No es un asistente de Google. No vende tus datos.
