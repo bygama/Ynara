@@ -1,7 +1,7 @@
 """Modelo SQLAlchemy de sesión de chat.
 
 Una sesión es una conversación contigua de un usuario en un modo dado.
-Al cerrarse (Qwen vía Celery), genera una entrada en ``episodic_memory``.
+Al cerrarse (el alias agente, vía Celery), genera una entrada en ``episodic_memory``.
 """
 
 from __future__ import annotations
