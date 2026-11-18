@@ -38,6 +38,9 @@ from app.schemas.memory import EpisodicMemoryCreate
 
 logger = logging.getLogger("app.workflows.consolidation")
 
+# Excepciones de control del worker que el motor de memoria NO debe tragar.
+_WORKER_CONTROL_ERRORS: tuple[type[BaseException], ...] = (SoftTimeLimitExceeded,)
+
 # Politica de reintentos de las dos tasks de consolidacion.
 # ``Any`` es el boundary para desempaquetar ``**kwargs`` heterogeneos en ``@celery_app.task``.
 _CONSOLIDATION_TASK_OPTIONS: dict[str, Any] = {
@@ -167,7 +170,9 @@ async def _consolidate_session_in_db(
         return 0
 
     transcript = _build_transcript(turns)
-    mem_engine = AgentMemoryEngine(llm_client, model=MODEL_ALIAS_AGENT)
+    mem_engine = AgentMemoryEngine(
+        llm_client, model=MODEL_ALIAS_AGENT, reraise=_WORKER_CONTROL_ERRORS
+    )
     summary = await mem_engine.summarize(transcript=transcript, mode=mode)
     if not summary.summary:
         logger.info("consolidate_session: resumen vacio session=%s, no-op", source_session_id)

@@ -31,9 +31,11 @@ Reglas no negociables (ADR-010 + critica adversarial M8):
 8. Reintentos ante fallas transitorias del proveedor (``LlmTransientError``: 429,
    5xx, timeout, breaker abierto, respuesta degradada) y ante un intento que vence
    el soft limit (``SoftTimeLimitExceeded``): Celery reprograma la task con backoff
-   exponencial y jitter, y la ackea tarde (ver ``_CONSOLIDATION_TASK_OPTIONS``). Lo
-   permanente (credencial rechazada, request invalido) no se reintenta: el motor lo
-   descarta con un log sin contenido.
+   exponencial y jitter, y la ackea tarde (ver ``_CONSOLIDATION_TASK_OPTIONS``). El
+   soft limit puede vencer adentro del motor de memoria (extraccion, op o resumen):
+   el motor lo recibe en ``reraise`` (``_WORKER_CONTROL_ERRORS``) para no tragarlo
+   con su catch-all. Lo permanente (credencial rechazada, request invalido) no se
+   reintenta: el motor lo descarta con un log sin contenido.
 """
 
 from __future__ import annotations
@@ -77,6 +79,14 @@ from app.workflows._engine import worker_session
 from app.workflows._turn_marker import TurnClaim, claim_turn
 
 logger = logging.getLogger(__name__)
+
+# Excepciones de control del worker que el motor de memoria NO debe tragar. El soft
+# limit de Celery es una senal para la task, no un fallo del modelo ni del embedder: el
+# ``except Exception`` del motor lo descartaba como un error permanente (un turno sin
+# ops, una op salteada o un resumen vacio) y el intento seguia hasta terminar sin
+# reintentarse. Con ``reraise`` se propaga y la task lo reintenta (decision #8).
+# ``app.llm`` no importa Celery: la tupla viaja desde aca.
+_WORKER_CONTROL_ERRORS: tuple[type[BaseException], ...] = (SoftTimeLimitExceeded,)
 
 
 # ---------------------------------------------------------------------------
@@ -156,8 +166,11 @@ async def _consolidate_turn_in_db(
     saltearlo perderia el turno. La extraccion con el LLM corre ANTES de tomar la fila,
     asi el lock dura lo que tarda ``apply_ops`` y no la llamada al modelo.
     """
-    mem_engine = AgentMemoryEngine(llm_client, model=MODEL_ALIAS_AGENT)
-    # Una falla transitoria del LLM (LlmTransientError) sale de aca, antes de tocar la DB.
+    mem_engine = AgentMemoryEngine(
+        llm_client, model=MODEL_ALIAS_AGENT, reraise=_WORKER_CONTROL_ERRORS
+    )
+    # Una falla transitoria del LLM (LlmTransientError) o el soft limit salen de aca,
+    # antes de tocar la DB.
     extraction = await mem_engine.consolidate(
         user_msg=user_msg,
         model_response=model_response,
@@ -191,6 +204,7 @@ async def _consolidate_turn_in_db(
             # El modelo real que extrajo las ops (ADR-028); el enum origin_model queda NULL.
             origin_model_id=extraction.model_id,
             origin_mode=origin_mode,
+            reraise=_WORKER_CONTROL_ERRORS,
         )
 
 
