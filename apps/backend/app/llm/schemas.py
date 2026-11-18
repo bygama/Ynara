@@ -54,7 +54,7 @@ class ChatMessage(BaseModel):
     """Un turno del historial. ``content`` puede ser ``None`` cuando el
     assistant solo emite tool_calls; ``tool_call_id`` / ``name`` aplican al
     rol ``tool`` (resultado de una tool). ``tool_calls`` preserva las calls
-    del assistant para el multi-turno correcto con Qwen/hermes."""
+    del assistant para el multi-turno correcto con la API de Chat Completions."""
 
     model_config = ConfigDict(strict=True)
 

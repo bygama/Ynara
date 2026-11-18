@@ -191,8 +191,8 @@ class MemoryContext:
             namespaces que el modo habilita en ``tools_enabled`` (escriben de verdad,
             atomicas con el commit del turno) MAS los stubs ``not_wired`` de
             ``reminder`` si esta habilitado (sin backend real todavia). Gateado
-            estrictamente por modo: para los modos gemma (``tools_enabled=[]``) queda
-            vacio. Lo arma ``build_chat_tool_registry``.
+            estrictamente por modo: para los modos del alias conversacional
+            (``tools_enabled=[]``) queda vacio. Lo arma ``build_chat_tool_registry``.
         _memory_reg: Registry con memory tools, o None si no procede.
     """
 
@@ -266,7 +266,7 @@ def build_memory_context(
     atomicas con el commit) MAS los stubs ``not_wired`` de ``reminder`` si esta
     habilitado. Reemplaza el ``default_registry()`` cero-efecto que se usaba antes (ese
     sigue intacto para el playground observado, ADR-019). Gateado estrictamente por
-    modo: un modo gemma (``tools_enabled=[]``) obtiene un registry vacio.
+    modo: un modo del alias conversacional (``tools_enabled=[]``) obtiene un registry vacio.
 
     Args:
         session: AsyncSession de la request actual.
