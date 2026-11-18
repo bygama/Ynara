@@ -11,7 +11,7 @@ export const STEP_COPY: Record<OnboardingStep, { title: string; subtitle: string
   auth: {
     title: "Antes que nada",
     subtitle:
-      "Me hace falta una cuenta para acordarme de vos. Tu memoria es tuya, cifrada y exportable — y no se manda a IA de terceros.",
+      "Me hace falta una cuenta para acordarme de vos. Tu memoria es tuya: la podés exportar, y nuestras charlas, sus resúmenes y los hechos que aprendo de vos se guardan cifrados. Para responderte uso modelos de proveedores externos: les paso solo lo necesario, y solo trabajo con los que no entrenan con tus datos.",
   },
   nombre: {
     title: "¿Cómo te llamo?",
