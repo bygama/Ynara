@@ -1,6 +1,6 @@
 """Contract tests del Reranker Protocol + determinismo del FakeReranker.
 
-Sin red ni GPU: el fake es passthrough determinista. Estos tests blindan el
+Sin red ni proveedor: el fake es passthrough determinista. Estos tests blindan el
 contrato que consume la capa de memoria (M7) cuando reordena los candidatos
 ANN antes de construir los schemas Out.
 """

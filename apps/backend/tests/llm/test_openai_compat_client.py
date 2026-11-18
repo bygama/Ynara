@@ -47,8 +47,8 @@ _BASE_URL = "https://proveedor.test/v1"
 _HOST = "proveedor.test"
 _API_KEY = "sk-test-0123456789abcdef"
 _BACKUP_KEY = "sk-test-respaldo-fedcba9876543210"
-_ALIAS = "qwen-3.5-9b"
-_MODEL_ID = "org/qwen3.5-9b-instruct"
+_ALIAS = "agente"
+_MODEL_ID = "org/agent-model"
 
 Handler = Any
 
@@ -151,7 +151,7 @@ async def test_complete_text() -> None:
     assert result.tool_calls == []
     assert result.finish_reason == "stop"
     assert (result.prompt_tokens, result.completion_tokens) == (18, 9)
-    assert result.model_name == "qwen-3.5-9b"
+    assert result.model_name == "org/agent-model-2026-06"
     assert result.reasoning is None
     assert result.latency_ms >= 0.0
 

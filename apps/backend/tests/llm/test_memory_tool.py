@@ -195,7 +195,7 @@ class TestMemoryAdd:
 
         # status "ok" (no "not_wired") + detalle en prosa natural, SIN jerga interna:
         # el viejo stub ("not_wired" / "consolidacion async pendiente (M8)") hacía que
-        # qwen reportara un falso "hubo un error ejecutando la acción".
+        # el modelo reportara un falso "hubo un error ejecutando la acción".
         assert result["status"] == "ok"
         assert result["action"] == "memory.add"
         assert "not_wired" not in str(result).lower()
@@ -221,7 +221,7 @@ class TestMemoryAdd:
         assert result["status"] == "ok"
 
     async def test_hallucinated_layer_value_is_tolerated(self) -> None:
-        """Regresión (#259): el modelo (qwen) alucina valores de ``layer``
+        """Regresión (#259): el modelo alucina valores de ``layer``
         ('personal', 'base', etc.) que el ``Literal['semantic']`` rechazaba con
         ``invalid_arguments``, haciendo que el agente le reportara al usuario un
         FALSO 'no pude guardar' (la escritura real la hace el worker async, no esta

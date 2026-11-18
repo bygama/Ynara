@@ -38,7 +38,7 @@ from app.llm.errors import (
 )
 from app.llm.schemas import ChatMessage, CompletionChunk, CompletionResult, ModelHealth
 
-_MODEL = "qwen-3.5-9b"
+_MODEL = "agente"
 
 
 class _Clock:
