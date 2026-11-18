@@ -1,5 +1,13 @@
 # Respuestas al §7.1 — Contrato de `/v1/chat` (frontend ↔ backend)
 
+> **Actualización (noviembre 2026):** [ADR-028](../architecture/adrs/ADR-028-inferencia-por-api.md)
+> reemplazó los modelos propios por proveedores de IA por API. «Gemma» se lee como
+> el alias `conversacional` y «Qwen», como el alias `agente`; el cliente que hace
+> streaming es `OpenAICompatClient` (no `VllmClient`), y el fallback de
+> `ResilientClient` recorre la lista `LLM_PROVIDERS` (principal → respaldo) en vez
+> de ir a una instancia on-prem. El techo de ~4.000 chars mantiene su valor. El
+> cuerpo no se reescribe.
+
 > **Actualización (junio 2026):** dos premisas que el cuerpo da por vigentes
 > quedaron **obsoletas**: (1) el doc dice que `app/llm/router.py` y el endpoint
 > "no existen aún (`NotImplementedError`)" — **ya existen y están mergeados**:

@@ -1,5 +1,15 @@
 # Backend · Memoria contextual + capa LLM — Roadmap
 
+> **Actualización (noviembre 2026):** [ADR-028](../architecture/adrs/ADR-028-inferencia-por-api.md)
+> reemplazó la inferencia con modelos propios (Gemma y Qwen sobre Ollama/vLLM en
+> una GPU del equipo) por proveedores de IA por API. Lo que este roadmap dice del
+> serving local, del cliente vLLM, del fallback on-prem y de la regla #4 como
+> prohibición de usar proveedores externos quedó atrás: gemma se lee como el alias
+> `conversacional`, qwen como el alias `agente`, el respaldo es la lista
+> `LLM_PROVIDERS` (principal → respaldo) y la regla #4 está partida en 4a (datos de
+> usuario) y 4b (proveedores de IA). El cuerpo no se reescribe; la capa vigente está
+> descripta en [`apps/backend/AGENTS.md`](../../apps/backend/AGENTS.md) (§3).
+
 > **Actualización (junio 2026):** la mayor parte del camino crítico está
 > **mergeada**: capa de memoria M7/M8/M9 (router + tool loop + endpoints
 > `/v1/chat`·`/v1/sessions`·`/v1/memory`), escritura real de `audit_log` vía
