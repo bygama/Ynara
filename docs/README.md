@@ -16,7 +16,7 @@ docs/
 ├── operations/        # Instalación, deploy, runbook, migraciones
 ├── conventions/       # Commits, glosario, AI guidelines, code style
 ├── planning/          # Roadmaps, planes operativos y bitácoras de sesión
-└── compliance/        # Cumplimiento: privacidad, protección de datos
+└── compliance/        # Cumplimiento: privacidad, protección de datos (README antes del PDF)
 ```
 
 ## Por audiencia
@@ -56,3 +56,11 @@ Los cambios de **decisión arquitectónica** (cambiar Mem0 por otro
 engine, pasar de modelos propios a proveedores por API, etc.) **no** se reflejan
 editando el informe: se hacen vía ADR nuevo en
 `docs/architecture/adrs/`, que supersede al ADR previo.
+
+## Para el `compliance.pdf`
+
+El informe de compliance (`docs/compliance/compliance.pdf`, mayo de
+2026) es anterior a ADR-028 y da por hecho que la IA corre en
+infraestructura propia. Antes de usarlo, leé
+[`compliance/README.md`](./compliance/README.md): dice qué partes ya
+no describen el sistema con inferencia por API.
