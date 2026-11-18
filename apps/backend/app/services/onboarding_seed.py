@@ -62,9 +62,10 @@ from app.schemas.onboarding import AboutYou, OnboardingIntake
 logger = logging.getLogger(__name__)
 
 # Marcador de origen NUEVO para ``audit_log`` (ADR-026 §2): distingue el seed del
-# onboarding de la consolidación (``origin_model=QWEN``) y de los edits del dueño por
-# HTTP (``origin_*`` todos ``None``). ``origin_tool`` es ``String(80)`` libre -> sin
-# enum ni migración. También es la llave del dedupe semántico (ver ``_already_seeded``).
+# onboarding de la consolidación (con el id del modelo en ``origin_model_id``) y de los
+# edits del dueño por HTTP (``origin_*`` todos ``None``). ``origin_tool`` es
+# ``String(80)`` libre -> sin enum ni migración. También es la llave del dedupe
+# semántico (ver ``_already_seeded``).
 ONBOARDING_AUDIT_ORIGIN = "onboarding"
 
 # Key procedural de la dedicación. Idempotente por key (``upsert`` ON CONFLICT).

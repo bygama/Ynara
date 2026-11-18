@@ -22,7 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import MODEL_ALIAS_AGENT
-from app.enums import AuditOperation, LlmModel, MemoryLayer, Mode
+from app.enums import AuditOperation, MemoryLayer, Mode
 from app.llm.clients.base import LLMClient
 from app.llm.clients.embedding import EmbeddingClient
 from app.llm.clients.reranker import Reranker
@@ -206,7 +206,7 @@ async def _consolidate_session_in_db(
         target_layer=MemoryLayer.EPISODIC,
         target_id=out.id,
         record_hash=compute_record_hash(summary.summary),
-        origin_model=LlmModel.QWEN,
+        origin_model_id=summary.model_id,
         origin_mode=origin_mode,
         sensitive=is_sensitive,
     )

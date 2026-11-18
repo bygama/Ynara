@@ -245,9 +245,10 @@ class MemoryService:
 
         ``record_hash`` = sha256 de ``hash_source`` (regla #4: digest, nunca
         plaintext). ``origin_*`` quedan ``None``: acción del usuario por HTTP (sin
-        LLM/tool), lo que distingue el audit de endpoint del de consolidación
-        (``origin_model=QWEN``). La fila va en la MISMA sesión que la mutación, antes
-        del único ``commit`` del endpoint → mutación + audit son atómicos.
+        LLM/tool), lo que distingue el audit de endpoint del de consolidación (que
+        lleva el id del modelo en ``origin_model_id``). La fila va en la MISMA sesión
+        que la mutación, antes del único ``commit`` del endpoint → mutación + audit
+        son atómicos.
         """
         await self._audit_store.record(
             operation=operation,
