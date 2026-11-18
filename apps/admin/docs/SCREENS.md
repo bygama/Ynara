@@ -71,12 +71,14 @@ El "moat": lo que Ynara recuerda, en tres capas.
 El `audit_log` filtrable, respetando el perímetro.
 
 - **AuditFilters** (sticky bajo topbar): `operation`, `target_layer`,
-  `origin_mode`, `origin_model` (gemma/qwen), toggle `sensitive`. El rango hereda
+  `origin_mode`, `origin_model_id` (campo de texto con el id exacto del modelo;
+  se aplica con Enter o al salir del campo), toggle `sensitive`. El rango hereda
   del topbar.
 - **AuditTable** + **AuditRow**: tabla editorial (hairlines, header sticky,
   orden `created_at` desc, `tabular-nums` en tiempos). Chips por `operation`,
-  badge por `target_layer`, `ModeChip` por `origin_mode`, `Diamond` si
-  `sensitive`. **La fila NO incluye `record_hash` ni `target_id`** (omitidos en
+  badge por `target_layer`, `ModeChip` por `origin_mode`, el modelo de origen
+  (`origin_model_id` tal cual, o el enum de antes en las filas viejas) + tool,
+  `Diamond` si `sensitive`. **La fila NO incluye `record_hash` ni `target_id`** (omitidos en
   el Zod, no solo en render). Paginación `limit/offset`.
 - Banner soberano: *"Vista soberana — sin hash de integridad ni contenido
   descifrado."*
