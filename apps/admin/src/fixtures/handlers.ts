@@ -3,7 +3,6 @@ import { ModeId, RangeId } from "@/features/_shared/schemas";
 import {
   type AuditFilterState,
   AuditOperation,
-  AuditOriginModel,
   AuditTargetLayer,
   EMPTY_AUDIT_FILTERS,
 } from "@/features/audit/schemas";
@@ -71,13 +70,15 @@ function readInt(url: URL, key: string, fallback: number, min = 0): number {
   return Number.isFinite(n) && n >= min ? n : fallback;
 }
 
-/** Reconstruye `AuditFilterState` desde los query params (cada uno opcional). */
+/**
+ * Reconstruye `AuditFilterState` desde los query params (cada uno opcional). El
+ * id de modelo se compara exacto, como en el backend; vacío = sin filtrar.
+ */
 function readAuditFilters(url: URL): AuditFilterState {
   const sp = url.searchParams;
   const op = AuditOperation.safeParse(sp.get("operation"));
   const layer = AuditTargetLayer.safeParse(sp.get("target_layer"));
   const mode = ModeId.safeParse(sp.get("origin_mode"));
-  const model = AuditOriginModel.safeParse(sp.get("origin_model"));
   const sensitiveRaw = sp.get("sensitive");
 
   return {
@@ -85,7 +86,7 @@ function readAuditFilters(url: URL): AuditFilterState {
     operation: op.success ? op.data : null,
     targetLayer: layer.success ? layer.data : null,
     originMode: mode.success ? mode.data : null,
-    originModel: model.success ? model.data : null,
+    originModelId: sp.get("origin_model_id") || null,
     sensitive: sensitiveRaw === null ? null : sensitiveRaw === "true",
   };
 }
@@ -126,7 +127,7 @@ export const adminHandlers = [
     return HttpResponse.json(moatFixture(readRange(url)));
   }),
 
-  // GET /v1/admin/audit?range=&operation=&target_layer=&origin_mode=&origin_model=&sensitive=&limit=&offset=
+  // GET /v1/admin/audit?range=&operation=&target_layer=&origin_mode=&origin_model_id=&sensitive=&limit=&offset=
   http.get(apiUrl("/v1/admin/audit"), ({ request }) => {
     const url = new URL(request.url);
     const filters = readAuditFilters(url);
