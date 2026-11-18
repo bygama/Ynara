@@ -1,7 +1,7 @@
 """Observabilidad: inicialización de Sentry con scrubbing de PII (regla #4).
 
-Ynara es privacy-first y on-prem: **ningún dato de usuario puede salir hacia un
-servicio externo de error tracking** (regla #4 de AGENTS.md). Sentry se inicializa
+Ynara es privacy-first: **ningún dato de usuario va a un servicio externo de error
+tracking** (regla #4a de AGENTS.md). Sentry se inicializa
 solo si hay ``SENTRY_DSN`` y SIEMPRE con un ``before_send`` que limpia el evento
 de cuerpo de request, cookies, headers de auth, query string y contexto de
 usuario antes de que salga del proceso. Además ``send_default_pii=False`` para
@@ -52,7 +52,7 @@ def _scrub_event(event: dict[str, Any], hint: dict[str, Any]) -> dict[str, Any]:
       excepción (un ``str(exc)`` nuestro puede traer contenido de usuario),
       preservando ``type`` y ``stacktrace`` para poder diagnosticar.
     - ``event['user']`` / ``event['server_name']`` / ``event['contexts']`` /
-      ``event['extra']``: se dropean enteros (IP, email, id, infra on-prem y
+      ``event['extra']``: se dropean enteros (IP, email, id, infra del servidor y
       cualquier dato arbitrario que el SDK o nuestro código hayan adjuntado).
     """
     request = event.get("request")
@@ -97,7 +97,7 @@ def _scrub_event(event: dict[str, Any], hint: dict[str, Any]) -> dict[str, Any]:
 
     # Contexto de usuario: lo dropeamos entero (IP, email, id no deben salir).
     event.pop("user", None)
-    # Hostname del nodo on-prem: dato de infra del cliente, fuera.
+    # Hostname del servidor: dato de infra, fuera.
     event.pop("server_name", None)
     # Contextos y extras: datos arbitrarios adjuntados por el SDK o nuestro
     # código; ante la duda los dropeamos enteros.
