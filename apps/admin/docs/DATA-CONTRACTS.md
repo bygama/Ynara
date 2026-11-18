@@ -132,7 +132,7 @@ growth = COUNT por `created_at`/día por capa; procedural = COUNT `stale` +
 histograma de `confidence`; backlog = sesiones cerradas sin episodic
 consolidado; recentEpisodic = LIMIT por `occurred_at`, solo metadata.
 
-## `GET /v1/admin/audit?range=7d&operation=&targetLayer=&originMode=&originModel=&sensitive=&limit=50&offset=0`
+## `GET /v1/admin/audit?range=7d&operation=&targetLayer=&originMode=&originModelId=&sensitive=&limit=50&offset=0`
 
 ```ts
 export const AdminAuditRow = z.object({
@@ -142,7 +142,8 @@ export const AdminAuditRow = z.object({
   operation: z.enum(["read","write","update","delete"]),
   targetLayer: z.enum(["semantic","episodic","procedural"]),
   originMode: ModeId.nullable(),
-  originModel: z.enum(["gemma","qwen"]).nullable(),
+  originModel: z.string().nullable(),   // enum de antes (gemma/qwen): solo filas viejas
+  originModelId: z.string().nullable(), // id que informó el proveedor (ADR-028)
   originTool: z.string().nullable(),
   sensitive: z.boolean(),
 });
@@ -156,6 +157,12 @@ export const AdminAuditPage = z.object({
 Backend: `SELECT` de los campos exponibles de `audit_log` WHERE filtros, ORDER
 BY `created_at` DESC, LIMIT/OFFSET. **El `SELECT` no incluye `record_hash` ni
 `target_id`.** `audit_log` es tabla sagrada (regla #3): el panel es read-only.
+
+Modelo de origen: el filtro `originModelId` compara por igualdad exacta con el
+id del modelo (hasta 200 caracteres), así que las filas viejas, que traen solo
+`originModel`, no matchean. El panel lo manda recortado y lo omite si queda
+vacío (el backend responde 422 a un id vacío). La fila muestra
+`originModelId` y, si no hay, cae a `originModel`.
 
 ## `GET /v1/admin/system`
 
