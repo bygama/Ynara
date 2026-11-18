@@ -72,7 +72,7 @@ def _make_llm_with_create_event(
             finish_reason="tool_calls",
             prompt_tokens=10,
             completion_tokens=5,
-            model_name="qwen",
+            model_name="org/agent",
             latency_ms=5.0,
         )
     )
@@ -82,7 +82,7 @@ def _make_llm_with_create_event(
             finish_reason="stop",
             prompt_tokens=10,
             completion_tokens=5,
-            model_name="qwen",
+            model_name="org/agent",
             latency_ms=5.0,
         )
     )
@@ -287,7 +287,7 @@ class TestAsyncAgentPassUnit:
                 finish_reason="stop",
                 prompt_tokens=5,
                 completion_tokens=5,
-                model_name="qwen",
+                model_name="org/agent",
                 latency_ms=1.0,
             )
         )
