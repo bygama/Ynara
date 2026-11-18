@@ -57,7 +57,7 @@ def _result(
     text: str = "hola",
     finish_reason: str = "stop",
     tool_calls: list[ToolCall] | None = None,
-    model_name: str = "qwen",
+    model_name: str = "org/agent",
 ) -> CompletionResult:
     return CompletionResult(
         text=text,
@@ -111,7 +111,7 @@ async def test_route_uses_context_budget_for_render(monkeypatch: pytest.MonkeyPa
     from app.llm.tools.registry import default_registry
 
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_result(text="ok", finish_reason="stop", model_name="gemma4"))
+    fake.queue_result(_result(text="ok", finish_reason="stop", model_name="org/chat"))
 
     empty_ctx = MemoryContext(
         semantic_store=None,
@@ -198,7 +198,7 @@ async def test_route_conversational_mode_disables_thinking() -> None:
     dejar el content vacio).
     """
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_result(text="hola", finish_reason="stop", model_name="gemma4"))
+    fake.queue_result(_result(text="hola", finish_reason="stop", model_name="org/chat"))
 
     from app.llm import router as router_mod
     from app.llm.context import MemoryContext
@@ -236,7 +236,7 @@ async def test_route_agent_mode_enables_thinking() -> None:
     El agente razona para planificar tool calls.
     """
     fake = FakeLlmClient(models=frozenset({"agente"}))
-    fake.queue_result(_result(text="listo", finish_reason="stop", model_name="qwen"))
+    fake.queue_result(_result(text="listo", finish_reason="stop", model_name="org/agent"))
 
     from app.llm import router as router_mod
     from app.llm.context import MemoryContext
@@ -290,7 +290,7 @@ async def test_route_injects_datetime_preamble_in_system() -> None:
     from app.llm.tools.registry import default_registry
 
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_result(text="ok", finish_reason="stop", model_name="gemma4"))
+    fake.queue_result(_result(text="ok", finish_reason="stop", model_name="org/chat"))
 
     empty_ctx = MemoryContext(
         semantic_store=None,
@@ -369,7 +369,7 @@ async def test_route_system_keeps_fixed_prefix_for_cache(monkeypatch: pytest.Mon
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
     systems: list[str] = []
     for now, text in turns:
-        fake.queue_result(_result(text="ok", finish_reason="stop", model_name="gemma4"))
+        fake.queue_result(_result(text="ok", finish_reason="stop", model_name="org/chat"))
         monkeypatch.setattr(router_mod, "current_now", lambda *_a, _now=now, **_k: _now)
         await route(
             ChatRequest(text=text, mode=Mode.VIDA, session_id="s-cache"),
@@ -410,7 +410,7 @@ async def test_route_splices_history_between_system_and_user() -> None:
     from app.llm.tools.registry import default_registry
 
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_result(text="Te llamás Mateo.", finish_reason="stop", model_name="gemma4"))
+    fake.queue_result(_result(text="Te llamás Mateo.", finish_reason="stop", model_name="org/chat"))
 
     empty_ctx = MemoryContext(
         semantic_store=None,
@@ -601,7 +601,7 @@ async def test_model_not_served_propagates() -> None:
     del resto de la familia ``LlmError``, que degrada).
     """
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_error(ModelNotServedError("qwen"))
+    fake.queue_error(ModelNotServedError("agente"))
 
     from app.llm import router as router_mod
     from app.llm.context import MemoryContext
@@ -677,7 +677,7 @@ async def test_semantic_tool_parsing_error_degrades() -> None:
 async def test_session_id_generated_when_none() -> None:
     """Si request.session_id is None, route genera un str(uuid4()) opaco."""
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_result(text="hola!", finish_reason="stop", model_name="gemma4"))
+    fake.queue_result(_result(text="hola!", finish_reason="stop", model_name="org/chat"))
 
     from app.llm import router as router_mod
     from app.llm.context import MemoryContext
@@ -715,7 +715,7 @@ async def test_session_id_generated_when_none() -> None:
 async def test_session_id_preserved_when_provided() -> None:
     """Si request.session_id viene, route lo respeta tal cual (opaco)."""
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_result(text="ok", finish_reason="stop", model_name="gemma4"))
+    fake.queue_result(_result(text="ok", finish_reason="stop", model_name="org/chat"))
 
     from app.llm import router as router_mod
     from app.llm.context import MemoryContext
@@ -784,7 +784,7 @@ async def test_integration_conversational_reads_memory_via_prompt(db_session: An
     await proc_store.upsert(ProceduralMemoryUpsert(key="pref.idioma", value={"idioma": "es"}))
 
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_result(text="Hola, todo bien?", finish_reason="stop", model_name="gemma4"))
+    fake.queue_result(_result(text="Hola, todo bien?", finish_reason="stop", model_name="org/chat"))
 
     resp = await route(
         ChatRequest(text="como va?", mode=Mode.VIDA),
@@ -836,10 +836,10 @@ async def test_integration_agent_tool_loop_memory_search(db_session: Any) -> Non
     fake = FakeLlmClient(models=frozenset({"agente"}))
     tc = ToolCall(id="tc-1", name="memory.search", arguments={"query": "reuniones"})
     fake.queue_result(
-        _result(text="", finish_reason="tool_calls", tool_calls=[tc], model_name="qwen")
+        _result(text="", finish_reason="tool_calls", tool_calls=[tc], model_name="org/agent")
     )
     fake.queue_result(
-        _result(text="Programe la reunion corta.", finish_reason="stop", model_name="qwen")
+        _result(text="Programe la reunion corta.", finish_reason="stop", model_name="org/agent")
     )
 
     resp = await route(
@@ -896,7 +896,7 @@ async def test_integration_agent_alias_and_context(db_session: Any) -> None:
     await sem_store.add(SemanticMemoryCreate(content="trabaja en inteligencia artificial"))
 
     fake = FakeLlmClient(models=frozenset({"agente"}))
-    fake.queue_result(_result(text="listo", finish_reason="stop", model_name="qwen"))
+    fake.queue_result(_result(text="listo", finish_reason="stop", model_name="org/agent"))
 
     await route(
         ChatRequest(text="que sabes de mi?", mode=Mode.PRODUCTIVIDAD),
@@ -949,7 +949,7 @@ async def test_integration_user_no_memory_no_context_block(db_session: Any) -> N
     user = await _seed_user(db_session)
 
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_result(text="hola nuevo!", finish_reason="stop", model_name="gemma4"))
+    fake.queue_result(_result(text="hola nuevo!", finish_reason="stop", model_name="org/chat"))
 
     resp = await route(
         ChatRequest(text="hola", mode=Mode.VIDA),
@@ -1037,11 +1037,11 @@ async def test_route_does_not_enqueue_under_any_mode(monkeypatch: pytest.MonkeyP
     router_mod.build_memory_context = lambda **_kw: empty_ctx
 
     fake = FakeLlmClient(models=frozenset({"agente"}))
-    fake.queue_result(_result(text="listo qwen", finish_reason="stop", model_name="qwen"))
+    fake.queue_result(_result(text="listo agente", finish_reason="stop", model_name="org/agent"))
 
     try:
         resp = await route(
-            ChatRequest(text="hola qwen", mode=Mode.PRODUCTIVIDAD, session_id="sess-qwen"),
+            ChatRequest(text="hola agente", mode=Mode.PRODUCTIVIDAD, session_id="sess-agente"),
             session=MagicMock(),
             user_id=uuid.uuid4(),
             llm_client=fake,
@@ -1052,5 +1052,5 @@ async def test_route_does_not_enqueue_under_any_mode(monkeypatch: pytest.MonkeyP
     finally:
         router_mod.build_memory_context = original
 
-    assert resp.text == "listo qwen"
+    assert resp.text == "listo agente"
     assert delay_calls == [], "route() NO debe encolar consolidacion (movido al endpoint)"

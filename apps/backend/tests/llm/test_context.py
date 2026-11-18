@@ -679,8 +679,9 @@ def test_default_reg_productividad_has_real_calendar_task_and_reminder() -> None
     assert {"calendar", "reminder", "task"} <= namespaces
 
 
-def test_default_reg_gemma_mode_is_empty() -> None:
-    """En un modo gemma (``tools_enabled=[]``) el ``_default_reg`` queda vacío (ADR-022)."""
+def test_default_reg_conversacional_mode_is_empty() -> None:
+    """En un modo conversacional (``tools_enabled=[]``) el ``_default_reg`` queda vacío
+    (ADR-022)."""
     ctx = _build_ctx_for_tools([])
     reg = ctx.registries[0]
     assert reg.tools() == []

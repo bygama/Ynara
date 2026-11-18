@@ -23,8 +23,8 @@ from app.llm.schemas import ChatMessage, ToolCall, ToolSpec
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _BASE_URL = "https://proveedor.test/v1"
-_ALIAS = "qwen-3.5-9b"
-_MODEL_ID = "org/qwen3.5-9b-instruct"
+_ALIAS = "agente"
+_MODEL_ID = "org/agent-model"
 
 Handler = Any
 

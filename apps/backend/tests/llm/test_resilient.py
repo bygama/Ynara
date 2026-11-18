@@ -3,7 +3,8 @@
 Inyectan un ``sleep`` fake async (que registra los delays, sin dormir de
 verdad) y un ``clock`` fake. El doble de instancia es ``FakeLlmClient``,
 que programa resultados / errores por cliente. El pool se arma a mano para
-controlar el orden primario -> secundario on-prem.
+controlar el orden primario -> secundario (principal -> respaldo de
+``LLM_PROVIDERS``).
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ from app.llm.errors import (
 )
 from app.llm.schemas import ChatMessage, CompletionResult, ModelHealth
 
-_MODEL = "qwen-3.5-9b"
+_MODEL = "agente"
 
 
 class _Clock:
@@ -227,7 +228,7 @@ async def test_unclassified_error_falls_back_to_secondary() -> None:
     assert len(secondary.complete_calls) == 1
 
 
-# ---------- fallback on-prem: primario falla -> usa secundario ----------
+# ---------- fallback: primario falla -> usa secundario ----------
 
 
 async def test_primary_fails_uses_secondary() -> None:
@@ -703,7 +704,7 @@ async def test_complete_forwards_thinking_to_candidate() -> None:
 
 
 async def test_complete_forwards_thinking_to_secondary_on_fallback() -> None:
-    """En el FALLBACK on-prem, el secundario recibe el ``thinking`` correcto.
+    """En el FALLBACK al respaldo, el secundario recibe el ``thinking`` correcto.
 
     El primario agota los reintentos (errores transitorios) y se cae al
     secundario; el flag de thinking debe propagarse tambien por esa rama, no

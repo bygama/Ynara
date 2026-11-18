@@ -82,7 +82,7 @@ class TestCompletionResult:
             finish_reason="stop",
             prompt_tokens=10,
             completion_tokens=5,
-            model_name="qwen-3.5-9b",
+            model_name="org/agent-model",
             latency_ms=42.0,
         )
         assert r.tool_calls == []
@@ -95,7 +95,7 @@ class TestCompletionResult:
             finish_reason="tool_calls",
             prompt_tokens=1,
             completion_tokens=1,
-            model_name="qwen-3.5-9b",
+            model_name="org/agent-model",
             latency_ms=1.0,
         )
         assert r.tool_calls[0].name == "calc"
@@ -142,7 +142,7 @@ class TestCompletionChunk:
 
 class TestModelHealth:
     def test_valid(self) -> None:
-        h = ModelHealth(model_name="qwen-3.5-9b", healthy=True)
+        h = ModelHealth(model_name="agente", healthy=True)
         assert h.healthy is True
 
     def test_strict_rejects_non_bool(self) -> None:
