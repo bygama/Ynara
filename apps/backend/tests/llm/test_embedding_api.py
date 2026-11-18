@@ -34,6 +34,7 @@ from app.llm.errors import (
     LlmProviderRejectedError,
     LlmRateLimitError,
     LlmTimeoutError,
+    LlmTransientError,
     LlmUnavailableError,
 )
 
@@ -286,6 +287,8 @@ async def test_non_json_body_raises_llm_error() -> None:
         (422, LlmBadRequestError),
         (404, LlmProviderRejectedError),
         (413, LlmProviderRejectedError),
+        (408, LlmTransientError),
+        (425, LlmTransientError),
         (500, LlmUnavailableError),
         (502, LlmUnavailableError),
         (503, LlmUnavailableError),
