@@ -75,7 +75,7 @@ def test_scrub_drops_user_context() -> None:
 
 
 def test_scrub_drops_server_name() -> None:
-    # Hostname del nodo on-prem: dato de infra, no debe salir.
+    # Hostname del servidor: dato de infra, no debe salir.
     event = {"server_name": "ynara-prod-node-01"}
     assert "server_name" not in _scrub_event(event, {})
 
