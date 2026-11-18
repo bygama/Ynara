@@ -4,8 +4,8 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   // Orígenes de dev permitidos para los assets de `/_next` (Next 16 bloquea con 403
   // los requests cross-origin al dev server desde un host no listado). Se setea por
-  // env `NEXT_DEV_ALLOWED_ORIGINS` (CSV) SOLO al compartir el dev server por LAN/
-  // Tailscale (ej. `100.66.59.108,lonchos.tail093f0b.ts.net`); vacío en local normal.
+  // env `NEXT_DEV_ALLOWED_ORIGINS` (CSV) SOLO al compartir el dev server por la LAN
+  // (ej. `192.168.0.10`); vacío en local normal.
   // No afecta producción (allowedDevOrigins es solo del dev server).
   allowedDevOrigins: process.env.NEXT_DEV_ALLOWED_ORIGINS?.split(",")
     .map((origin) => origin.trim())
