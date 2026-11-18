@@ -36,7 +36,8 @@ con un PR.
 - **`conversacional`** — alias de estudio, bienestar y vida. Solo lee
   memoria y no llama tools.
 - **`agente`** — alias de productividad, memoria y la consolidación de
-  memoria. Lee y escribe memoria y llama tools.
+  memoria. Lee y escribe memoria y llama tools. La consolidación la
+  hace `AgentMemoryEngine` (`apps/backend/app/llm/memory_engine.py`).
 - **Proveedor de IA** — servicio externo que sirve los modelos con una
   API compatible con OpenAI (ADR-028). Los del chat van en
   `LLM_PROVIDERS`, en orden de prioridad, con la credencial en
@@ -55,9 +56,8 @@ con un PR.
   datos reales a un proveedor.
 - **Gemma / Qwen** — los modelos propios de antes de ADR-028 (Gemma 4
   12B conversacional, Qwen 3.5 9B agente), hoy reemplazados por los
-  alias. Quedan en nombres históricos: el enum `llm_model_enum`
-  (`gemma` / `qwen`) de `audit_log.origin_model` y la clase
-  `QwenMemoryEngine`.
+  alias. Queda un nombre histórico: el enum `llm_model_enum`
+  (`gemma` / `qwen`) de `audit_log.origin_model`.
 - **bge-m3** — modelo de embeddings, 1024 dimensiones. Lo sirve un
   proveedor por API (`EMBEDDING_MODEL`, default `BAAI/bge-m3`; ADR-028
   D4) a través de `ApiEmbeddingClient`.
