@@ -2,9 +2,11 @@
 
 El panel filtra el audit por el id de texto del modelo que originó la op (ADR-028), en
 lugar del enum viejo ``origin_model``. Acá se cubre la capa HTTP: la validación del query
-param, que llegue tal cual al service y que la fila lo serialice. El filtrado contra la
-DB real está en ``tests/api/test_admin_audit.py`` (integración). El gate de admin y la
-sesión van por override; el service, mockeado.
+param, que llegue tal cual al service y que la fila lo serialice. La validación es la
+misma con la que ``AuditStore.record`` guarda la columna, así que los casos se contrastan
+con su regla (``_is_valid_origin_model_id``). El filtrado contra la DB real está en
+``tests/api/test_admin_audit.py`` (integración). El gate de admin y la sesión van por
+override; el service, mockeado.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from httpx import ASGITransport
 from app.core.deps import get_current_admin, get_db
 from app.enums import AuditOperation, MemoryLayer, Mode
 from app.main import app
+from app.memory.audit import _is_valid_origin_model_id
 from app.models.audit import ORIGIN_MODEL_ID_MAX_LENGTH
 from app.schemas.admin_api import AdminAuditPage, AdminAuditRow
 
@@ -52,12 +55,25 @@ async def _get_audit(params: dict[str, str]) -> httpx.Response:
         return await client.get("/v1/admin/audit", params=params)
 
 
-async def test_origin_model_id_reaches_the_service(audit_service: AsyncMock) -> None:
-    resp = await _get_audit({"origin_model_id": _MODEL_ID})
+@pytest.mark.parametrize(
+    "value",
+    [
+        _MODEL_ID,
+        "modelo con espacios en el medio",
+        "org/modelo-ñ",
+        "x" * ORIGIN_MODEL_ID_MAX_LENGTH,
+    ],
+    ids=["provider-id", "inner-spaces", "non-ascii", "max-length"],
+)
+async def test_origin_model_id_reaches_the_service(audit_service: AsyncMock, value: str) -> None:
+    """Un id que el store guarda llega tal cual: el filtro no es más estricto que el store."""
+    assert _is_valid_origin_model_id(value)
+
+    resp = await _get_audit({"origin_model_id": value})
 
     assert resp.status_code == 200
     audit_service.assert_awaited_once()
-    assert audit_service.await_args.kwargs["origin_model_id"] == _MODEL_ID
+    assert audit_service.await_args.kwargs["origin_model_id"] == value
 
 
 async def test_without_the_filter_the_service_gets_none(audit_service: AsyncMock) -> None:
@@ -72,15 +88,47 @@ async def test_without_the_filter_the_service_gets_none(audit_service: AsyncMock
 
 @pytest.mark.parametrize(
     "value",
-    ["", "x" * (ORIGIN_MODEL_ID_MAX_LENGTH + 1)],
-    ids=["empty", "too-long"],
+    [
+        "",
+        "x" * (ORIGIN_MODEL_ID_MAX_LENGTH + 1),
+        "\x00",
+        "org/agent\x1f",
+        "org/agent\x7f",
+        "org/agent\x85",
+        "org/\u200bagent",
+        "org/\u00a0agent",
+        " org/agent",
+        "org/agent ",
+        "org/agent\t",
+    ],
+    ids=[
+        "empty",
+        "too-long",
+        "nul",
+        "unit-separator",
+        "del",
+        "next-line",
+        "zero-width-space",
+        "inner-nbsp",
+        "leading-space",
+        "trailing-space",
+        "trailing-tab",
+    ],
 )
 async def test_origin_model_id_outside_the_column_is_rejected(
     audit_service: AsyncMock, value: str
 ) -> None:
+    """Un id que el store no guardaría da 422 sin llegar al service ni a la DB.
+
+    Con un NUL, sin este chequeo, el valor llegaría al WHERE y Postgres rechaza el byte
+    0x00: el endpoint respondería 500 en vez de 422.
+    """
+    assert not _is_valid_origin_model_id(value)
+
     resp = await _get_audit({"origin_model_id": value})
 
     assert resp.status_code == 422
+    assert resp.json()["detail"][0]["loc"] == ["query", "origin_model_id"]
     audit_service.assert_not_awaited()
 
 

@@ -23,6 +23,8 @@ from datetime import UTC, datetime
 from typing import Annotated, Literal, Protocol, runtime_checkable
 
 from fastapi import APIRouter, Depends, Query, Request
+from pydantic import AfterValidator
+from pydantic_core import PydanticCustomError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -66,6 +68,28 @@ RangeParam = Annotated[RangeId, Query()]
 # Default + cap de la paginación del audit (igual que ``/v1/sessions`` / ``/v1/memory``).
 _AUDIT_LIMIT_DEFAULT = 50
 _AUDIT_LIMIT_MAX = 100
+
+
+def _check_origin_model_id(value: str | None) -> str | None:
+    """Valida el filtro ``origin_model_id`` con la regla con la que el store guarda la columna.
+
+    Espeja ``_is_valid_origin_model_id`` de ``app/memory/audit.py``: el largo
+    (1..``ORIGIN_MODEL_ID_MAX_LENGTH``) lo validan ``min_length``/``max_length`` del
+    ``Query`` y acá va el resto, sin espacios en los bordes (``str.strip``) e imprimible
+    (``str.isprintable``). Un id que ``AuditStore.record`` no guardaría no matchea ninguna
+    fila; con un NUL, además, Postgres rechaza el WHERE (el byte 0x00 no entra en un texto)
+    y sin este chequeo el endpoint respondería 500 en vez de 422.
+
+    ``PydanticCustomError`` (no ``ValueError`` pelado), como en ``app/schemas/reminder.py``:
+    el handler de ``RequestValidationError`` de ``app/main.py`` serializa con ``json.dumps``
+    y un ``ValueError`` en el ``ctx`` rompe la respuesta. El mensaje no repite el valor.
+    """
+    if value is not None and (value != value.strip() or not value.isprintable()):
+        raise PydanticCustomError(
+            "invalid_origin_model_id",
+            "origin_model_id debe ser un texto imprimible sin espacios en los bordes.",
+        )
+    return value
 
 
 @router.get("/admin/overview", response_model=AdminOverviewOut, status_code=200)
@@ -117,7 +141,9 @@ async def admin_audit(
     target_layer: Annotated[MemoryLayer | None, Query()] = None,
     origin_mode: Annotated[Mode | None, Query()] = None,
     origin_model_id: Annotated[
-        str | None, Query(min_length=1, max_length=ORIGIN_MODEL_ID_MAX_LENGTH)
+        str | None,
+        Query(min_length=1, max_length=ORIGIN_MODEL_ID_MAX_LENGTH),
+        AfterValidator(_check_origin_model_id),
     ] = None,
     sensitive: Annotated[bool | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=_AUDIT_LIMIT_MAX)] = _AUDIT_LIMIT_DEFAULT,
@@ -125,7 +151,8 @@ async def admin_audit(
 ) -> AdminAuditPage:
     """Página de audit filtrable. NUNCA expone ``record_hash`` ni ``target_id`` (ver service).
 
-    ``origin_model_id`` filtra por el id exacto del modelo que originó la op (ADR-028).
+    ``origin_model_id`` filtra por el id exacto del modelo que originó la op (ADR-028). Un
+    id que ``AuditStore.record`` no guardaría da 422 (ver ``_check_origin_model_id``).
     """
     return await AdminMetricsService(session).audit(
         range_id=range,
