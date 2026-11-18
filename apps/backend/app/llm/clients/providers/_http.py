@@ -31,10 +31,10 @@ from app.llm.errors import (
     LlmAuthError,
     LlmBadRequestError,
     LlmContextOverflowError,
-    LlmError,
     LlmProviderRejectedError,
     LlmRateLimitError,
     LlmTimeoutError,
+    LlmTransientError,
     LlmUnavailableError,
 )
 
@@ -52,7 +52,9 @@ _CONTEXT_OVERFLOW_SIGNATURES: tuple[str, ...] = (
 )
 
 # 4xx que piden repetir el mismo request más tarde (408 Request Timeout, 425 Too Early):
-# quedan como ``LlmError`` genérico, que el ``ResilientClient`` reintenta con backoff.
+# son ``LlmTransientError`` pelado. El ``ResilientClient`` los reintenta con backoff (no
+# son una caída que abra el breaker ni una sobrecarga) y la consolidación de memoria
+# reintenta el turno en vez de descartarlo, como con cualquier falla transitoria.
 _RETRYABLE_CLIENT_STATUSES = frozenset({httpx.codes.REQUEST_TIMEOUT, httpx.codes.TOO_EARLY})
 
 
@@ -83,7 +85,7 @@ def raise_for_provider_status(response: httpx.Response) -> None:
     - 400 con contexto excedido -> ``LlmContextOverflowError``
     - otro 400, o 422           -> ``LlmBadRequestError``
     - >= 500                    -> ``LlmUnavailableError``
-    - 408 / 425                 -> ``LlmError`` genérico (piden repetir el request)
+    - 408 / 425                 -> ``LlmTransientError`` (piden repetir el request)
     - otro 4xx (404, 413, ...)  -> ``LlmProviderRejectedError`` (propio de ese proveedor)
 
     Un 400 o un 422 dicen que el request no sirve: el respaldo fallaría igual. Los otros
@@ -111,7 +113,7 @@ def raise_for_provider_status(response: httpx.Response) -> None:
     if status >= httpx.codes.INTERNAL_SERVER_ERROR:
         raise LlmUnavailableError(label)
     if status in _RETRYABLE_CLIENT_STATUSES:
-        raise LlmError(label)
+        raise LlmTransientError(label)
     raise LlmProviderRejectedError(label)
 
 

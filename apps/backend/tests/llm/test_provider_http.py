@@ -32,6 +32,7 @@ from app.llm.errors import (
     LlmProviderRejectedError,
     LlmRateLimitError,
     LlmTimeoutError,
+    LlmTransientError,
     LlmUnavailableError,
 )
 
@@ -132,11 +133,18 @@ def test_provider_specific_4xx_is_rejected_by_that_provider(status: int) -> None
 
 
 @pytest.mark.parametrize("status", [408, 425])
-def test_4xx_that_asks_to_repeat_is_generic_llm_error(status: int) -> None:
-    """408 y 425 piden repetir el request: quedan como ``LlmError`` base (reintentable)."""
-    with pytest.raises(LlmError) as excinfo:
+def test_4xx_that_asks_to_repeat_is_transient(status: int) -> None:
+    """408 y 425 piden repetir el request: ``LlmTransientError`` pelado.
+
+    Es la clase que la consolidación de memoria reintenta (``autoretry_for``); con un
+    ``LlmError`` base el worker descartaba la op o la extracción. Pelado y no una
+    subclase: no es una caída (no abre el breaker) ni una sobrecarga (sin la espera del
+    429), así que el ``ResilientClient`` lo sigue reintentando con backoff.
+    """
+    with pytest.raises(LlmTransientError) as excinfo:
         raise_for_provider_status(httpx.Response(status, json=_error_body("x")))
-    assert type(excinfo.value) is LlmError
+    assert type(excinfo.value) is LlmTransientError
+    assert str(excinfo.value) == f"falla transitoria del proveedor LLM: HTTP {status}"
 
 
 def test_auth_is_not_a_request_error() -> None:
