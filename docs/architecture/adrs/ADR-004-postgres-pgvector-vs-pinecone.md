@@ -1,7 +1,13 @@
 # ADR-004: Postgres + pgvector vs vector DB dedicada
 
 ## Estado
-Aceptado
+Aceptado — sigue vigente, con una nota de [ADR-028](./ADR-028-inferencia-por-api.md)
+
+> La decisión no cambia: Postgres + pgvector sigue como única DB. Lo que deja de
+> valer es el «on-prem 100%» de la consecuencia sobre la infra propia: desde
+> ADR-028 los embeddings que se guardan acá los calcula un proveedor por API
+> (regla #4b de `AGENTS.md`), así que el self-hosting de V2 (ADR-005) cubre la
+> base, no la inferencia.
 
 ## Fecha
 2026-05-XX  <!-- TODO: fecha exacta cuando se apruebe en PR -->
