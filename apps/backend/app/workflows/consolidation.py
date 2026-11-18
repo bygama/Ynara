@@ -2,7 +2,7 @@
 
 Reglas no negociables (ADR-010 + critica adversarial M8):
 
-1. Solo encolada cuando el modelo del modo escribe memoria (Qwen). El caller
+1. Solo encolada cuando el modelo del modo escribe memoria (alias agente). El caller
    (``ChatService.run_turn`` en el endpoint) ya filtra; esta task no re-chequea.
 2. La task NUNCA esta en el path de respuesta: ``ChatService.run_turn`` encola con
    ``.delay()`` DESPUES del commit (M10 Ola 0); la escritura ocurre aqui,
@@ -20,7 +20,8 @@ Reglas no negociables (ADR-010 + critica adversarial M8):
 5. Parseo defensivo heredado de ``QwenMemoryEngine._parse_ops``: JSON
    invalido / ops malformadas -> [] sin crashear el worker.
 6. Ningun dato de usuario a logs (regla #4): el payload (turno del usuario)
-   queda on-prem en Redis/worker. Solo se loguea el conteo de ops aplicadas
+   queda en Redis y el worker; al proveedor de IA va solo lo que pide la
+   llamada (reglas #4a y #4b). Solo se loguea el conteo de ops aplicadas
    y errores tecnicos SIN contenido.
 7. Idempotencia sin tocar ``app/memory/`` ni el schema sagrado: cada intento es
    todo-o-nada (la marca del turno, las ops y su auditoria van en un SAVEPOINT) y,
@@ -476,8 +477,8 @@ def consolidate_turn(
             ``sessions.id``). El cuerpo async lo parsea a ``UUID`` de forma
             defensiva y lo propaga como ``source_session_id`` (provenance) en el
             ADD semantic (M10 Ola 1). Si fuera basura no-UUID, degrada a ``None``.
-        user_msg: Mensaje del usuario (on-prem, NO se loguea).
-        model_response: Respuesta del modelo (on-prem, NO se loguea).
+        user_msg: Mensaje del usuario (NO se loguea).
+        model_response: Respuesta del modelo (NO se loguea).
         mode: Modo activo de la sesion (p.ej. 'vida', 'estudio').
         turn_seq: ``seq`` del turno del usuario en ``conversation_turns``, para marcarlo
             como consolidado (idempotencia). ``None`` si el turno no se persistio o el
@@ -554,7 +555,7 @@ def _build_transcript(turns: list) -> str:
 
     ``turns`` viene ORDER BY ``seq`` y descifrado (``ConversationTurnOut``). Se
     serializa a un texto con prefijos de rol legibles para el modelo. NO se loguea
-    (es contenido del usuario, regla #4): solo se pasa al LLM on-prem.
+    (es contenido del usuario, regla #4): solo se pasa al proveedor del alias agente.
     """
     lines: list[str] = []
     for turn in turns:
