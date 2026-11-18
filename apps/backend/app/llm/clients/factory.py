@@ -169,10 +169,11 @@ def build_embedder(settings: Settings) -> EmbeddingClient:
     construirse (``httpx.AsyncClient`` perezoso), asi que es seguro instanciarlo en el
     arranque.
 
-    ``fake`` (default dev/test) -> ``FakeEmbeddingClient`` determinista, sin red.
+    ``fake`` (default dev/test) -> ``FakeEmbeddingClient`` determinista, sin red. Va con
+    ``record_calls=False``: es un singleton de la app y no guarda los textos que embebe.
     """
     if settings.embedding_backend != "api":
-        return FakeEmbeddingClient(model=settings.embedding_model)
+        return FakeEmbeddingClient(model=settings.embedding_model, record_calls=False)
     _quiet_httpx_request_logs()
     return ApiEmbeddingClient(
         base_url=settings.embedding_base_url,

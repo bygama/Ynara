@@ -83,3 +83,12 @@ async def test_embed_calls_are_recorded() -> None:
     await fake.embed(["c"])
     # Acumula por llamada (los tests de M7 cuentan cuántas veces se embebió).
     assert fake.embed_calls == [["a", "b"], ["c"]]
+
+
+async def test_embed_calls_are_not_kept_without_record_calls() -> None:
+    """Con ``record_calls=False`` (el de la factory) no guarda nada y embebe igual."""
+    fake = FakeEmbeddingClient(record_calls=False)
+    vectors = await fake.embed(["a", "b"])
+
+    assert vectors == await FakeEmbeddingClient().embed(["a", "b"])
+    assert fake.embed_calls == []

@@ -286,6 +286,14 @@ def test_embedder_is_fake_by_default() -> None:
     assert isinstance(embedder, FakeEmbeddingClient)
 
 
+async def test_embedder_fake_does_not_keep_the_texts() -> None:
+    """Es un singleton de la app: no acumula los textos que embebe (texto de usuario)."""
+    embedder = build_embedder(_settings())
+    assert isinstance(embedder, FakeEmbeddingClient)
+    await embedder.embed(["el martes tengo turno con la psicóloga"])
+    assert embedder.embed_calls == []
+
+
 def test_embedder_api_builds_the_client_from_settings() -> None:
     """``EMBEDDING_BACKEND=api``: ``ApiEmbeddingClient`` con la config de Settings, sin red."""
     settings = _settings(embedding_backend="api").model_copy(

@@ -51,11 +51,19 @@ class FakeEmbeddingClient:
     El vector de un texto se deriva expandiendo ``sha256(text)`` hasta ``dim``
     floats en ``[-1, 1]``: mismo texto → mismo vector, textos distintos →
     vectores distintos. Reproducible sin red.
+
+    El atributo ``embed_calls`` acumula los textos de cada llamada para que los
+    tests verifiquen cuántas veces se embebió y qué. Con ``record_calls=False``,
+    como lo arma la factory para la app (``EMBEDDING_BACKEND=fake``), no guarda
+    nada: el embedder de la app no acumula texto de usuario.
     """
 
-    def __init__(self, *, dim: int = EMBEDDING_DIM, model: str = "bge-m3") -> None:
+    def __init__(
+        self, *, dim: int = EMBEDDING_DIM, model: str = "bge-m3", record_calls: bool = True
+    ) -> None:
         self._dim = dim
         self._model = model
+        self._record_calls = record_calls
         self._healthy = True
         self.embed_calls: list[list[str]] = []
 
@@ -75,7 +83,8 @@ class FakeEmbeddingClient:
         return out
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        self.embed_calls.append(list(texts))
+        if self._record_calls:
+            self.embed_calls.append(list(texts))
         return [self._vector_for(text) for text in texts]
 
     async def health(self) -> ModelHealth:
