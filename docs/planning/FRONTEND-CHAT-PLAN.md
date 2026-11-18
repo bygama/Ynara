@@ -1,5 +1,15 @@
 # Frontend · Chat / Conversación (modo) — Plan completo (web + mobile)
 
+> **Actualización (noviembre 2026):** [ADR-028](../architecture/adrs/ADR-028-inferencia-por-api.md)
+> reemplazó los modelos propios (Gemma y Qwen) por proveedores de IA por API. En
+> este plan, «Gemma» se lee como el alias `conversacional` (estudio, bienestar y
+> vida: conversa y lee memoria) y «Qwen», como el alias `agente` (productividad y
+> memoria: ejecuta tools y produce `actions[]`). El contrato del chat no cambia, y
+> el límite de ~4.000 chars, razonado acá contra el `max_model_len` de Gemma,
+> mantiene su valor. La regla #4 ya no es «sin IA externa»: está partida en 4a
+> (datos de usuario) y 4b (proveedores de IA). El front sigue sin hablar con un
+> proveedor: todo va por `/v1/chat` y `/v1/chat/stream`. El cuerpo no se reescribe.
+
 > **Estado**: v2 — borrador para revisión
 > **Fecha**: 2026-05-30 (v1 web-only) · 2026-05-30 (v2 web + mobile)
 > **Owner**: @MateoGs013
