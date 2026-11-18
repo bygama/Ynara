@@ -15,7 +15,7 @@ Decisiones de seguridad (criticadas adversarialmente, NO re-litigar):
 
 (b) Register 409 es un trade-off de enumeración CONSCIENTE. ``/auth/register``
     devuelve 409 ante un email ya registrado, lo que técnicamente revela que ese
-    email existe. Se acepta a propósito en un despliegue on-prem / mono-tenant:
+    email existe. Se acepta a propósito en un despliegue mono-tenant (MVP):
     el alternativo (aceptar siempre y mandar un mail de "ya tenés cuenta") exige
     infra de mail que el MVP no tiene, y el valor de UX de un error claro de
     duplicado supera el riesgo de enumeración en este contexto.
