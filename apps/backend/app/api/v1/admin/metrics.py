@@ -32,9 +32,10 @@ from app.core.constants import EMBEDDING_DIM
 from app.core.db_guard import _host_of, is_prod_db_host
 from app.core.deps import CurrentAdmin, DbSession, get_embedder, get_llm_client
 from app.core.llm_protocol import EmbeddingClientProtocol, LLMClientProtocol
-from app.enums import AuditOperation, LlmModel, MemoryLayer, Mode, enum_values
+from app.enums import AuditOperation, MemoryLayer, Mode, enum_values
 from app.llm.config import load_llm_config
 from app.llm.schemas import ModelHealth
+from app.models.audit import ORIGIN_MODEL_ID_MAX_LENGTH
 from app.schemas.admin import (
     AdminMoatOut,
     AdminModesOut,
@@ -115,18 +116,23 @@ async def admin_audit(
     operation: Annotated[AuditOperation | None, Query()] = None,
     target_layer: Annotated[MemoryLayer | None, Query()] = None,
     origin_mode: Annotated[Mode | None, Query()] = None,
-    origin_model: Annotated[LlmModel | None, Query()] = None,
+    origin_model_id: Annotated[
+        str | None, Query(min_length=1, max_length=ORIGIN_MODEL_ID_MAX_LENGTH)
+    ] = None,
     sensitive: Annotated[bool | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=_AUDIT_LIMIT_MAX)] = _AUDIT_LIMIT_DEFAULT,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> AdminAuditPage:
-    """Página de audit filtrable. NUNCA expone ``record_hash`` ni ``target_id`` (ver service)."""
+    """Página de audit filtrable. NUNCA expone ``record_hash`` ni ``target_id`` (ver service).
+
+    ``origin_model_id`` filtra por el id exacto del modelo que originó la op (ADR-028).
+    """
     return await AdminMetricsService(session).audit(
         range_id=range,
         operation=operation,
         target_layer=target_layer,
         origin_mode=origin_mode,
-        origin_model=origin_model,
+        origin_model_id=origin_model_id,
         sensitive=sensitive,
         limit=limit,
         offset=offset,

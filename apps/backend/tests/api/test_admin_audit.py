@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db
 from app.core.security import create_access_token
-from app.enums import AuditOperation, MemoryLayer, Mode
+from app.enums import AuditOperation, LlmModel, MemoryLayer, Mode
 from app.main import app
 from app.models.audit import AuditLog
 from app.models.user import User
@@ -104,5 +104,50 @@ async def test_admin_audit_never_exposes_record_hash_or_target_id(
         assert seeded["target_layer"] == MemoryLayer.SEMANTIC.value
         assert seeded["sensitive"] is False
         assert "sensitive_pct" in body
+    finally:
+        app.dependency_overrides.clear()
+
+
+async def test_admin_audit_filters_by_origin_model_id(db_session: AsyncSession) -> None:
+    """``origin_model_id`` filtra por el id exacto; las filas viejas traen solo el enum."""
+    admin = await _seed_admin(db_session)
+
+    def _row(**origin: object) -> AuditLog:
+        return AuditLog(
+            user_id=admin.id,
+            operation=AuditOperation.WRITE,
+            target_layer=MemoryLayer.SEMANTIC,
+            record_hash=_RECORD_HASH,
+            sensitive=False,
+            **origin,
+        )
+
+    rows = {
+        "nuevo": _row(origin_model_id="org/agent-2026-06-01"),
+        "otro": _row(origin_model_id="org/otro-modelo"),
+        "viejo": _row(origin_model=LlmModel.QWEN),
+    }
+    db_session.add_all(rows.values())
+    await db_session.flush()
+
+    client = await _client(db_session)
+    try:
+        async with client:
+            filtered = await client.get(
+                "/v1/admin/audit",
+                headers=_bearer(admin.id),
+                params={"origin_model_id": "org/agent-2026-06-01"},
+            )
+            unfiltered = await client.get("/v1/admin/audit", headers=_bearer(admin.id))
+
+        assert filtered.status_code == 200
+        assert [item["id"] for item in filtered.json()["items"]] == [str(rows["nuevo"].id)]
+        assert filtered.json()["total"] == 1
+
+        by_id = {item["id"]: item for item in unfiltered.json()["items"]}
+        assert by_id[str(rows["nuevo"].id)]["origin_model_id"] == "org/agent-2026-06-01"
+        assert by_id[str(rows["nuevo"].id)]["origin_model"] is None
+        assert by_id[str(rows["viejo"].id)]["origin_model_id"] is None
+        assert by_id[str(rows["viejo"].id)]["origin_model"] == LlmModel.QWEN.value
     finally:
         app.dependency_overrides.clear()
