@@ -10,8 +10,8 @@ import { FIXTURE_NOW, minutesBack, mulberry32, pick, seededUuid } from "./seed";
 /**
  * Fixture de `GET /v1/admin/audit` (blueprint §4.7).
  *
- * Genera ~200 filas deterministas (mezcla de operations/layers/modes/models,
- * ~18% sensibles) y expone `auditPage(filters, limit, offset)` que filtra y
+ * Genera ~200 filas deterministas (mezcla de operations/layers/modes/ids de
+ * modelo, ~18% sensibles) y expone `auditPage(filters, limit, offset)` que filtra y
  * pagina EN MEMORIA — el mismo contrato que el backend hará con WHERE + LIMIT/
  * OFFSET, pero del lado del fixture para que la pantalla de audit sea navegable
  * sin backend.
@@ -25,7 +25,15 @@ const ROW_COUNT = 200;
 const OPERATIONS = ["read", "write", "update", "delete"] as const;
 const LAYERS = ["semantic", "episodic", "procedural"] as const;
 const MODES: ModeIdT[] = ["productividad", "estudio", "bienestar", "vida", "memoria"];
-const MODELS = ["gemma", "qwen"] as const;
+/** Ids de modelo como los informa un proveedor (ADR-028); `agente` = cliente sin id. */
+export const FIXTURE_MODEL_IDS = [
+  "org/agent-2026-06-01",
+  "org/agent-2026-03-15",
+  "respaldo/agent-v2",
+  "agente",
+] as const;
+/** Valores de antes de ADR-028: solo en las filas viejas, sin `origin_model_id`. */
+const LEGACY_MODELS = ["gemma", "qwen"] as const;
 const TOOLS = [
   "memory.search",
   "memory.write",
@@ -43,14 +51,24 @@ function buildRows(now: Date): AdminAuditRowT[] {
   const rand = mulberry32(9001);
   const rows: AdminAuditRowT[] = [];
   for (let i = 0; i < ROW_COUNT; i++) {
+    const created_at = minutesBack(i * 11 + Math.floor(rand() * 7), now);
+    const operation = pick(OPERATIONS, Math.floor(rand() * OPERATIONS.length));
+    const target_layer = pick(LAYERS, Math.floor(rand() * LAYERS.length));
+    const origin_mode = rand() < 0.15 ? null : pick(MODES, Math.floor(rand() * MODES.length));
+    // ~10% sin modelo (acción por HTTP o seed), ~10% filas viejas (solo el enum de
+    // antes) y el resto con el id que informó el proveedor.
+    const modelRoll = rand();
+    const modelIndex = Math.floor(rand() * FIXTURE_MODEL_IDS.length);
+    const isLegacy = modelRoll >= 0.1 && modelRoll < 0.2;
     rows.push({
       id: seededUuid(9001 + i),
       // i creciente = más viejo → minutos hacia atrás crecientes → DESC por created_at
-      created_at: minutesBack(i * 11 + Math.floor(rand() * 7), now),
-      operation: pick(OPERATIONS, Math.floor(rand() * OPERATIONS.length)),
-      target_layer: pick(LAYERS, Math.floor(rand() * LAYERS.length)),
-      origin_mode: rand() < 0.15 ? null : pick(MODES, Math.floor(rand() * MODES.length)),
-      origin_model: rand() < 0.1 ? null : pick(MODELS, Math.floor(rand() * MODELS.length)),
+      created_at,
+      operation,
+      target_layer,
+      origin_mode,
+      origin_model: isLegacy ? pick(LEGACY_MODELS, modelIndex % LEGACY_MODELS.length) : null,
+      origin_model_id: modelRoll < 0.2 ? null : pick(FIXTURE_MODEL_IDS, modelIndex),
       origin_tool: pick(TOOLS, Math.floor(rand() * TOOLS.length)),
       sensitive: rand() < 0.18,
     });
@@ -65,7 +83,8 @@ function matchesFilters(row: AdminAuditRowT, f: AuditFilterState): boolean {
   if (f.operation && row.operation !== f.operation) return false;
   if (f.targetLayer && row.target_layer !== f.targetLayer) return false;
   if (f.originMode && row.origin_mode !== f.originMode) return false;
-  if (f.originModel && row.origin_model !== f.originModel) return false;
+  // Id exacto, como el backend: las filas viejas (solo enum) no matchean.
+  if (f.originModelId && row.origin_model_id !== f.originModelId) return false;
   if (f.sensitive !== null && row.sensitive !== f.sensitive) return false;
   return true;
 }

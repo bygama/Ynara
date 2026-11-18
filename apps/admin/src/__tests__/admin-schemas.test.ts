@@ -6,7 +6,7 @@ import { AdminOverviewOut } from "@/features/overview/schemas";
 import { PlaygroundAgentOut, PlaygroundOut, ServingOut } from "@/features/playground/schemas";
 import { AdminSystemOut } from "@/features/system/schemas";
 import { AdminUsersOut } from "@/features/users/schemas";
-import { auditPage } from "@/fixtures/audit";
+import { auditPage, FIXTURE_MODEL_IDS } from "@/fixtures/audit";
 import { moatFixture } from "@/fixtures/moat";
 import { modesFixture } from "@/fixtures/modes";
 import { overviewFixture } from "@/fixtures/overview";
@@ -133,6 +133,51 @@ const SYSTEM_FAKE_PAYLOAD = {
   },
 };
 
+/** Fila de `GET /v1/admin/audit` escrita después de ADR-028: solo el id de modelo. */
+const AUDIT_ROW_PAYLOAD = {
+  id: "3f2b8c1e-9a4d-4e7b-8c2a-1d5e6f7a8b9c",
+  created_at: "2026-11-17T12:00:00Z",
+  operation: "write",
+  target_layer: "semantic",
+  origin_mode: "memoria",
+  origin_model: null,
+  origin_model_id: "org/agent-2026-06-01",
+  origin_tool: "memory.consolidate",
+  sensitive: false,
+};
+
+/**
+ * Respuesta real de `GET /v1/admin/audit`, tal como la arma el backend
+ * (`AdminMetricsService.audit`): una fila con el id que informó el proveedor, una
+ * fila vieja con solo el enum de antes y una acción por HTTP sin modelo. Es la
+ * forma del wire, no un fixture.
+ */
+const AUDIT_API_PAYLOAD = {
+  items: [
+    AUDIT_ROW_PAYLOAD,
+    {
+      ...AUDIT_ROW_PAYLOAD,
+      id: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      created_at: "2026-06-01T09:30:00Z",
+      operation: "update",
+      target_layer: "episodic",
+      origin_model: "qwen",
+      origin_model_id: null,
+      sensitive: true,
+    },
+    {
+      ...AUDIT_ROW_PAYLOAD,
+      id: "9b2d4f6a-1c3e-4a5b-8d7f-0e2c4a6b8d0f",
+      operation: "delete",
+      origin_mode: null,
+      origin_model_id: null,
+      origin_tool: null,
+    },
+  ],
+  total: 3,
+  sensitive_pct: 33.3,
+};
+
 describe("contrato fixtures ↔ Zod (blueprint §4)", () => {
   it("overview parsea en todos los rangos", () => {
     for (const range of RANGES) {
@@ -254,6 +299,57 @@ describe("contrato fixtures ↔ Zod (blueprint §4)", () => {
       expect(row).not.toHaveProperty("record_hash");
       expect(row).not.toHaveProperty("target_id");
     }
+  });
+
+  it("audit: la respuesta real del backend parsea con id de modelo, enum viejo o sin modelo", () => {
+    const page = AdminAuditPage.parse(AUDIT_API_PAYLOAD);
+    expect(page.items.map((r) => [r.origin_model_id, r.origin_model])).toEqual([
+      ["org/agent-2026-06-01", null],
+      [null, "qwen"],
+      [null, null],
+    ]);
+  });
+
+  it("audit rechaza una fila sin origin_model_id (la forma previa a ADR-028)", () => {
+    const withoutModelId = { ...AUDIT_ROW_PAYLOAD, origin_model_id: undefined };
+    expect(
+      AdminAuditPage.safeParse({ ...AUDIT_API_PAYLOAD, items: [withoutModelId] }).success,
+    ).toBe(false);
+  });
+
+  it("audit: el fixture cubre filas con id de modelo, filas viejas y filas sin modelo", () => {
+    const { items } = auditPage(EMPTY_AUDIT_FILTERS, 1000, 0);
+    const withId = items.filter((r) => r.origin_model_id !== null);
+    const legacy = items.filter((r) => r.origin_model_id === null && r.origin_model !== null);
+    const withoutModel = items.filter((r) => r.origin_model_id === null && r.origin_model === null);
+    expect(withId.length).toBeGreaterThan(0);
+    expect(legacy.length).toBeGreaterThan(0);
+    expect(withoutModel.length).toBeGreaterThan(0);
+    // Desde ADR-028 se escribe solo el id: ninguna fila trae los dos.
+    expect(withId.every((r) => r.origin_model === null)).toBe(true);
+  });
+
+  it("audit filtra por el id exacto del modelo y deja afuera las filas viejas", () => {
+    const all = auditPage(EMPTY_AUDIT_FILTERS, 1000, 0);
+    const [modelId] = FIXTURE_MODEL_IDS;
+    const byId = auditPage({ ...EMPTY_AUDIT_FILTERS, originModelId: modelId }, 1000, 0);
+    expect(byId.total).toBeGreaterThan(0);
+    expect(byId.items.length).toBe(byId.total);
+    expect(byId.items.every((r) => r.origin_model_id === modelId)).toBe(true);
+    expect(byId.total).toBe(all.items.filter((r) => r.origin_model_id === modelId).length);
+
+    // Igual que el backend: ni prefijos ni otra capitalización.
+    const prefix = auditPage({ ...EMPTY_AUDIT_FILTERS, originModelId: "org/agent" }, 1000, 0);
+    expect(prefix.total).toBe(0);
+    const upper = auditPage(
+      { ...EMPTY_AUDIT_FILTERS, originModelId: modelId.toUpperCase() },
+      1000,
+      0,
+    );
+    expect(upper.total).toBe(0);
+    // El enum de antes no es un id: las filas viejas no matchean.
+    const legacy = auditPage({ ...EMPTY_AUDIT_FILTERS, originModelId: "qwen" }, 1000, 0);
+    expect(legacy.total).toBe(0);
   });
 
   // ── Playground (Fase A probe + Fase B agente) ───────────────────────────

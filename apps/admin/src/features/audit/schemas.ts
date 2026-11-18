@@ -21,13 +21,20 @@ export type AuditOperationT = z.infer<typeof AuditOperation>;
 export const AuditTargetLayer = z.enum(["semantic", "episodic", "procedural"]);
 export type AuditTargetLayerT = z.infer<typeof AuditTargetLayer>;
 
-/** Modelo LLM de origen del evento. */
-export const AuditOriginModel = z.enum(["gemma", "qwen"]);
-export type AuditOriginModelT = z.infer<typeof AuditOriginModel>;
+/**
+ * Largo máximo del id de modelo (`audit_log.origin_model_id`, `VARCHAR(200)`). El
+ * backend rechaza con 422 un filtro más largo; el input del filtro lo corta antes.
+ */
+export const ORIGIN_MODEL_ID_MAX_LENGTH = 200;
 
 /**
  * Fila del audit log — SOLO campos exponibles.
  * Deliberadamente SIN `record_hash` y SIN `target_id`.
+ *
+ * Modelo de origen (ADR-028): `origin_model_id` es el id de texto del modelo que
+ * originó la op, tal como lo informó el proveedor (p.ej. `org/modelo-2026-06`), o
+ * el alias. `origin_model` es el valor de antes (`gemma`/`qwen`) y solo viene en
+ * las filas viejas. Los dos son `null` en las acciones por HTTP y en el seed.
  */
 export const AdminAuditRow = z.object({
   id: z.string().uuid(),
@@ -35,7 +42,8 @@ export const AdminAuditRow = z.object({
   operation: AuditOperation,
   target_layer: AuditTargetLayer,
   origin_mode: ModeId.nullable(),
-  origin_model: AuditOriginModel.nullable(),
+  origin_model: z.string().nullable(),
+  origin_model_id: z.string().nullable(),
   origin_tool: z.string().nullable(),
   sensitive: z.boolean(),
 });
@@ -58,7 +66,8 @@ export type AuditFilterState = {
   operation: AuditOperationT | null;
   targetLayer: AuditTargetLayerT | null;
   originMode: z.infer<typeof ModeId> | null;
-  originModel: AuditOriginModelT | null;
+  /** Id exacto del modelo de origen (`origin_model_id`), sin espacios en los bordes. */
+  originModelId: string | null;
   sensitive: boolean | null;
 };
 
@@ -67,6 +76,6 @@ export const EMPTY_AUDIT_FILTERS: AuditFilterState = {
   operation: null,
   targetLayer: null,
   originMode: null,
-  originModel: null,
+  originModelId: null,
   sensitive: null,
 };
