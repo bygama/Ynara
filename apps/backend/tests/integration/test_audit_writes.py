@@ -589,3 +589,49 @@ async def test_audit_failure_is_isolated_by_savepoint(db_session: AsyncSession) 
         )
     ).scalar_one()
     assert fact_count == 0
+
+
+# ---------------------------------------------------------------------------
+# origin_model_id: el id de texto del modelo llega tal cual a la fila (ADR-028)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("model_id", ["org/agent-model-2026-06", "m" * 200])
+async def test_record_persists_origin_model_id(db_session: AsyncSession, model_id: str) -> None:
+    """``AuditStore.record`` guarda el id tal cual (hasta 200) y deja ``origin_model`` NULL."""
+    user = await _seed_user(db_session)
+    audit = AuditStore(db_session, user.id)
+
+    await audit.record(
+        operation=AuditOperation.WRITE,
+        target_layer=MemoryLayer.SEMANTIC,
+        target_id=None,
+        record_hash=_sha256("hecho"),
+        origin_model_id=model_id,
+        origin_mode=Mode.PRODUCTIVIDAD,
+    )
+
+    rows = await _fetch_audit_rows(db_session, user.id)
+    assert len(rows) == 1
+    assert rows[0].origin_model_id == model_id
+    assert rows[0].origin_model is None
+
+
+@pytest.mark.integration
+async def test_record_without_origin_model_id_leaves_it_null(db_session: AsyncSession) -> None:
+    """Sin ``origin_model_id`` (una acción por HTTP, el seed del onboarding) queda en NULL."""
+    user = await _seed_user(db_session)
+    audit = AuditStore(db_session, user.id)
+
+    await audit.record(
+        operation=AuditOperation.DELETE,
+        target_layer=MemoryLayer.PROCEDURAL,
+        target_id=None,
+        record_hash=_sha256("idioma_preferido"),
+    )
+
+    rows = await _fetch_audit_rows(db_session, user.id)
+    assert len(rows) == 1
+    assert rows[0].origin_model_id is None
+    assert rows[0].origin_model is None

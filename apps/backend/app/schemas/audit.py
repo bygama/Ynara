@@ -15,7 +15,12 @@ from app.schemas.base import YnaraBaseModel
 
 
 class AuditLogOut(YnaraBaseModel):
-    """Una entrada de audit. Inmutable post-creación."""
+    """Una entrada de audit. Inmutable post-creación.
+
+    ``origin_model`` es el enum de antes de ADR-028 (``gemma``/``qwen``, solo filas
+    viejas); ``origin_model_id`` es el id de texto del modelo que respondió (o su
+    alias), el que se escribe desde la inferencia por API. Ver ``app/models/audit.py``.
+    """
 
     id: UUID
     user_id: UUID
@@ -23,6 +28,7 @@ class AuditLogOut(YnaraBaseModel):
     target_layer: MemoryLayer
     target_id: UUID | None
     origin_model: LlmModel | None
+    origin_model_id: str | None
     origin_mode: Mode | None
     origin_tool: str | None
     record_hash: str
