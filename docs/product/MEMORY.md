@@ -88,10 +88,12 @@ Cada operación sobre memoria queda registrada:
 - Timestamp UTC.
 - `user_id`.
 - Operación: read / write / update / delete.
-- Origen: modelo + modo activo + tool si aplica. El modelo queda con
-  los valores del enum de la tabla, `qwen` y `gemma`, nombres de antes
-  de [ADR-028](../architecture/adrs/ADR-028-inferencia-por-api.md): la
-  consolidación, que corre con el alias `agente`, escribe `qwen`.
+- Origen: modelo + modo activo + tool si aplica. El modelo queda como
+  el id que informó el proveedor (`origin_model_id`, por
+  [ADR-028](../architecture/adrs/ADR-028-inferencia-por-api.md)), o el
+  alias si el cliente no informa uno. Las entradas de antes guardan el
+  enum `qwen`/`gemma` en `origin_model`: la consolidación, que corre con
+  el alias `agente`, escribía `qwen`.
 - Hash de la entrada afectada.
 
 Retención del audit log: 24 meses, **enforced**. La purga la corre el
