@@ -32,7 +32,7 @@ Logs de la IA de la última media hora, en `api` y `worker` (sin contenido
 de usuario: solo nombres de proveedor, clases de error e ids, regla #4a):
 
 ```sh
-docker compose logs --since 30m api worker | grep -E 'llm:|route degrado|consolidate_|memory_engine:'
+docker compose logs --since 30m api worker | grep -E 'llm:|route degrado|memory search:|consolidate_|memory_engine:'
 ```
 
 ## Escenarios comunes
@@ -183,11 +183,17 @@ de recibir datos reales.
 Los embeddings no tienen respaldo: hay un solo `EMBEDDING_BASE_URL`.
 
 **Síntomas.** En System Health, `embeddings` en `down`. `/v1/chat` y
-`/v1/chat/stream` responden 500 en los modos que buscan en la memoria
-semántica o episódica (productividad, estudio, bienestar y memoria): la
-búsqueda embeddea el mensaje antes de armar el contexto, y ese error no se
-degrada como el del chat. Vida, que solo lee la memoria procedural, sigue
-andando.
+`/v1/chat/stream` responden el texto degradado (`finish_reason="degraded"`)
+en los modos que buscan en la memoria semántica o episódica
+(productividad, estudio, bienestar y memoria): la búsqueda embeddea el
+mensaje antes de armar el contexto y, si falla, el turno degrada sin
+llamar al modelo (`route degrado al recuperar la memoria: <Clase>` en los
+logs de `api`). Vida, que solo lee la memoria procedural, sigue andando.
+`GET /v1/memory/search` responde 503
+(`memory search: embeddings no disponibles: <Clase>`), con `Retry-After`
+si el 429 del proveedor lo trajo. Editar un hecho
+(`PATCH /v1/memory/semantic/{ref}`) todavía responde 500, porque
+re-embeddea el contenido nuevo.
 
 1. Confirmar en System Health y en la página de estado del proveedor.
 2. La consolidación reintenta sola las caídas y los 429 del embedder (ver
