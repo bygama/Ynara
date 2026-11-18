@@ -15,10 +15,12 @@ describe("OfflineBanner", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 
-  it("muestra el aviso 'trabajando local' sin conexión", () => {
+  it("avisa sin conexión que no se puede responder ni guardar", () => {
     setOnline(false);
     render(<OfflineBanner />);
     expect(screen.getByRole("status")).toBeInTheDocument();
-    expect(screen.getByText("Sin conexión · trabajando local")).toBeInTheDocument();
+    expect(
+      screen.getByText("Sin conexión · no podemos responder ni guardar cambios"),
+    ).toBeInTheDocument();
   });
 });
