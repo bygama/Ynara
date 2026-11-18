@@ -1,4 +1,4 @@
-"""Contrato base de las tools que Qwen puede llamar (M6).
+"""Contrato base de las tools que puede llamar el alias agente (M6).
 
 ``Tool`` es el Protocol que toda tool implementa: expone su identidad
 (``name`` en formato ``namespace.action`` snake_case, ``namespace``,
@@ -64,7 +64,7 @@ AGENT_LIST_RESULT_LIMIT: int = 50
 
 @runtime_checkable
 class Tool(Protocol):
-    """Una tool invocable por el agente Qwen.
+    """Una tool invocable por el alias agente.
 
     El ``name`` sigue ``namespace.action`` (ambos snake_case). El
     ``namespace`` se declara por separado: es la clave de habilitacion por

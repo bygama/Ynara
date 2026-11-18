@@ -1,4 +1,4 @@
-"""Tools que Qwen 3.5-9B (modo agente) puede llamar.
+"""Tools que puede llamar el alias agente.
 
 Convención: un módulo por namespace (``calendar.py``, ``reminder.py``,
 ``memory.py``). Cada tool implementa el Protocol ``Tool``
