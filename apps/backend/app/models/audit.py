@@ -9,6 +9,16 @@ separados.
 No usa ``TimestampMixin``: una vez creada, una entrada de audit no se
 modifica (solo ``created_at``).
 
+**Modelo de origen** — dos columnas:
+
+- ``origin_model``: enum ``llm_model_enum`` (``gemma``/``qwen``), los modelos
+  propios de antes de ADR-028. Se conserva para las filas viejas; desde la
+  inferencia por API queda en NULL, porque el modelo ya no es uno de esos dos.
+- ``origin_model_id``: el id de texto del modelo que respondió, tal como lo
+  informa el proveedor (p.ej. ``org/modelo-2026-06``), o el alias de modelo si el
+  cliente no informa uno. NULL cuando la operación no la originó un modelo (una
+  acción del usuario por HTTP, el seed del onboarding).
+
 **Lifecycle del audit log** — dos vías de eliminación:
 
 1. **Temporal (worker)**: el worker periódico de Celery borra entradas
@@ -40,6 +50,10 @@ from app.models.base import Base, UUIDPKMixin
 
 if TYPE_CHECKING:
     from app.models.user import User
+
+# Largo máximo de ``origin_model_id`` (``VARCHAR(200)``, migración ``6a5be12eb0fd``).
+# Lo usan el store para validar y los escritores para recortar el id del proveedor.
+ORIGIN_MODEL_ID_MAX_LENGTH = 200
 
 
 class AuditLog(UUIDPKMixin, Base):
@@ -85,6 +99,10 @@ class AuditLog(UUIDPKMixin, Base):
             native_enum=True,
             values_callable=enum_values,
         ),
+        nullable=True,
+    )
+    origin_model_id: Mapped[str | None] = mapped_column(
+        String(ORIGIN_MODEL_ID_MAX_LENGTH),
         nullable=True,
     )
     origin_mode: Mapped[Mode | None] = mapped_column(

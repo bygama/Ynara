@@ -15,6 +15,12 @@ unidireccional (no se puede revertir al texto), así que cero PII llega a la
 tabla de auditoría. El que computa el hash es el caller (``apply_ops``); este
 store solo persiste el digest ya calculado.
 
+MODELO DE ORIGEN (ADR-028): ``origin_model`` es el enum de antes de la inferencia
+por API (``gemma``/``qwen``) y los escritores de hoy lo dejan en ``None``. El modelo
+real va en ``origin_model_id``: el id de texto que informó el proveedor (o el alias,
+si el cliente no informa uno). Lo normaliza el caller; este store solo verifica que
+entre en la columna.
+
 Patrón (igual que ``SemanticMemoryStore`` / ``ProceduralMemoryStore``): store
 por-request, con ``session`` + ``user_id`` ligados en el ``__init__`` (el
 ``user_id`` nunca viaja como argumento de método, así toda fila queda
@@ -32,13 +38,26 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.enums import AuditOperation, LlmModel, MemoryLayer, Mode
-from app.models.audit import AuditLog
+from app.models.audit import ORIGIN_MODEL_ID_MAX_LENGTH, AuditLog
 
 # Forma del record_hash (idéntica al CHECK ``record_hash_sha256_hex`` del modelo).
 # Se valida acá ANTES del insert para que un caller que mande algo mal formado
 # —o, peor, plaintext— falle claro y temprano en vez de recibir un IntegrityError
 # opaco de Postgres en el flush. El store es el guardián de su invariante.
 _SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _is_valid_origin_model_id(value: str) -> bool:
+    """``True`` si ``value`` entra en ``origin_model_id`` tal cual.
+
+    No vacío, sin espacios en los bordes, sin caracteres de control y de hasta
+    ``ORIGIN_MODEL_ID_MAX_LENGTH`` caracteres (el ``VARCHAR`` de la columna).
+    """
+    return (
+        0 < len(value) <= ORIGIN_MODEL_ID_MAX_LENGTH
+        and value == value.strip()
+        and value.isprintable()
+    )
 
 
 class AuditStore:
@@ -61,6 +80,7 @@ class AuditStore:
         target_id: UUID | None,
         record_hash: str,
         origin_model: LlmModel | None = None,
+        origin_model_id: str | None = None,
         origin_mode: Mode | None = None,
         origin_tool: str | None = None,
         sensitive: bool = False,
@@ -70,8 +90,14 @@ class AuditStore:
         REGLA #4: ``record_hash`` es el sha256 hex (64 chars) del contenido o
         identificador afectado, calculado por el caller — NUNCA el contenido en
         claro. Ningún argumento de este método transporta PII: ``target_id`` es
-        un UUID, ``origin_*`` son enums/nombres de tool, ``record_hash`` es un
-        digest unidireccional. Nada de texto de usuario llega a ``audit_log``.
+        un UUID, ``origin_*`` son enums, ids de modelo o nombres de tool,
+        ``record_hash`` es un digest unidireccional. Nada de texto de usuario llega
+        a ``audit_log``.
+
+        ``origin_model_id`` es el id del modelo que originó la op (ver el docstring
+        del módulo): no vacío, sin espacios en los bordes, sin caracteres de control
+        y de hasta ``ORIGIN_MODEL_ID_MAX_LENGTH`` caracteres. Si no cumple, levanta
+        ``ValueError`` antes del insert, igual que con un ``record_hash`` mal formado.
 
         Hace ``flush()`` (no ``commit()``): el commit lo da el caller en la
         misma transacción que la op de memoria que se está auditando.
@@ -79,6 +105,12 @@ class AuditStore:
         if not _SHA256_HEX.match(record_hash):
             # NO se loguea el valor (regla #4: podría ser plaintext mal pasado).
             raise ValueError("record_hash debe ser un sha256 hex de 64 caracteres")
+        if origin_model_id is not None and not _is_valid_origin_model_id(origin_model_id):
+            # Tampoco se repite el valor en el mensaje: es texto que vino de afuera.
+            raise ValueError(
+                "origin_model_id debe ser un texto imprimible sin espacios en los bordes "
+                f"de 1 a {ORIGIN_MODEL_ID_MAX_LENGTH} caracteres"
+            )
         row = AuditLog(
             user_id=self._user_id,
             operation=operation,
@@ -86,6 +118,7 @@ class AuditStore:
             target_id=target_id,
             record_hash=record_hash,
             origin_model=origin_model,
+            origin_model_id=origin_model_id,
             origin_mode=origin_mode,
             origin_tool=origin_tool,
             sensitive=sensitive,
