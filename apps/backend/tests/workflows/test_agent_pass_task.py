@@ -53,7 +53,7 @@ def _make_llm_with_create_task(*, title: str = "Comprar pan") -> FakeLlmClient:
             finish_reason="tool_calls",
             prompt_tokens=10,
             completion_tokens=5,
-            model_name="qwen",
+            model_name="org/agent",
             latency_ms=5.0,
         )
     )
@@ -63,7 +63,7 @@ def _make_llm_with_create_task(*, title: str = "Comprar pan") -> FakeLlmClient:
             finish_reason="stop",
             prompt_tokens=10,
             completion_tokens=5,
-            model_name="qwen",
+            model_name="org/agent",
             latency_ms=5.0,
         )
     )
