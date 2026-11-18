@@ -11,9 +11,10 @@ Decisiones de diseno M9 (criticadas adversarialmente, NO re-litigar):
 (1) Orden transaccional (fix del bug de commit-temprano). El endpoint hace, en orden
     EXACTO: ``resolve_chat_session`` (flush, obtiene el id sin commit) ->
     ``ChatService.run_turn`` (``route()`` -> persistir turnos -> ``commit`` ->
-    enqueue post-commit). ``route()`` NUNCA propaga errores del LLM (captura overflow /
-    errores permanentes y devuelve fallback), asi que commitear despues es seguro y
-    evita ``ChatSession`` huerfanas. Ver el docstring de ``ChatService`` para el detalle.
+    enqueue post-commit). ``route()`` no propaga los errores del modelo ni los de los
+    embeddings de la busqueda de memoria (devuelve el turno degradado, salvo
+    ``ModelNotServedError``: deploy roto), asi que commitear despues es seguro y evita
+    ``ChatSession`` huerfanas. Ver el docstring de ``ChatService`` para el detalle.
 
 (2) Sin historial multi-turno. ``route()`` arma ``messages`` desde cero (system + user
     actual) en cada request: NO usa turnos previos como contexto. Pero los turnos SI se
@@ -32,8 +33,9 @@ Decisiones de diseno M9 (criticadas adversarialmente, NO re-litigar):
 
 Mapeo de errores (decision #7): 422 validacion (Pydantic, automatico), 401 sin token /
 token invalido (``get_current_user``), 404 sesion ajena/inexistente, 409 mode mismatch,
-429 rate-limit, 200 + fallback ante overflow/error del LLM (``route()`` ya lo captura),
-500 solo ante un bug no anticipado (Sentry ``before_send`` scrubea).
+429 rate-limit, 200 + fallback ante un error del modelo o de los embeddings de la memoria
+(``route()`` ya lo captura), 500 ante ``ModelNotServedError`` (deploy roto) o un bug no
+anticipado (Sentry ``before_send`` scrubea).
 
 Streaming (M9 Ola 3): ``POST /v1/chat/stream`` re-emite la MISMA respuesta del turno como
 un stream SSE con eventos con nombre (``token`` / ``done`` / ``error``) que el parser de

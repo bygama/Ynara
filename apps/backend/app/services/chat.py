@@ -18,13 +18,15 @@ Reparto router ↔ service:
 Orden transaccional (decisión #2 M9 + M10 Ola 0):
 ``resolve_chat_session`` (flush en el router, asigna el id sin commit) → ``route()``
 → ``session.commit()`` DESPUÉS de ``route()`` → ``consolidate_turn.delay()`` DESPUÉS
-del commit. Es seguro commitear al final porque ``route()`` NUNCA propaga errores del
-LLM (overflow / error permanente devuelven fallback): así se evita persistir una
-``ChatSession`` huérfana y se mantiene el commit único por request. Si saltara un bug
-inesperado antes del commit, ``get_db()`` hace rollback y nada se persiste (ni se
-encola: el enqueue es lo último). El ``commit`` queda JUNTO al enqueue (no en el
-endpoint) porque el enqueue-post-commit es un invariante de dominio: separarlos
-rompería la garantía de "encolar solo después de persistir".
+del commit. Es seguro commitear al final porque ``route()`` no propaga los errores del
+modelo ni los de los embeddings con que busca en la memoria: devuelve el turno degradado
+(``finish_reason='degraded'``). Así se evita persistir una ``ChatSession`` huérfana y se
+mantiene el commit único por request. La excepción es ``ModelNotServedError`` (deploy
+roto): propaga como 500 y, igual que un bug inesperado antes del commit, ``get_db()``
+hace rollback y nada se persiste (ni se encola: el enqueue es lo último). El ``commit``
+queda JUNTO al enqueue (no en el endpoint) porque el enqueue-post-commit es un
+invariante de dominio: separarlos rompería la garantía de "encolar solo después de
+persistir".
 
 Tools SÍNCRONAS en el turno (ADR-022): las tools de agente (``calendar``/``task``) ya
 NO se accionan async por detrás. ``route()`` corre el tool-loop de producción con el
@@ -36,7 +38,7 @@ agente DOS veces por turno; ver ADR-022). La consolidación de MEMORIA sí sigue
 (``_enqueue_consolidation``, gateada por ``writes_memory``): no cambia.
 
 SAVEPOINT en turnos degradados (fix de la consecuencia negativa de ADR-022): ``route()``
-nunca propaga el ``LlmError`` (devuelve ``finish_reason='degraded'``), pero una tool pudo
+degrada el turno ante un ``LlmError`` (``finish_reason='degraded'``), pero una tool pudo
 haber flusheado un ``calendar_event`` / ``task`` ANTES de que el LLM degradara (en esa o
 en una iteración posterior del tool-loop). Para no commitear un evento/tarea fantasma sin
 un turno de conversación que lo confirme, ``run_turn`` envuelve ``route()`` en un
@@ -143,8 +145,10 @@ class ChatService:
             session_id=str(chat_session.id),
         )
 
-        # Router LLM. NUNCA propaga errores del LLM (captura overflow / error permanente
-        # y devuelve fallback), por eso es seguro commitear después.
+        # Router LLM. No propaga los errores del modelo ni los de los embeddings de la
+        # búsqueda de memoria (devuelve el turno degradado), por eso es seguro commitear
+        # después. La excepción es ModelNotServedError (deploy roto): propaga como 500 y
+        # get_db() hace rollback.
         #
         # SAVEPOINT alrededor de route() (ADR-022, fix del commit de tool degradado): las
         # tools de agente (``calendar``/``task``) hacen ``flush`` dentro de ``route()`` sobre

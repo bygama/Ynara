@@ -22,10 +22,11 @@ reales y verifican el flujo end-to-end por modo:
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -35,17 +36,20 @@ from app.llm.clients.fakes import FakeLlmClient
 from app.llm.clients.reranker import FakeReranker
 from app.llm.config import load_llm_config
 from app.llm.errors import (
+    EmbeddingDimensionError,
+    LlmAuthError,
     LlmBadRequestError,
     LlmContextOverflowError,
     LlmError,
     LlmOverloadedError,
+    LlmRateLimitError,
     LlmTimeoutError,
     LlmUnavailableError,
     ModelNotServedError,
     ToolParsingError,
 )
 from app.llm.router import route
-from app.llm.schemas import ChatRequest, CompletionResult, ToolCall
+from app.llm.schemas import ChatRequest, ChatResponse, CompletionResult, ToolCall
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -671,6 +675,98 @@ async def test_semantic_tool_parsing_error_degrades() -> None:
 
     assert resp.text == _FALLBACK_TEXT
     assert resp.finish_reason == "degraded"
+
+
+# ---------------------------------------------------------------------------
+# UNIT: falla de los embeddings al recuperar la memoria -> fallback (sin DB)
+# ---------------------------------------------------------------------------
+
+# Texto con forma de dato de usuario: no puede aparecer en los logs.
+_USER_TEXT = "el martes tengo turno con la psicologa"
+
+
+def _failing_embedder(error: Exception) -> MagicMock:
+    """Embedder que falla como el proveedor de embeddings (sin red)."""
+    embedder = MagicMock()
+    embedder.embed = AsyncMock(side_effect=error)
+    return embedder
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "error"),
+    [
+        (Mode.MEMORIA, LlmRateLimitError("HTTP 429", retry_after_s=3.0)),
+        (Mode.PRODUCTIVIDAD, LlmUnavailableError("HTTP 503")),
+        (Mode.ESTUDIO, LlmTimeoutError("timeout HTTP")),
+        (Mode.BIENESTAR, LlmAuthError("HTTP 401")),
+        (Mode.MEMORIA, EmbeddingDimensionError("768", expected=1024, received=768)),
+    ],
+    ids=["memoria-429", "productividad-503", "estudio-timeout", "bienestar-401", "dimension"],
+)
+async def test_memory_retrieval_error_degrades_the_turn(
+    mode: Mode, error: LlmError, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Si los embeddings fallan al recuperar la memoria, el turno degrada sin llamar al modelo.
+
+    Las busquedas semantica y episodica embeddean el mensaje antes de armar el contexto
+    (los cuatro modos que no son vida). Un error del proveedor de embeddings degrada el
+    turno con el MISMO ``ChatResponse`` que un error del modelo, en vez de salir de
+    ``route()`` como un 500. Tampoco se sigue con el bloque de memoria vacio: en los modos
+    que leen la memoria el modelo le diria al usuario que no tiene nada guardado. Sin DB:
+    los stores reales embeddean antes de tocar la sesion.
+    """
+    from app.llm.router import _FALLBACK_TEXT
+
+    fake = FakeLlmClient(models=frozenset({"conversacional", "agente"}))
+    embedder = _failing_embedder(error)
+
+    with caplog.at_level(logging.WARNING, logger="app.llm.router"):
+        resp = await route(
+            ChatRequest(text=_USER_TEXT, mode=mode, session_id="sess-memoria"),
+            session=MagicMock(),
+            user_id=uuid.uuid4(),
+            llm_client=fake,
+            embedder=embedder,
+            reranker=FakeReranker(),
+        )
+
+    assert resp == ChatResponse(
+        text=_FALLBACK_TEXT,
+        actions=[],
+        session_id="sess-memoria",
+        finish_reason="degraded",
+        reasoning=None,
+    )
+    embedder.embed.assert_awaited_once()
+    # El turno no sigue sin memoria: el modelo ni se llama.
+    assert fake.complete_calls == []
+    # Regla #4a: el log lleva solo el tipo del error, ni el texto del usuario ni el detail.
+    assert f"route degrado al recuperar la memoria: {type(error).__name__}" in caplog.messages
+    assert _USER_TEXT not in caplog.text
+    assert str(error) not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_model_not_served_in_memory_retrieval_propagates() -> None:
+    """Guarda: ``ModelNotServedError`` sigue propagando aunque salga de la memoria.
+
+    Es misconfiguracion de deploy, no degradacion (nota (c) del modulo): la red que
+    degrada la recuperacion de memoria no lo enmascara como turno degradado.
+    """
+    fake = FakeLlmClient(models=frozenset({"agente"}))
+
+    with pytest.raises(ModelNotServedError):
+        await route(
+            ChatRequest(text="hola", mode=Mode.MEMORIA, session_id="sess-notserved"),
+            session=MagicMock(),
+            user_id=uuid.uuid4(),
+            llm_client=fake,
+            embedder=_failing_embedder(ModelNotServedError("bge-m3")),
+            reranker=FakeReranker(),
+        )
+
+    assert fake.complete_calls == []
 
 
 @pytest.mark.asyncio
