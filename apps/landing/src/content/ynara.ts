@@ -10,7 +10,7 @@ export const site = {
   tagline: "Tu asistente personal con memoria.",
   signoff: "Pensar mejor, recordar siempre.",
   description:
-    "Ynara es tu asistente personal con memoria: una sola app que organiza tu vida, recuerda todo y te acompaña. Privada y on-prem.",
+    "Ynara es tu asistente personal con memoria: una sola app que organiza tu vida, recuerda todo y te acompaña. Sin publicidad y sin venta de datos.",
   verbs: ["Organiza", "Recuerda", "Acompaña"],
 } as const;
 
@@ -114,14 +114,14 @@ export const memory = {
   // Statement grande del beat "confianza" — clave para que descarguen.
   statement: "Tus datos son tuyos. No se venden, nunca.",
   support:
-    "Ynara te recuerda de verdad — nombres, charlas, tu forma de hacer las cosas. Pero la inferencia corre on-prem, privada: nada sale del perímetro.",
+    "Ynara te recuerda de verdad — nombres, charlas, tu forma de hacer las cosas. Esa memoria vive en la infraestructura de Ynara, y tus charlas, sus resúmenes y los hechos que aprende de vos se guardan cifrados. Para responderte usa modelos de proveedores externos: les llega solo lo necesario, y solo trabajamos con los que no entrenan con tus datos.",
   layers: [
     { title: "Semántica", body: "Quién sos y qué te importa: nombres, gustos, rutinas." },
     { title: "Episódica", body: "Lo que pasó: cada conversación, con su fecha y contexto." },
     { title: "Procedural", body: "Cómo hacés las cosas: tus atajos, tu forma de trabajar." },
   ],
   pull: "Cita textual lo que recuerda. Nunca inventa.",
-  privacy: ["Sin venta de datos", "Sin publicidad", "Inferencia on-prem"],
+  privacy: ["Sin venta de datos", "Sin publicidad", "Sin entrenar con tus datos"],
 } as const;
 
 export const feel = {
@@ -215,5 +215,5 @@ export const footer = {
       ],
     },
   ],
-  meta: "Self-hosted · Hecho en Argentina",
+  meta: "Hecho en Argentina",
 } as const;
