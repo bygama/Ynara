@@ -17,7 +17,7 @@ Reglas no negociables (ADR-010 + critica adversarial M8):
    cierra los clientes que armo al terminar cada intento (``_aclose_quietly``).
    El engine de DB usa ``NullPool`` obligatorio (sin el, reusar conexiones
    entre event loops distintos da 'Future attached to a different loop').
-5. Parseo defensivo heredado de ``QwenMemoryEngine._parse_ops``: JSON
+5. Parseo defensivo heredado de ``AgentMemoryEngine`` (``_parse_ops``): JSON
    invalido / ops malformadas -> [] sin crashear el worker.
 6. Ningun dato de usuario a logs (regla #4): el payload (turno del usuario)
    queda en Redis y el worker; al proveedor de IA va solo lo que pide la
@@ -55,7 +55,7 @@ from app.llm.clients.factory import build_embedder, build_llm_client, build_rera
 from app.llm.clients.reranker import Reranker
 from app.llm.config import load_llm_config
 from app.llm.errors import LlmTransientError
-from app.llm.memory_engine import QwenMemoryEngine, apply_ops
+from app.llm.memory_engine import AgentMemoryEngine, apply_ops
 from app.memory.audit import AuditStore
 from app.memory.config import MemoryConfigError, RetentionConfig, load_retention_config
 from app.memory.episodic import EpisodicMemoryStore  # noqa: F401 -- target de patch en tests
@@ -156,7 +156,7 @@ async def _consolidate_turn_in_db(
     saltearlo perderia el turno. La extraccion con el LLM corre ANTES de tomar la fila,
     asi el lock dura lo que tarda ``apply_ops`` y no la llamada al modelo.
     """
-    mem_engine = QwenMemoryEngine(llm_client, model=MODEL_ALIAS_AGENT)
+    mem_engine = AgentMemoryEngine(llm_client, model=MODEL_ALIAS_AGENT)
     # Una falla transitoria del LLM (LlmTransientError) sale de aca, antes de tocar la DB.
     ops = await mem_engine.consolidate(
         user_msg=user_msg,
