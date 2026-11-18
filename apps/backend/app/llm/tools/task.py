@@ -157,10 +157,10 @@ class _AgentCreateTaskArgs(BaseModel):
     (independiente de ``strict``). ``Field(gt=0)`` mantiene ``duration_min`` positivo.
 
     Cotas superiores LLM-fed (defensa en profundidad, lección de la review de Fase E):
-    estos args los llena qwen, así que se ACOTAN para que un título de 50KB o una
-    duración absurda no lleguen al store / la DB. ``TaskCreate`` (el dominio, contrato
-    del front) NO lleva estos caps ("Pydantic gana"); el cap vive SOLO en la
-    superficie del agente, que es la no confiable.
+    estos args los llena el modelo del alias agente, así que se ACOTAN para que un
+    título de 50KB o una duración absurda no lleguen al store / la DB. ``TaskCreate``
+    (el dominio, contrato del front) NO lleva estos caps ("Pydantic gana"); el cap
+    vive SOLO en la superficie del agente, que es la no confiable.
     """
 
     model_config = ConfigDict(strict=False, extra="forbid")
@@ -185,10 +185,10 @@ class _AgentListTasksArgs(BaseModel):
 class AgentCreateTaskTool:
     """Crea una tarea REAL en ``tasks`` (Fase D1).
 
-    La pasada asíncrona del agente (qwen por detrás de la conversación) llama esta
-    tool para anotar los pendientes conversados. Escribe vía ``TaskStore`` (ligado al
-    ``user_id`` real): aislamiento estructural + idempotencia (un retry de Celery no
-    duplica la tarea; ver ``TaskStore.create_task``).
+    La pasada asíncrona del agente (el modelo del alias agente, por detrás de la
+    conversación) llama esta tool para anotar los pendientes conversados. Escribe vía
+    ``TaskStore`` (ligado al ``user_id`` real): aislamiento estructural + idempotencia
+    (un retry de Celery no duplica la tarea; ver ``TaskStore.create_task``).
 
     El resultado es un dict serializable (``id`` + campos de la tarea), NO el ORM: el
     modelo / el caller ven la tarea creada sin metadata interna (``user_id`` /

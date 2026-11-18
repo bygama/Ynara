@@ -1,4 +1,4 @@
-"""Registro de tools del agente Qwen (M6).
+"""Registro de tools del alias agente (M6).
 
 ``ToolRegistry`` mapea ``name -> Tool`` y conoce el ``namespace`` de cada
 una. El router (M8) le pasa los namespaces habilitados para el modo activo
@@ -7,9 +7,10 @@ mandar al modelo; cuando el modelo pide una tool, el registry la ejecuta y
 **envuelve cualquier excepcion** en el dict de error estructurado, asi el
 modelo nunca ve un traceback.
 
-El registry no filtra por modelo: que solo los modos Qwen reciban tools lo
-decide el router via ``tools_enabled`` (los modos Gemma tienen la lista
-vacia: son solo conversacionales, ADR-002; el routing real es M8).
+El registry no filtra por modelo: que solo los modos del alias agente reciban
+tools lo decide el router via ``tools_enabled`` (los modos del alias
+conversacional tienen la lista vacia: solo conversan, ADR-028 D3; el routing
+real es M8).
 """
 
 from __future__ import annotations

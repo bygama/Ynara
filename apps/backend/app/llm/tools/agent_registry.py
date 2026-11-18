@@ -23,7 +23,7 @@ TODO el armado está gateado por ``tools_enabled`` del modo activo (config-drive
 lista. Es el MISMO gate que usa la pasada async (ADR-021) y el que filtra las specs
 hacia el modelo (``specs_for(enabled)``). El efecto neto: ``calendar``/``task``/``reminder``
 reales solo existen en ``productividad`` (el único modo que los habilita hoy); los modos
-gemma (``tools_enabled=[]``) obtienen un registry vacío.
+del alias conversacional (``tools_enabled=[]``) obtienen un registry vacío.
 
 ``reminder`` ya es una tool REAL
 --------------------------------
@@ -159,9 +159,10 @@ def build_chat_tool_registry(
     ``ChatService.run_turn``).
 
     Gating estricto por modo: un namespace que NO esté en ``tools_enabled`` no aporta
-    ninguna tool. Para los modos gemma (``tools_enabled=[]``) el registry queda vacío;
-    para ``memoria`` (``tools_enabled=[memory]``) tampoco hay calendar/task/reminder (el
-    namespace ``memory`` lo maneja ``MemoryContext`` aparte, vía ``memory_registry``).
+    ninguna tool. Para los modos del alias conversacional (``tools_enabled=[]``) el
+    registry queda vacío; para ``memoria`` (``tools_enabled=[memory]``) tampoco hay
+    calendar/task/reminder (el namespace ``memory`` lo maneja ``MemoryContext`` aparte,
+    vía ``memory_registry``).
 
     Hoy es idéntico a ``_build_agent_registry`` (ya no hay stubs especiales: ``reminder``
     pasó a ser una tool real con backend). Se mantiene como función separada porque es la
