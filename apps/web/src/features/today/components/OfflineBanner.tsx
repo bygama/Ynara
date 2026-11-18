@@ -18,8 +18,9 @@ const getSnapshot = () => navigator.onLine;
 const getServerSnapshot = () => true;
 
 /**
- * Banner "Sin conexión · trabajando local" (wireframe 16). Ynara funciona
- * local, así que perder la red no es un error: es un estado informado y calmo.
+ * Banner "Sin conexión" (wireframe 16). Sin red no hay respuestas ni cambios
+ * guardados: el chat y los datos pasan por el backend, y la IA por proveedores
+ * externos. El banner lo dice tal cual, como un estado informado y calmo.
  * Se suscribe a `online`/`offline` vía `useSyncExternalStore` (SSR-safe) y sólo
  * aparece cuando no hay conexión.
  */
@@ -33,7 +34,7 @@ export function OfflineBanner() {
         <Icon name="conexion" size={18} />
       </span>
       <span className="text-body-sm text-[var(--color-ink-soft)]">
-        Sin conexión · trabajando local
+        Sin conexión · no podemos responder ni guardar cambios
       </span>
     </output>
   );
