@@ -14,11 +14,19 @@
 
 Cinco modos (productividad, estudio, bienestar, vida, memoria) sobre dos
 alias de modelo (`conversacional` + `agente`), memoria semántica +
-episódica + procedural sobre Postgres + pgvector. La inferencia se consume
-por API, con una lista de proveedores en orden de prioridad y respaldo (ver
-[`ADR-028`](./docs/architecture/adrs/ADR-028-inferencia-por-api.md)). Los datos de usuario
-solo van a proveedores aprobados y solo para la inferencia; hasta cerrar las
-compuertas de ADR-028, los proveedores reciben solo datos sintéticos.
+episódica + procedural sobre Postgres + pgvector. Ynara responde con modelos
+de lenguaje de proveedores externos, consumidos por API, con una lista de
+proveedores en orden de prioridad y respaldo (ver
+[`ADR-028`](./docs/architecture/adrs/ADR-028-inferencia-por-api.md)).
+
+La cuenta y la memoria viven en la infraestructura de Ynara; los hechos, los
+resúmenes de sesión y los turnos de conversación se guardan cifrados por
+usuario ([`ADR-007`](./docs/architecture/adrs/ADR-007-memory-decay-retention-encryption.md)).
+A cada llamada, el proveedor recibe solo lo que esa llamada necesita. Solo se
+trabaja con proveedores con contrato de tratamiento de datos y que no entrenen
+con ellos, y la lista se publica en la política de privacidad antes de que
+alguno reciba datos reales: hasta cerrar las compuertas de ADR-028, los
+proveedores reciben solo datos sintéticos.
 
 - **Humanos**: empezá por [Quick Start](#quick-start) y después
   [`docs/operations/LOCAL-DEV.md`](./docs/operations/LOCAL-DEV.md).
@@ -155,7 +163,7 @@ Atajos completos en [`Makefile`](./Makefile).
 | Web | Next.js 16, TypeScript strict, Tailwind v4 (CSS-first), shadcn/ui, GSAP, Lenis, TanStack Query v5, Zustand v5, React Hook Form + Zod, Auth.js v5 |
 | Mobile | Expo SDK 53+, Expo Router (file-based), NativeWind, TanStack Query, Zustand, expo-secure-store, expo-notifications |
 | Backend | Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2 async, Alembic, Celery 5.4+, uv, Ruff |
-| LLM | Inferencia por API con proveedores compatibles con OpenAI y respaldo (ADR-028), Unsloth + QLoRA (fine-tuning), LlamaIndex (orquestación) |
+| LLM | Inferencia por API con proveedores compatibles con OpenAI y respaldo (ADR-028), cliente HTTP sobre httpx, sin SDK de proveedor |
 | DB (MVP) | Supabase como Postgres 16 gestionado + pgvector, Redis (Upstash o Docker) |
 | DB (V2) | Postgres 16 self-hosted + pgvector, Redis self-hosted |
 | Monorepo | pnpm 10+, Turborepo 2.x, Biome 2.x |
@@ -216,7 +224,7 @@ ynara/
 ├── DESIGN.md                # Sistema visual (vacío hasta aprobación)
 ├── IDENTITY.md              # 4 pilares de marca + voz
 ├── README.md                # Este archivo
-├── ynara.config.json        # 5 modos + 2 modelos + memoria + infra
+├── ynara.config.json        # 5 modos + 2 alias de modelo + memoria + infra
 │
 ├── apps/
 │   ├── web/                 # Next.js 16 + Tailwind v4 + shadcn/ui
@@ -314,7 +322,7 @@ para V2 post-validación de producto.
 | Fase | DB | Cache | Inferencia | Por qué |
 | --- | --- | --- | --- | --- |
 | **MVP** (hoy) | Supabase (Postgres 16 + pgvector) | Upstash o Docker | Por API, con proveedores aprobados (ADR-028) | Velocidad sin DevOps inicial |
-| **V2** (post-PMF) | Postgres 16 self-hosted | Redis self-hosted | Por API (ADR-028) | Alineado a "infra propia" |
+| **V2** (post-PMF) | Postgres 16 self-hosted | Redis self-hosted | Por API (ADR-028) | Control directo de la base (ADR-005) |
 
 **Reglas que hacen la migración trivial**:
 
@@ -333,10 +341,13 @@ Producto comercial. Las ventajas defensivas:
 - **Modelos intercambiables** — la inferencia va por API detrás de dos alias, con
   una lista de proveedores y respaldo: cambiar de proveedor o de modelo es
   configuración (ADR-028).
-- **Memoria propia** — el dato vive donde nosotros lo ponemos, no en SaaS de terceros.
+- **Memoria propia** — engine in-house sobre la base de Ynara (ADR-010), no un
+  servicio de memoria de terceros.
 - **Tono y lengua** — rioplatense específico, no traducido a escala global.
-- **Datos con reglas propias** — los datos del usuario van solo a proveedores
-  aprobados y solo para la inferencia (regla #4).
+- **Datos con reglas propias** — los datos del usuario no van a APIs externas,
+  analytics ni servicios de IA de terceros, salvo a los proveedores de IA con
+  contrato de tratamiento de datos y que no entrenen con ellos: solo para la
+  inferencia y solo lo que cada llamada necesita (regla #4).
 
 Visión completa: [`docs/product/VISION.md`](./docs/product/VISION.md).
 Identidad de marca: [`IDENTITY.md`](./IDENTITY.md).
