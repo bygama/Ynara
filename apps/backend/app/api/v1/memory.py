@@ -26,17 +26,20 @@ Mapeo de errores (status ↔ excepción de dominio): 422 ``InvalidMemoryRefError
 ``MemoryFieldRequiredError`` / ``WipeConfirmRequiredError`` · 404
 ``MemoryItemNotFoundError`` (mismo detail para ajena e inexistente, sin oráculo) ·
 405 ``EpisodicNotEditableError`` · 409 ``WipeCountMismatchError`` (con los conteos
-actuales) · 429 rate-limit · 401 sin token (``get_current_user``).
+actuales) · 429 rate-limit · 401 sin token (``get_current_user``) · 503 en el search si
+falla el proveedor de embeddings (``LlmError``; ``Retry-After`` si su 429 lo trajo).
 """
 
 from __future__ import annotations
 
+import logging
+import math
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import JSONResponse
 
-from app.api.v1._http import too_many_requests
+from app.api.v1._http import service_unavailable, too_many_requests
 from app.core.config import get_settings
 from app.core.deps import (
     CurrentUser,
@@ -53,6 +56,7 @@ from app.core.ratelimit import (
 from app.enums import MemoryLayer
 from app.llm.clients.embedding import EmbeddingClient
 from app.llm.clients.reranker import Reranker
+from app.llm.errors import LlmError, LlmRateLimitError
 from app.schemas.memory import (
     EpisodicMemoryOut,
     ProceduralMemoryOut,
@@ -79,6 +83,8 @@ from app.services.memory import (
     WipeConfirmRequiredError,
     WipeCountMismatchError,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -155,6 +161,18 @@ def _to_http(exc: MemoryServiceError) -> HTTPException:
     # Exhaustivo: todas las subclases de MemoryServiceError están mapeadas arriba. Un
     # tipo nuevo sin mapear es un bug → re-raise (500 explícito) antes que un detail vacío.
     raise exc  # pragma: no cover
+
+
+def _retry_after(exc: LlmError) -> int | None:
+    """Segundos enteros del ``Retry-After`` del 503 del search, o ``None`` si no hay.
+
+    Solo un 429 del proveedor de embeddings trae una espera (``retry_after_s``, ya en
+    segundos y nunca negativa). Se redondea para arriba: reintentar antes de lo pedido
+    se come otro 429.
+    """
+    if isinstance(exc, LlmRateLimitError) and exc.retry_after_s is not None:
+        return math.ceil(exc.retry_after_s)
+    return None
 
 
 @router.get("/memory", response_model=None, status_code=200)
@@ -271,6 +289,10 @@ async def search_memory(
     - Rate-limit (el search dispara el pipeline caro embed por API → ANN): bucket por
       ``user_id``, DESPUÉS del short-circuit de query en blanco y ANTES de instanciar
       stores o correr el pipeline; fail-open si Redis cae; 429 con ``Retry-After``.
+    - Proveedor de embeddings caído (cualquier ``LlmError`` al embeddear la query): 503
+      con un ``detail`` neutro y, si el proveedor respondió 429 con ``Retry-After``, ese
+      header en segundos enteros (redondeado para arriba). No es el 429 de arriba: la
+      cuota del usuario no se agotó.
 
     Regla #4: el ``snippet`` viaja descifrado (el store descifra in-process); el blob
     cifrado nunca entra a la respuesta. ``score`` es un proxy por rank.
@@ -283,7 +305,13 @@ async def search_memory(
         raise too_many_requests(get_settings().memory_search_window_seconds)
 
     service = _service(session, user_id, embedder, reranker)
-    return await service.search(query)
+    try:
+        return await service.search(query)
+    except LlmError as exc:
+        # El proveedor de embeddings no tiene respaldo ni reintento: su caída es un 503
+        # neutro, no el 500 de un bug. Se loguea SOLO el tipo (regla #4).
+        logger.warning("memory search: embeddings no disponibles: %s", type(exc).__name__)
+        raise service_unavailable(_retry_after(exc)) from exc
 
 
 @router.get("/memory/{layer}/{ref}", response_model=None, status_code=200)
