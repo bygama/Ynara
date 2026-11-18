@@ -30,7 +30,8 @@ Norte: nivel Awwwards. Si una decisión se siente "prolija pero segura", está m
 
 ## 1. Qué es Ynara (contexto, no negociable)
 
-Asistente personal adaptativo con **memoria propia, on-prem** (modelos Gemma+Qwen),
+Asistente personal adaptativo con **memoria propia** (la IA, por API de proveedores
+externos: [ADR-028](../../docs/architecture/adrs/ADR-028-inferencia-por-api.md)),
 para estudiantes y jóvenes profesionales de LATAM. **Una sola presencia** que
 reemplaza la dispersión de apps. Diferencial: integra las **3 capas que nadie
 cruza** — productividad + memoria + bienestar. **5 modos** (productividad, estudio,
