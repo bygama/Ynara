@@ -75,7 +75,7 @@ class ServingModelOut(YnaraBaseModel):
     writes_memory: bool
     context_tokens: int  # presupuesto de contexto del alias (ynara.config.json)
     healthy: bool  # serves_model(alias) ∧ health agregada
-    default_thinking: bool  # False conversational, True agent (gotcha Gemma, ADR-012 D4)
+    default_thinking: bool  # False conversational, True agent (intención por rol, ADR-028 D3)
 
 
 class ServingOut(YnaraBaseModel):
