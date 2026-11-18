@@ -31,8 +31,8 @@ NO se accionan async por detrás. ``route()`` corre el tool-loop de producción 
 registry REAL (``build_chat_tool_registry`` vía ``build_memory_context``): las tool
 calls que el modelo emita ESCRIBEN dentro de ``route()`` sobre ESTA misma sesión, y el
 ``session.commit()`` de abajo las persiste atómicas con el turno (un solo commit). Por
-eso ``run_turn`` ya NO encola ``agent_turn_pass`` (seguir haciéndolo dispararía qwen
-DOS veces por turno; ver ADR-022). La consolidación de MEMORIA sí sigue async
+eso ``run_turn`` ya NO encola ``agent_turn_pass`` (seguir haciéndolo dispararía al
+agente DOS veces por turno; ver ADR-022). La consolidación de MEMORIA sí sigue async
 (``_enqueue_consolidation``, gateada por ``writes_memory``): no cambia.
 
 SAVEPOINT en turnos degradados (fix de la consecuencia negativa de ADR-022): ``route()``
@@ -210,7 +210,7 @@ class ChatService:
         # (``calendar``/``task``) ya se ejecutaron SÍNCRONAS dentro de ``route()`` (el
         # tool-loop de producción usa el registry real vía ``build_chat_tool_registry``)
         # y se commitearon atómicas con el turno arriba. Seguir encolando la pasada async
-        # dispararía qwen DOS veces por turno. La consolidación de memoria SÍ sigue async.
+        # dispararía al agente DOS veces por turno. La consolidación de memoria SÍ sigue async.
         await self._enqueue_consolidation(chat_session, body=body, resp=resp, turn_seq=turn_seq)
 
         return resp
@@ -245,10 +245,11 @@ class ChatService:
 
         Limitación conocida: los turnos del modelo se re-inyectan como texto plano
         (``content``), SIN ``tool_calls`` (que no se persisten en
-        ``conversation_turns``). Para Gemma (sin tools) es irrelevante. Para Qwen, un
-        turno histórico que llamó una tool se replica como mensaje assistant de texto:
-        el transcript Q→A queda coherente, pero no se replica el estado de tools
-        intermedio (las tool_calls ejecutadas ya tuvieron efecto en su turno original).
+        ``conversation_turns``). Para el alias conversacional (sin tools) es
+        irrelevante. Para el alias agente, un turno histórico que llamó una tool se
+        replica como mensaje assistant de texto: el transcript Q→A queda coherente,
+        pero no se replica el estado de tools intermedio (las tool_calls ejecutadas
+        ya tuvieron efecto en su turno original).
         """
         turns_store = ConversationTurnStore(self._session, self._user_id)
         # list_recent_for_session hace LIMIT a nivel DB y devuelve en orden cronológico.
@@ -336,11 +337,11 @@ class ChatService:
         """Encola ``consolidate_turn`` DESPUÉS del commit (M10 Ola 0), best-effort.
 
         MISMA condición que tenía ``route()`` (no se re-litiga): encolar SOLO si el modelo
-        del modo escribe memoria (``writes_memory``: Qwen=True, Gemma=False) y el turno NO
-        degradó. ``finish_reason 'degraded'`` lo produce el fallback de ``route()`` (error
-        LLM) o un ``CompletionResult`` degradado (cadena de fallback on-prem agotada); en
-        ambos casos NO consolidamos. Un turno con ``'max_iterations'`` NO es degradado y SÍ
-        consolida.
+        del modo escribe memoria (``writes_memory``: agente=True, conversacional=False)
+        y el turno NO degradó. ``finish_reason 'degraded'`` lo produce el fallback de
+        ``route()`` (error LLM) o un ``CompletionResult`` degradado (cadena principal →
+        respaldo agotada); en ambos casos NO consolidamos. Un turno con
+        ``'max_iterations'`` NO es degradado y SÍ consolida.
 
         Fail-open (doctrina del stack): ``.delay()`` publica al broker Redis de forma
         SÍNCRONA; si Redis está caído tira ``OperationalError`` / ``ConnectionError`` /
