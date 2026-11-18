@@ -41,8 +41,15 @@ Detalle de tablas en `apps/backend/docs/MODELS.md`.
 3. **Tablas sagradas.** `semantic_memory`, `episodic_memory`,
    `procedural_memory` solo se tocan con tests + 1 aprobación humana
    explícita (regla #3 de `AGENTS.md`).
-4. **Data del usuario nunca sale del perímetro** (regla #4 de
-   `AGENTS.md`).
+4. **Datos del usuario con reglas** (regla #4 de `AGENTS.md`). Nunca
+   en logs. La memoria se guarda en la infraestructura de Ynara, y para
+   usarla pasa por los proveedores de IA
+   ([ADR-028](../architecture/adrs/ADR-028-inferencia-por-api.md)): el contexto de
+   memoria del turno va al modelo que responde, el turno que se
+   consolida va al alias `agente`, y lo que se guarda o se busca se
+   embeddea con el proveedor de embeddings. A cada llamada va solo lo
+   que esa llamada necesita, y hasta cerrar las compuertas de ADR-028
+   los proveedores reciben solo datos sintéticos.
 
 ## Derechos del usuario
 
@@ -139,3 +146,7 @@ key server-side. Embeddings sin cifrar (necesarios para pgvector).
 no sensibles. Helper: `apps/backend/app/core/crypto.py`.
 
 Detalle completo, alternativas descartadas y mitigaciones en el ADR.
+
+El cifrado protege la base, no el procesamiento: el texto que se manda
+a inferir y a embeddear viaja por HTTPS y el proveedor de IA lo procesa
+en claro (ADR-028).
