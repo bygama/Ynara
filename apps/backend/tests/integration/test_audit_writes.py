@@ -441,7 +441,7 @@ async def test_apply_ops_without_audit_store_writes_no_audit(db_session: AsyncSe
 async def test_consolidate_end_to_end_writes_n_audit_rows(db_session: AsyncSession) -> None:
     """``_async_consolidate`` con N ops aplicadas escribe N filas de audit (write).
 
-    Usa el camino real (``QwenMemoryEngine`` sobre un ``FakeLlmClient`` con ops
+    Usa el camino real (``AgentMemoryEngine`` sobre un ``FakeLlmClient`` con ops
     encoladas) + la session inyectada del fixture, que es como corre el branch de
     test de ``_async_consolidate``: construye el ``AuditStore`` y lo pasa a
     ``apply_ops``.
