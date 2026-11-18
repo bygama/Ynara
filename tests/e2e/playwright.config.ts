@@ -6,7 +6,7 @@ import { defineConfig, devices } from "@playwright/test";
  * - `webServer` levanta el dev de apps/web con MSW activo
  *   (`NEXT_PUBLIC_ENABLE_MOCKS=true`), de modo que /v1/auth/* y
  *   /v1/user/onboard respondan con los handlers de `src/lib/api.mocks.ts`
- *   sin necesitar el backend real (regla AGENTS: nada sale del perímetro).
+ *   sin necesitar el backend real.
  * - El `predev` de apps/web corre `msw init public/`, generando el
  *   service worker que MSW usa en el browser.
  * - Un solo project chromium: el e2e valida el flujo, no cross-browser.
