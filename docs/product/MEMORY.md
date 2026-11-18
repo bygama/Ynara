@@ -12,8 +12,8 @@ usuario**.
   en `semantic_memory` — `content` cifrado AES-256-GCM + embedding
   bge-m3 (1024-dim) en claro sobre pgvector.
 - Cuánto vive: indefinido hasta que el usuario lo borre.
-- Quién la actualiza: solo Qwen 3.5-9B (modos Productividad +
-  Memoria), siempre vía Celery async.
+- Quién la actualiza: solo el alias `agente` (modos Productividad +
+  Memoria, y la consolidación), siempre vía Celery async.
 
 ### Episódica
 - Qué: resúmenes de conversaciones pasadas, recuperables por
@@ -21,19 +21,21 @@ usuario**.
 - Cómo: tabla `episodic_memory` con embedding del resumen + JSONB
   con metadata (modo, duración, tópicos).
 - Cuánto vive: 12 meses por defecto, configurable por el usuario.
-- Quién la actualiza: Qwen al cerrar sesión (async Celery).
+- Quién la actualiza: el alias `agente` al cerrar sesión (async Celery).
 
 ### Procedural
 - Qué: preferencias y patrones de comportamiento del usuario.
 - Cómo: tabla `procedural_memory` con JSONB estructurado.
 - Cuánto vive: indefinido. Decae si el patrón deja de observarse.
-- Quién la actualiza: Qwen vía pipeline de Celery + heurísticas.
+- Quién la actualiza: el alias `agente` vía pipeline de Celery +
+  heurísticas.
 
 Detalle de tablas en `apps/backend/docs/MODELS.md`.
 
 ## Reglas duras
 
-1. **Solo Qwen escribe memoria.** Gemma nunca, por diseño.
+1. **Solo el alias `agente` escribe memoria.** `conversacional` nunca,
+   por diseño.
 2. **Consolidación asíncrona.** La extracción/escritura nunca está en
    el path de respuesta al usuario.
 3. **Tablas sagradas.** `semantic_memory`, `episodic_memory`,
@@ -79,7 +81,10 @@ Cada operación sobre memoria queda registrada:
 - Timestamp UTC.
 - `user_id`.
 - Operación: read / write / update / delete.
-- Origen: modelo (qwen/gemma) + modo activo + tool si aplica.
+- Origen: modelo + modo activo + tool si aplica. El modelo queda con
+  los valores del enum de la tabla, `qwen` y `gemma`, nombres de antes
+  de [ADR-028](../architecture/adrs/ADR-028-inferencia-por-api.md): la
+  consolidación, que corre con el alias `agente`, escribe `qwen`.
 - Hash de la entrada afectada.
 
 Retención del audit log: 24 meses, **enforced**. La purga la corre el

@@ -1,24 +1,28 @@
 # MODES.md — Los 5 modos de Ynara
 
-Ynara tiene 5 modos. Cada uno cambia el modelo, el tono, las capas de
-memoria activas y las tools habilitadas. La configuración canónica
-vive en [`ynara.config.json`](../../ynara.config.json).
+Ynara tiene 5 modos. Cada uno cambia el alias de modelo, el tono, las
+capas de memoria activas y las tools habilitadas. La configuración
+canónica vive en [`ynara.config.json`](../../ynara.config.json).
+
+El alias (`conversacional` o `agente`) es la identidad del modelo: cada
+proveedor de IA lo traduce a su modelo concreto
+([ADR-028](../architecture/adrs/ADR-028-inferencia-por-api.md)).
 
 ## Tabla resumen
 
-| Modo | Modelo | Capas de memoria | Tools | Tono |
-|------|--------|------------------|-------|------|
-| Productividad | Qwen 3.5-9B | semantic, episodic | calendar, reminder, memory | neutro-eficaz |
-| Estudio | Gemma 4 12B | episodic, procedural | — | encouragement |
-| Bienestar | Gemma 4 12B | procedural, semantic | — | casual-empatico |
-| Vida | Gemma 4 12B | procedural | — | casual-rioplatense |
-| Memoria | Qwen 3.5-9B | episodic, semantic, procedural | memory | neutro-eficaz |
+| Modo | Alias de modelo | Capas de memoria | Tools | Tono |
+|------|-----------------|------------------|-------|------|
+| Productividad | `agente` | semantic, episodic | calendar, reminder, memory | neutro-eficaz |
+| Estudio | `conversacional` | episodic, procedural | — | encouragement |
+| Bienestar | `conversacional` | procedural, semantic | — | casual-empatico |
+| Vida | `conversacional` | procedural | — | casual-rioplatense |
+| Memoria | `agente` | episodic, semantic, procedural | memory | neutro-eficaz |
 
 ## Productividad
 
 > Para cerrar loops. Agendar, recordar, ejecutar.
 
-- Modelo: Qwen 3.5-9B (agente).
+- Alias de modelo: `agente`.
 - Lee y escribe memoria.
 - Tools: `calendar.*`, `reminder.*`, `memory.*`.
 - Tono: directo, eficaz, sin chamuyo. Confirma acciones tomadas.
@@ -32,7 +36,7 @@ Ejemplos:
 
 > Para entender, no para hacer la tarea.
 
-- Modelo: Gemma 4 12B (conversacional).
+- Alias de modelo: `conversacional`.
 - Lee memoria episódica + procedural. No escribe.
 - Sin tools — sesión cerrada de tutoría.
 - Tono: aliento + claridad. Explicaciones desde lo que el usuario ya
@@ -46,7 +50,7 @@ Ejemplos:
 
 > Para descomprimir. Acompañar sin terapizar.
 
-- Modelo: Gemma 4 12B.
+- Alias de modelo: `conversacional`.
 - Lee memoria procedural + semántica. No escribe.
 - Sin tools.
 - Tono: cálido sin pegote. **Prohibido** consejos clínicos, prohibido
@@ -62,10 +66,12 @@ Reglas duras:
 
 > Charla cotidiana, recomendaciones livianas.
 
-- Modelo: Gemma 4 12B.
+- Alias de modelo: `conversacional`.
 - Lee memoria procedural. No escribe.
-- Sin tools: Gemma es conversacional y solo lee memoria; las acciones
-  (calendar incluido) las maneja Qwen en Productividad (ADR-002).
+- Sin tools: el alias `conversacional` solo lee memoria; las acciones
+  (calendar incluido) las maneja el alias `agente` en Productividad
+  ([ADR-028](../architecture/adrs/ADR-028-inferencia-por-api.md),
+  que mantiene la separación de roles de ADR-002).
 - Tono: casual rioplatense. Voseo, modismos, sin afectación.
 
 Ejemplos:
@@ -76,7 +82,7 @@ Ejemplos:
 
 > Para recordar lo que se dijo. Recall explícito.
 
-- Modelo: Qwen 3.5-9B (agente).
+- Alias de modelo: `agente`.
 - Lee y escribe memoria (las 3 capas).
 - Tool: `memory.*`.
 - Tono: neutro-eficaz, cita textual cuando aplica.
@@ -88,7 +94,7 @@ Ejemplos:
 ## Cambio de modo
 
 - El usuario puede cambiar de modo explícitamente desde la UI.
-- El agente Qwen puede sugerir un cambio de modo si detecta intent
+- El alias `agente` puede sugerir un cambio de modo si detecta intent
   fuera del modo actual (ej: en Bienestar el usuario pide agendar
   algo).
 - El cambio se logea: el modo es contexto y queda en memoria
