@@ -20,7 +20,9 @@ export const AUDIT_PAGE_SIZE = 50;
  * Serializa filtros + paginación a los query params de `/v1/admin/audit`
  * (blueprint §4.5). Cada filtro en `null` se omite (= "sin filtrar por ese
  * campo"); `sensitive` es tri-estado (`null`/`true`/`false`), por eso se chequea
- * contra `null` y no por truthiness. `range` siempre viaja.
+ * contra `null` y no por truthiness. `range` siempre viaja. El id de modelo va
+ * recortado y se omite si queda vacío: el backend responde 422 a un
+ * `origin_model_id` vacío.
  *
  * Pura y exportada para que el hook y los tests compartan la misma
  * serialización (evita drift entre lo que se cachea y lo que se pide).
@@ -36,7 +38,8 @@ export function buildAuditQuery(
   if (filters.operation) sp.set("operation", filters.operation);
   if (filters.targetLayer) sp.set("target_layer", filters.targetLayer);
   if (filters.originMode) sp.set("origin_mode", filters.originMode);
-  if (filters.originModel) sp.set("origin_model", filters.originModel);
+  const originModelId = filters.originModelId?.trim();
+  if (originModelId) sp.set("origin_model_id", originModelId);
   if (filters.sensitive !== null) sp.set("sensitive", String(filters.sensitive));
   sp.set("limit", String(pageSize));
   sp.set("offset", String(page * pageSize));

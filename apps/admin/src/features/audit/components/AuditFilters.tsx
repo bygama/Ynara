@@ -1,15 +1,15 @@
 "use client";
 
-import { type ReactNode, useId } from "react";
+import { type ReactNode, useEffect, useId, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { ModeChip } from "@/components/ui/ModeChip";
 import { MODES } from "@/components/ui/modes";
 import {
   type AuditFilterState,
   type AuditOperationT,
-  type AuditOriginModelT,
   type AuditTargetLayerT,
   EMPTY_AUDIT_FILTERS,
+  ORIGIN_MODEL_ID_MAX_LENGTH,
 } from "@/features/audit/schemas";
 import { cn } from "@/lib/cn";
 
@@ -25,11 +25,6 @@ const LAYER_OPTIONS: ReadonlyArray<{ value: AuditTargetLayerT; label: string }> 
   { value: "procedural", label: "Procedural" },
 ];
 
-const MODEL_OPTIONS: ReadonlyArray<{ value: AuditOriginModelT; label: string }> = [
-  { value: "gemma", label: "Gemma" },
-  { value: "qwen", label: "Qwen" },
-];
-
 const OPERATION_OPTIONS: ReadonlyArray<{ value: AuditOperationT; label: string }> = [
   { value: "read", label: "Lectura" },
   { value: "write", label: "Escritura" },
@@ -37,7 +32,8 @@ const OPERATION_OPTIONS: ReadonlyArray<{ value: AuditOperationT; label: string }
   { value: "delete", label: "Borrado" },
 ];
 
-const SELECT_CLASS =
+/** Estilo compartido del select de capa y del input de modelo. */
+const CONTROL_CLASS =
   "text-body-sm h-9 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 text-[var(--color-ink)] transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out-soft)] hover:border-[var(--color-border-strong)]";
 
 /**
@@ -104,23 +100,35 @@ type Props = {
  * Sticky bajo el topbar (`z-sticky`) para que los filtros queden a mano mientras
  * se scrollea la tabla. Expone SOLO campos publicables: operación (toggles),
  * capa objetivo (select), modo de origen (toggles `ModeChip`), modelo de origen
- * (select) y sensibilidad (tri-estado: todos / sensibles / no sensibles). El
- * rango temporal NO está acá: lo hereda del topbar global.
+ * (texto: el id exacto, ADR-028) y sensibilidad (tri-estado: todos / sensibles /
+ * no sensibles). El rango temporal NO está acá: lo hereda del topbar global.
  *
  * Cada `onChange` reemplaza el estado completo (inmutable) y resetea
  * implícitamente la paginación en el page (que vuelve a página 0 al cambiar
- * filtros). Clic en una opción ya activa la apaga (vuelve a "todos").
+ * filtros). Clic en una opción ya activa la apaga (vuelve a "todos"). El id de
+ * modelo se aplica al apretar Enter o al salir del campo (no por tecla, para no
+ * pedir una página por cada letra) y vacío vuelve a "todos".
  */
 export function AuditFilters({ value, onChange, className }: Props) {
   const layerId = useId();
   const modelId = useId();
+  const [modelDraft, setModelDraft] = useState(value.originModelId ?? "");
+
+  // El borrador sigue al filtro aplicado (p.ej. al limpiar los filtros).
+  useEffect(() => {
+    setModelDraft(value.originModelId ?? "");
+  }, [value.originModelId]);
 
   const patch = (next: Partial<AuditFilterState>) => onChange({ ...value, ...next });
+  const commitModel = () => {
+    const next = modelDraft.trim() || null;
+    if (next !== value.originModelId) patch({ originModelId: next });
+  };
   const isDirty =
     value.operation !== null ||
     value.targetLayer !== null ||
     value.originMode !== null ||
-    value.originModel !== null ||
+    value.originModelId !== null ||
     value.sensitive !== null;
 
   return (
@@ -156,7 +164,7 @@ export function AuditFilters({ value, onChange, className }: Props) {
             onChange={(e) =>
               patch({ targetLayer: (e.target.value || null) as AuditTargetLayerT | null })
             }
-            className={SELECT_CLASS}
+            className={CONTROL_CLASS}
           >
             <option value="">Todas</option>
             {LAYER_OPTIONS.map((opt) => (
@@ -167,23 +175,23 @@ export function AuditFilters({ value, onChange, className }: Props) {
           </select>
         </FilterField>
 
-        {/* Modelo de origen — select */}
+        {/* Modelo de origen — id exacto, se aplica con Enter o al salir del campo */}
         <FilterField label="Modelo" htmlFor={modelId}>
-          <select
+          <input
             id={modelId}
-            value={value.originModel ?? ""}
-            onChange={(e) =>
-              patch({ originModel: (e.target.value || null) as AuditOriginModelT | null })
-            }
-            className={SELECT_CLASS}
-          >
-            <option value="">Todos</option>
-            {MODEL_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+            type="text"
+            value={modelDraft}
+            onChange={(e) => setModelDraft(e.target.value)}
+            onBlur={commitModel}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitModel();
+            }}
+            maxLength={ORIGIN_MODEL_ID_MAX_LENGTH}
+            placeholder="Todos (id exacto)"
+            autoComplete="off"
+            spellCheck={false}
+            className={cn(CONTROL_CLASS, "w-56")}
+          />
         </FilterField>
 
         {/* Sensibilidad — tri-estado */}

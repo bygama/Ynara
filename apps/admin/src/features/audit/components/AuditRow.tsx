@@ -111,6 +111,8 @@ type Props = {
 export function AuditRow({ row, staggerIndex = 0, className }: Props) {
   const created = new Date(row.created_at);
   const createdMs = created.getTime();
+  // El id que informó el proveedor (ADR-028) o, en filas viejas, el enum de antes.
+  const originModel = row.origin_model_id ?? row.origin_model;
 
   return (
     <div
@@ -146,10 +148,13 @@ export function AuditRow({ row, staggerIndex = 0, className }: Props) {
         )}
       </div>
 
-      {/* Origen: modelo + tool (NUNCA target_id ni record_hash) */}
+      {/* Origen: modelo + tool (NUNCA target_id ni record_hash). El id de modelo se
+          muestra tal cual (distingue mayúsculas); las filas viejas traen solo el enum. */}
       <div className="text-body-sm min-w-0 truncate text-[var(--color-ink-soft)]">
-        {row.origin_model ? (
-          <span className="text-[var(--color-ink)] uppercase">{row.origin_model}</span>
+        {originModel ? (
+          <span className="text-[var(--color-ink)]" title={originModel}>
+            {originModel}
+          </span>
         ) : (
           <span className="text-[var(--color-ink-muted)]">sin modelo</span>
         )}
