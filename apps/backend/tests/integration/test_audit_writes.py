@@ -607,7 +607,9 @@ async def test_audit_failure_is_isolated_by_savepoint(db_session: AsyncSession) 
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("model_id", ["org/agent-model-2026-06", "m" * 200])
+@pytest.mark.parametrize(
+    "model_id", ["org/agent-model-2026-06", "m" * 200], ids=["provider-id", "max-length"]
+)
 async def test_record_persists_origin_model_id(db_session: AsyncSession, model_id: str) -> None:
     """``AuditStore.record`` guarda el id tal cual (hasta 200) y deja ``origin_model`` NULL."""
     user = await _seed_user(db_session)
