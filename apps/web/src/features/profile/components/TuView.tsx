@@ -438,7 +438,7 @@ export function TuView() {
           <SettingsRow
             first
             title="Privacidad · tu memoria es tuya"
-            sub="Tu memoria está cifrada y la podés exportar cuando quieras. Nada se manda a IA de terceros."
+            sub="Tu memoria la podés exportar cuando quieras, y tus charlas, sus resúmenes y los hechos que Ynara aprende de vos se guardan cifrados. Para responderte, Ynara usa modelos de proveedores externos: les pasa solo lo necesario, y solo trabaja con los que no entrenan con tus datos."
           />
         </SettingsGroup>
 
