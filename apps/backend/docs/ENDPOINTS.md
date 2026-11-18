@@ -183,8 +183,13 @@ Dos endpoints: uno no-streaming (JSON) y uno SSE. Contrato + justificación en
   consolida (la `ChatSession` ancla sí se commitea). El **cliente DEBE** tratar
   `finish_reason="degraded"` como señal de "IA no disponible" y renderizar un estado
   honesto (descartando el `text` placeholder), **no** mostrarlo como una respuesta
-  real. El 500 real queda reservado a `ModelNotServedError` (misconfig de deploy) y
-  al cliente fake sin respuestas encoladas — casos distintos de "LLM caído".
+  real. El turno degrada igual, **sin** llamar al modelo, si falla el proveedor de
+  embeddings al recuperar la memoria (429, timeout, 5xx, credencial o dimensión
+  inesperada) en los modos que leen la semántica o la episódica (hoy todos menos
+  `vida`): no sigue con el bloque de memoria vacío, porque el modelo contestaría como
+  si no hubiera nada guardado. El 500 real queda reservado a `ModelNotServedError`
+  (misconfig de deploy) y al cliente fake sin respuestas encoladas — casos distintos
+  de "LLM caído".
 - Permisos: usuario autenticado.
 - Rate limit: por `user_id` (del JWT), `CHAT_MAX_REQUESTS` (60) por `CHAT_WINDOW_SECONDS` (60s); 429 con `Retry-After` al cruzar el techo. fail-open si Redis cae. Aplica a `/chat` y `/chat/stream`.
 - Modos: todos.
@@ -227,6 +232,11 @@ Invariantes (regla #3 / ADR-007 / ADR-010):
     sagrada no se toca, regla #3). `procedural` **no** entra (key-value, sin búsqueda
     semántica).
   - Response 422: `q` ausente o fuera de `1..200`.
+  - Response 503: falló el proveedor de embeddings al embeddear la query (cualquier
+    `LlmError`: 429, timeout, 5xx, credencial o dimensión inesperada), con
+    `detail: "servicio no disponible, intente mas tarde"`, que no repite la query ni
+    el texto del proveedor. Si el proveedor respondió 429 con `Retry-After`, el 503
+    trae ese header en segundos enteros (redondeado para arriba); si no, va sin él.
   - Permisos: **usuario autenticado** (su propia memoria; los stores filtran por
     `user_id`). El `snippet` va descifrado (regla #4); el blob cifrado nunca viaja. Sin
     migración; **no** toca `app/memory/` (solo llama a `search`, read).
