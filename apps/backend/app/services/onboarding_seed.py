@@ -68,7 +68,7 @@ logger = logging.getLogger(__name__)
 ONBOARDING_AUDIT_ORIGIN = "onboarding"
 
 # Key procedural de la dedicación. Idempotente por key (``upsert`` ON CONFLICT).
-# Namespaced para dejar la provenance clara y no colisionar con keys que Qwen pudiera
+# Namespaced para dejar la provenance clara y no colisionar con keys que el agente pudiera
 # inventar en la consolidación.
 DEDICATION_KEY = "onboarding.dedication"
 
