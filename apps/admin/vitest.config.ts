@@ -11,7 +11,9 @@ import { defineConfig } from "vitest/config";
  *   `@ynara/ui`) se resuelven a su entry de TS source en el workspace (no hay
  *   build step: `main`/`exports` apuntan a `./src/...`). Los resolvemos manual
  *   para no sumar `vite-tsconfig-paths`. Los subpaths de core (`/api`,
- *   `/query-keys`) van ANTES que el catch-all `@ynara/core` para que matcheen.
+ *   `/query-keys`, `/stores`, `/features/*`) van ANTES que el catch-all
+ *   `@ynara/core` para que matcheen. De `features/*` van los que importa el
+ *   panel: `modes` y `field` (los usa `components/ui/modes.ts`).
  * - environment jsdom + globals para no importar `describe/it/expect`.
  * - setupFiles carga jest-dom, mockea matchMedia y limpia el DOM.
  */
@@ -27,6 +29,12 @@ export default defineConfig({
       ),
       "@ynara/core/stores": fileURLToPath(
         new URL("../../packages/core/src/stores/index.ts", import.meta.url),
+      ),
+      "@ynara/core/features/field": fileURLToPath(
+        new URL("../../packages/core/src/features/field/index.ts", import.meta.url),
+      ),
+      "@ynara/core/features/modes": fileURLToPath(
+        new URL("../../packages/core/src/features/modes/index.ts", import.meta.url),
       ),
       "@ynara/core": fileURLToPath(new URL("../../packages/core/src/index.ts", import.meta.url)),
       "@ynara/shared-schemas": fileURLToPath(
