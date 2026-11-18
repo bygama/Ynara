@@ -150,7 +150,7 @@ const initialState: ChatState = {
  * Usa `crypto.randomUUID` cuando está disponible, pero cae a un v4 armado con
  * `crypto.getRandomValues` cuando NO lo está: `randomUUID` solo existe en
  * *secure contexts* (https:// o localhost), así que sobre `http://` por una IP de
- * LAN/Tailscale (ej. el amigo entrando por `100.x.x.x:3000`) sería `undefined` y
+ * LAN (ej. entrando desde otro equipo por `192.168.0.10:3000`) sería `undefined` y
  * el chat rompería al crear sesión. `getRandomValues` sí está en contextos
  * no-seguros, así que el fallback mantiene el chat funcional en ese escenario.
  */
