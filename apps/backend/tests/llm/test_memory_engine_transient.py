@@ -4,6 +4,8 @@ Una falla transitoria (``LlmTransientError``: 429, 5xx, timeout, breaker abierto
 respuesta degradada) se propaga, asi el worker de consolidacion reintenta el turno en vez
 de perderlo como si no hubiera nada que guardar. Lo permanente (credencial rechazada,
 request invalido) se sigue descartando con un log que lleva solo el tipo (regla #4a).
+Las excepciones de control que el worker pasa en ``reraise`` (el soft limit de Celery)
+tambien se propagan; cualquier otra se sigue descartando.
 Sin DB ni red: ``FakeLlmClient`` programable y stores mockeados.
 """
 
@@ -11,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -227,6 +230,74 @@ async def test_apply_ops_propagates_a_4xx_that_asks_to_repeat(status: int) -> No
     assert len(requests) == 1
     # El turno se corta: la op siguiente no se aplica en este intento.
     procedural.upsert.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# reraise: excepciones de control del worker
+# ---------------------------------------------------------------------------
+
+
+class _WorkerControl(Exception):
+    """Hace de excepcion de control del worker (el soft limit de Celery) sin importar Celery."""
+
+
+@pytest.mark.parametrize("call", [_consolidate, _summarize], ids=["consolidate", "summarize"])
+async def test_the_engine_reraises_the_worker_control_errors(
+    call: Callable[[AgentMemoryEngine], Awaitable[object]],
+) -> None:
+    """Lo que el worker pasa en ``reraise`` se propaga: no es un fallo del modelo."""
+    client = _llm()
+    client.queue_error(_WorkerControl())
+    engine = AgentMemoryEngine(llm_client=client, model="agente", reraise=(_WorkerControl,))
+
+    with pytest.raises(_WorkerControl):
+        await call(engine)
+
+
+async def test_the_engine_still_discards_any_other_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Con ``reraise`` el catch-all sigue: un error que no es del proveedor se descarta."""
+    client = _llm()
+    client.queue_error(RuntimeError("falla rara"))
+    engine = AgentMemoryEngine(llm_client=client, model="agente", reraise=(_WorkerControl,))
+
+    with caplog.at_level(logging.WARNING, logger="app.llm.memory_engine"):
+        extraction = await _consolidate(engine)
+
+    assert extraction == TurnExtraction()
+    assert "memory_engine: extraccion descartada (RuntimeError)" in caplog.messages
+
+
+async def test_apply_ops_reraises_the_worker_control_errors() -> None:
+    """La op cortada por el worker no se saltea: se propaga y no se aplican las siguientes."""
+    semantic = AsyncMock()
+    semantic.add = AsyncMock(side_effect=[_WorkerControl(), MagicMock(id=uuid4())])
+
+    with pytest.raises(_WorkerControl):
+        await apply_ops(
+            [_semantic_add("hecho uno"), _semantic_add("hecho dos")],
+            semantic_store=semantic,
+            procedural_store=AsyncMock(),
+            reraise=(_WorkerControl,),
+        )
+
+    assert semantic.add.await_count == 1
+
+
+async def test_apply_ops_with_reraise_still_skips_any_other_error() -> None:
+    """Con ``reraise`` el catch-all de la op sigue: otro error saltea solo esa op."""
+    semantic = AsyncMock()
+    semantic.add = AsyncMock(side_effect=[RuntimeError("op mala"), MagicMock(id=uuid4())])
+
+    applied = await apply_ops(
+        [_semantic_add("hecho uno"), _semantic_add("hecho dos")],
+        semantic_store=semantic,
+        procedural_store=AsyncMock(),
+        reraise=(_WorkerControl,),
+    )
+
+    assert applied == 1
 
 
 async def test_apply_ops_still_skips_a_non_transient_error() -> None:

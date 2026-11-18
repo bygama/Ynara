@@ -28,7 +28,10 @@ Decisiones (ADR-010 + critica adversarial M8, NO re-litigar):
    breaker abierto, respuesta degradada) se PROPAGA, en la extraccion, en el resumen
    y en el embedder de ``apply_ops``: el worker reintenta el turno entero. Tragarla
    (devolver ``[]`` o un resumen vacio) perdia el turno como si no hubiera nada que
-   guardar. Lo permanente (credencial, request invalido) se sigue descartando.
+   guardar. Lo permanente (credencial, request invalido) se sigue descartando. Las
+   excepciones de control que el worker pasa en ``reraise`` (el soft limit de Celery)
+   se propagan igual: el catch-all las tragaba como un error permanente. Este modulo
+   no importa Celery; la tupla la arma ``app.workflows.consolidation``.
 8. Auditoria con el modelo real (ADR-028): ``consolidate`` y ``summarize`` devuelven
    tambien el id del modelo que respondio, tal como lo informa el cliente
    (``CompletionResult.model_name``), normalizado para ``audit_log.origin_model_id``
@@ -408,11 +411,22 @@ class AgentMemoryEngine:
     Fuerza ``thinking=False`` en ambas llamadas (ADR-012 D4): la extraccion y el
     resumen necesitan JSON puro, y el razonamiento de un modelo thinking
     contaminaria ``result.text`` y degradaria el parseo en silencio (#235).
+
+    ``reraise`` son las excepciones de control de quien corre el motor (el worker pasa
+    el soft limit de Celery) que el catch-all NO debe tragar: se propagan igual que una
+    falla transitoria (decision #7). Vacio por default; este modulo no importa Celery.
     """
 
-    def __init__(self, llm_client: LLMClient, model: str = MODEL_ALIAS_AGENT) -> None:
+    def __init__(
+        self,
+        llm_client: LLMClient,
+        model: str = MODEL_ALIAS_AGENT,
+        *,
+        reraise: tuple[type[BaseException], ...] = (),
+    ) -> None:
         self._client = llm_client
         self._model = model
+        self._reraise = reraise
 
     async def consolidate(
         self,
@@ -450,9 +464,10 @@ class AgentMemoryEngine:
                 thinking=False,
                 max_tokens=512,
             )
-        except LlmTransientError:
+        except (LlmTransientError, *self._reraise):
             # 429, 5xx, timeout, breaker abierto o cadena agotada: mas tarde puede andar.
-            # Se propaga para que el worker reintente el turno en vez de perderlo.
+            # Se propaga para que el worker reintente el turno en vez de perderlo. Igual
+            # una excepcion de control del worker (``reraise``, p.ej. el soft limit).
             raise
         except Exception as exc:
             # Permanente (credencial rechazada, request invalido, modelo no servido) u
@@ -495,8 +510,9 @@ class AgentMemoryEngine:
                 thinking=False,
                 max_tokens=512,
             )
-        except LlmTransientError:
+        except (LlmTransientError, *self._reraise):
             # Mas tarde puede andar: se propaga para que el worker reintente el cierre.
+            # Igual una excepcion de control del worker (``reraise``).
             raise
         except Exception as exc:
             # Permanente u otro fallo: se descarta. Regla #4a: solo el tipo.
@@ -567,6 +583,7 @@ async def apply_ops(
     audit_store: AuditStore | None = None,
     origin_model_id: str | None = None,
     origin_mode: Mode | None = None,
+    reraise: tuple[type[BaseException], ...] = (),
 ) -> int:
     """Aplica cada op contra los stores de memoria.
 
@@ -584,8 +601,9 @@ async def apply_ops(
     (regla: el worker no muere por una op mala), salvo una falla TRANSITORIA
     del embedder (``LlmTransientError``: 429, 5xx, timeout): esa se propaga
     para que el worker reintente el turno entero, porque saltear la op perdia
-    el hecho en silencio. El savepoint ya revirtio esa op, pero las anteriores
-    quedan en la transaccion: quien llama tiene que descartar el intento
+    el hecho en silencio. Lo mismo con las excepciones de control de ``reraise``
+    (el soft limit que pasa el worker). El savepoint ya revirtio esa op, pero las
+    anteriores quedan en la transaccion: quien llama tiene que descartar el intento
     completo (el worker revierte la transaccion entera antes de reintentar).
 
     NOTA: sin dedup search-based en Ola 2. El search-before-add para evitar
@@ -637,6 +655,9 @@ async def apply_ops(
             audit; ``origin_model`` (el enum de antes de ADR-028) queda en NULL.
         origin_mode: Modo activo de la sesion, ya parseado a ``Mode`` (o ``None`` si
             el modo era invalido). Se persiste como ``origin_mode`` en cada fila.
+        reraise: Excepciones de control del caller que el ``except`` por-op NO debe
+            tragar (el worker pasa el soft limit de Celery). Se propagan como una
+            falla transitoria. Vacio (default) = solo ``LlmTransientError``.
 
     Returns:
         Cantidad de ops efectivamente aplicadas (NOOP y skips no cuentan).
@@ -663,9 +684,10 @@ async def apply_ops(
                 did_apply = await _apply_single_op(op, **op_kwargs)
             if did_apply:
                 applied += 1
-        except LlmTransientError:
-            # El embedder no respondio (429, 5xx, timeout): el savepoint revirtio ESTA
-            # op y se propaga para reintentar el turno entero (ver el docstring).
+        except (LlmTransientError, *reraise):
+            # El embedder no respondio (429, 5xx, timeout) o el worker corto el intento
+            # (``reraise``): el savepoint revirtio ESTA op y se propaga para reintentar el
+            # turno entero (ver el docstring).
             raise
         except Exception:
             # La op (o su audit) fallo: el savepoint ya revirtio ESTA op. Se loguea

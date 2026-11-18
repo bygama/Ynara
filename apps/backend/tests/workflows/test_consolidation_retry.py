@@ -10,7 +10,9 @@ programado, sin red.
   recuerdo se guarda UNA vez, en el intento que anda.
 - Un 401 es permanente: un solo intento, sin reintento y sin escribir.
 - Una respuesta degradada es transitoria: se reintenta.
-- Un intento que vence el soft limit (un proveedor lento) se reintenta igual.
+- Un intento que vence el soft limit (un proveedor lento) se reintenta igual, también
+  si vence adentro del motor de memoria (extracción, op o resumen): su catch-all no
+  lo traga.
 - Agotados los reintentos, la task termina sin propagar y loguea sin contenido.
 - Cada intento cierra el cliente HTTP que armo.
 - El chat no cambia: el mismo 429 le llega como respuesta degradada.
@@ -22,6 +24,7 @@ import json
 import logging
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -254,6 +257,51 @@ def test_an_attempt_past_the_soft_time_limit_is_retried(
     assert any("applied=1" in m for m in caplog.messages)
 
 
+def test_the_soft_limit_during_the_extraction_is_retried(
+    semantic_add: AsyncMock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """El soft limit vence mientras el modelo extrae: el motor no lo traga como un error
+    permanente (un turno sin ops), la task se reintenta y guarda el hecho una vez."""
+    fake = FakeLlmClient(models=frozenset({"agente"}))
+    fake.queue_error(SoftTimeLimitExceeded())
+    fake.queue_result(_result(_OPS))
+
+    with (
+        patch.object(consolidation, "_build_consolidation_llm", return_value=fake),
+        caplog.at_level(logging.INFO),
+    ):
+        result = consolidate_turn.apply(kwargs=_TURN)
+
+    assert result.state == "SUCCESS"
+    assert len(fake.complete_calls) == 2
+    semantic_add.assert_awaited_once()
+    assert any("intento=1: SoftTimeLimitExceeded, se reintenta" in m for m in caplog.messages)
+    assert not any("extraccion descartada" in m for m in caplog.messages)
+
+
+def test_the_soft_limit_during_an_op_is_retried(
+    semantic_add: AsyncMock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """El soft limit vence mientras se aplica una op (embed + INSERT): la op no se saltea,
+    la task se reintenta y el hecho se guarda en el segundo intento."""
+    semantic_add.side_effect = [SoftTimeLimitExceeded(), MagicMock(id=uuid4())]
+    fake = FakeLlmClient(models=frozenset({"agente"}))
+    fake.queue_result(_result(_OPS))
+    fake.queue_result(_result(_OPS))
+
+    with (
+        patch.object(consolidation, "_build_consolidation_llm", return_value=fake),
+        caplog.at_level(logging.INFO),
+    ):
+        result = consolidate_turn.apply(kwargs=_TURN)
+
+    assert result.state == "SUCCESS"
+    assert semantic_add.await_count == 2
+    assert any("intento=1: SoftTimeLimitExceeded, se reintenta" in m for m in caplog.messages)
+    assert any("applied=1" in m for m in caplog.messages)
+    assert not any("revertida (savepoint), skip" in m for m in caplog.messages)
+
+
 def test_gives_up_after_the_last_retry_without_propagating(
     semantic_add: AsyncMock, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -307,6 +355,40 @@ def test_consolidate_session_is_retried(failure: Exception) -> None:
 
     assert result.state == "SUCCESS"
     assert body.await_count == 2
+
+
+def test_the_soft_limit_during_the_summary_is_retried(caplog: pytest.LogCaptureFixture) -> None:
+    """El soft limit vence mientras el modelo resume la sesion: no queda como un resumen
+    vacio (el episodio perdido), la task se reintenta y crea el episodio una vez."""
+    fake = FakeLlmClient(models=frozenset({"agente"}))
+    fake.queue_error(SoftTimeLimitExceeded())
+    fake.queue_result(_result(json.dumps({"summary": "Charlamos de la mudanza.", "topics": {}})))
+    turns = MagicMock()
+    turns.list_for_session = AsyncMock(return_value=[SimpleNamespace(role="user", content=_SECRET)])
+    turns.purge_session = AsyncMock(return_value=1)
+    episodic = MagicMock()
+    episodic.add = AsyncMock(return_value=MagicMock(id=uuid4()))
+
+    with (
+        patch.object(consolidation, "worker_session", _mock_worker_session),
+        patch.object(consolidation, "_episode_exists", AsyncMock(return_value=False)),
+        patch.object(consolidation, "ConversationTurnStore", return_value=turns),
+        patch.object(consolidation, "EpisodicMemoryStore", return_value=episodic),
+        patch.object(consolidation, "AuditStore", return_value=AsyncMock()),
+        patch.object(consolidation, "_build_embedder", return_value=FakeEmbeddingClient()),
+        patch.object(consolidation, "_build_consolidation_llm", return_value=fake),
+        caplog.at_level(logging.INFO),
+    ):
+        result = consolidate_session.apply(
+            kwargs={"user_id": USER_ID, "session_id": SESSION_ID, "mode": "vida"}
+        )
+
+    assert result.state == "SUCCESS"
+    assert len(fake.complete_calls) == 2
+    episodic.add.assert_awaited_once()
+    assert any("intento=1: SoftTimeLimitExceeded, se reintenta" in m for m in caplog.messages)
+    assert not any("resumen descartado" in m for m in caplog.messages)
+    assert _SECRET not in caplog.text
 
 
 # ---------------------------------------------------------------------------
