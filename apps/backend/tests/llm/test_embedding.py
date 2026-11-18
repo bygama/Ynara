@@ -1,6 +1,6 @@
 """Contract test del EmbeddingClient + determinismo del FakeEmbeddingClient.
 
-Sin red ni GPU: el fake produce vectores deterministas. Estos tests blindan el
+Sin red ni proveedor: el fake produce vectores deterministas. Estos tests blindan el
 contrato que consumen los wrappers de memoria (M7) y el router (M8).
 """
 

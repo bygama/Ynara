@@ -165,12 +165,12 @@ def test_embedding_dimension_carries_only_the_dimensions() -> None:
 
 class TestDegradedResponse:
     def test_builds_completion_result(self) -> None:
-        result = degraded_response(text="no pude generar respuesta", model_name="qwen")
+        result = degraded_response(text="no pude generar respuesta", model_name="agente")
         assert result.finish_reason == "degraded"
         assert result.text == "no pude generar respuesta"
         assert result.tool_calls == []
         assert result.prompt_tokens == 0
-        assert result.model_name == "qwen"
+        assert result.model_name == "agente"
 
     def test_not_an_exception(self) -> None:
         result = degraded_response(text="x", model_name="m")

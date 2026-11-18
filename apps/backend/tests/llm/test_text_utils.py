@@ -1,7 +1,7 @@
 """Tests del util de texto compartido de la capa LLM (``app.llm.text_utils``).
 
 Sin DB ni red: ``split_thinking`` es una función pura. Cubre la separación del
-bloque ``<think>...</think>`` (Qwen thinking model) del texto limpio, usado por el
+bloque ``<think>...</think>`` (de un modelo thinking) del texto limpio, usado por el
 playground admin (Fase A, ADR-018) y, vía el regex reexportado, por el motor de
 memoria.
 """
