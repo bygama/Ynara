@@ -64,10 +64,13 @@ class MemoryLayer(StrEnum):
 
 
 class LlmModel(StrEnum):
-    """Modelo LLM que actuó como origen de una operación. Ver ADR-002.
+    """Modelo LLM que actuó como origen de una operación, de antes de ADR-028. Ver ADR-002.
 
     Tipo PG ``llm_model_enum`` — dueño: ``AuditLog.origin_model``
-    (único consumidor por ahora, ``create_type=True``).
+    (único consumidor, ``create_type=True``). Solo lo llevan las filas viejas de
+    ``audit_log``: con la inferencia por API (ADR-028) el modelo es un id de texto
+    del proveedor y va en ``AuditLog.origin_model_id``. Los valores no se quitan
+    (el tipo PG y las filas existentes los siguen usando).
     """
 
     GEMMA = "gemma"

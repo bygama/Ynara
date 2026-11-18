@@ -27,7 +27,13 @@ from app.llm.errors import (
     LlmTransientError,
     degraded_response,
 )
-from app.llm.memory_engine import AgentMemoryEngine, MemoryOp, SessionSummary, apply_ops
+from app.llm.memory_engine import (
+    AgentMemoryEngine,
+    MemoryOp,
+    SessionSummary,
+    TurnExtraction,
+    apply_ops,
+)
 
 _SECRET = "mi diagnostico es privado"
 
@@ -40,7 +46,7 @@ def _engine(client: object) -> AgentMemoryEngine:
     return AgentMemoryEngine(llm_client=client, model="agente")  # type: ignore[arg-type]
 
 
-async def _consolidate(engine: AgentMemoryEngine) -> list[MemoryOp]:
+async def _consolidate(engine: AgentMemoryEngine) -> TurnExtraction:
     return await engine.consolidate(user_msg=_SECRET, model_response="anotado", mode="vida")
 
 
@@ -86,9 +92,10 @@ async def test_consolidate_discards_a_permanent_error_without_content(
     client.queue_error(LlmAuthError("HTTP 401"))
 
     with caplog.at_level(logging.WARNING, logger="app.llm.memory_engine"):
-        ops = await _consolidate(_engine(client))
+        extraction = await _consolidate(_engine(client))
 
-    assert ops == []
+    # Sin ops y sin modelo: el modelo no llego a responder.
+    assert extraction == TurnExtraction()
     assert "memory_engine: extraccion descartada (LlmAuthError)" in caplog.messages
     assert _SECRET not in caplog.text
 
@@ -97,7 +104,7 @@ async def test_consolidate_discards_a_request_error() -> None:
     client = _llm()
     client.queue_error(LlmBadRequestError("HTTP 400"))
 
-    assert await _consolidate(_engine(client)) == []
+    assert await _consolidate(_engine(client)) == TurnExtraction()
 
 
 async def test_consolidate_with_the_worker_client_raises_on_a_sustained_429() -> None:
@@ -117,7 +124,7 @@ async def test_consolidate_with_the_worker_client_discards_a_401_without_retryin
     client = _llm()
     client.queue_error(LlmAuthError("HTTP 401"))
 
-    assert await _consolidate(_engine(_worker_client(client))) == []
+    assert await _consolidate(_engine(_worker_client(client))) == TurnExtraction()
     assert len(client.complete_calls) == 1
 
 

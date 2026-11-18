@@ -7,6 +7,7 @@ usuario/modelo y las aplica via ``SemanticMemoryStore`` /
 
 Componentes:
 - ``MemoryOp``: op atómica que describe qué escribir/borrar.
+- ``TurnExtraction``: las ops de un turno + el id del modelo que las extrajo.
 - ``MemoryEngine`` (Protocol): contrato de extraccion.
 - ``AgentMemoryEngine``: implementacion real via el alias ``agente`` (LLM call +
   parseo defensivo).
@@ -28,6 +29,11 @@ Decisiones (ADR-010 + critica adversarial M8, NO re-litigar):
    y en el embedder de ``apply_ops``: el worker reintenta el turno entero. Tragarla
    (devolver ``[]`` o un resumen vacio) perdia el turno como si no hubiera nada que
    guardar. Lo permanente (credencial, request invalido) se sigue descartando.
+8. Auditoria con el modelo real (ADR-028): ``consolidate`` y ``summarize`` devuelven
+   tambien el id del modelo que respondio, tal como lo informa el cliente
+   (``CompletionResult.model_name``), normalizado para ``audit_log.origin_model_id``
+   (o el alias, si el cliente no informa uno). Los escritores lo pasan a cada fila de
+   audit; ``origin_model`` (el enum de antes de ADR-028) queda en NULL.
 """
 
 from __future__ import annotations
@@ -35,19 +41,20 @@ from __future__ import annotations
 import json
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import MODEL_ALIAS_AGENT
-from app.enums import AuditOperation, LlmModel, MemoryLayer, Mode
+from app.enums import AuditOperation, MemoryLayer, Mode
 from app.llm.clients.base import LLMClient
 from app.llm.errors import LlmTransientError
 from app.llm.schemas import ChatMessage, CompletionResult
 from app.llm.text_utils import THINK_BLOCK_RE
 from app.memory.hashing import compute_record_hash, procedural_hash_payload
+from app.models.audit import ORIGIN_MODEL_ID_MAX_LENGTH
 from app.schemas.memory import ProceduralMemoryUpsert, SemanticMemoryCreate
 
 if TYPE_CHECKING:
@@ -93,10 +100,30 @@ class SessionSummary:
             episodio con summary vacio.
         topics: Metadata estructurada de la sesion (temas, tono, etc.). Dict
             vacio cuando no hay metadata.
+        model_id: Id del modelo que respondio, listo para
+            ``audit_log.origin_model_id`` (ver ``_audit_model_id``). ``None`` cuando
+            el modelo no respondio (error permanente descartado).
     """
 
     summary: str = ""
     topics: dict[str, Any] = field(default_factory=dict)
+    model_id: str | None = None
+
+
+@dataclass(frozen=True)
+class TurnExtraction:
+    """Resultado de ``consolidate``: las ops de un turno + el modelo que las extrajo.
+
+    Campos:
+        ops: ``MemoryOp`` a aplicar. Vacia si no hay nada que guardar.
+        model_id: Id del modelo que respondio, listo para
+            ``audit_log.origin_model_id`` (ver ``_audit_model_id``). ``None`` cuando
+            el modelo no respondio (error permanente descartado); en ese caso
+            ``ops`` tambien viene vacia.
+    """
+
+    ops: list[MemoryOp] = field(default_factory=list)
+    model_id: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +141,7 @@ class MemoryEngine(Protocol):
         user_msg: str,
         model_response: str,
         mode: str,
-    ) -> list[MemoryOp]:
+    ) -> TurnExtraction:
         """Extrae ops de memoria del turno (user_msg + model_response).
 
         Args:
@@ -123,7 +150,8 @@ class MemoryEngine(Protocol):
             mode: Modo activo de la sesion (p.ej. 'vida', 'estudio').
 
         Returns:
-            Lista de ``MemoryOp`` a aplicar. Vacia si no hay nada que guardar.
+            ``TurnExtraction`` con las ``MemoryOp`` a aplicar (vacia si no hay nada
+            que guardar) y el id del modelo que las extrajo, para la auditoria.
 
         Raises:
             LlmTransientError: falla transitoria del proveedor; el caller reintenta.
@@ -138,6 +166,7 @@ class MemoryEngine(Protocol):
         JSON inválido devuelve un ``SessionSummary`` vacío (``summary=""``) sin
         propagar: el caller NO crea el episodio cuando el summary es vacío. Una
         falla transitoria (``LlmTransientError``) sí se propaga: el caller reintenta.
+        Si el modelo respondió, ``model_id`` trae su id para la auditoría.
         """
         ...
 
@@ -351,6 +380,26 @@ def _raise_if_degraded(result: CompletionResult) -> None:
         raise LlmTransientError("respuesta degradada")
 
 
+def _printable_id(value: str) -> str:
+    """``value`` sin caracteres no imprimibles, recortado al largo de la columna."""
+    cleaned = "".join(ch for ch in value if ch.isprintable()).strip()
+    return cleaned[:ORIGIN_MODEL_ID_MAX_LENGTH].strip()
+
+
+def _audit_model_id(reported: str, alias: str) -> str | None:
+    """Id del modelo para ``audit_log.origin_model_id``, a partir del que informo el cliente.
+
+    ``reported`` es ``CompletionResult.model_name``: el id que devolvio el proveedor
+    (p.ej. ``org/modelo-2026-06``). Viene de afuera, asi que se limpia para que entre
+    en la columna tal como la valida ``AuditStore.record``: sin caracteres de control,
+    sin espacios en los bordes y de hasta ``ORIGIN_MODEL_ID_MAX_LENGTH`` caracteres. Si
+    no queda nada (un cliente que no informa el id, como el fake de los tests), se usa
+    el alias pedido. Es el UNICO punto de fallback: los escritores pasan lo que sale
+    de aca sin tocarlo. ``None`` solo si tampoco el alias deja un id usable.
+    """
+    return _printable_id(reported) or _printable_id(alias) or None
+
+
 class AgentMemoryEngine:
     """Extractor de memoria usando el alias ``agente`` via ``LLMClient``.
 
@@ -371,13 +420,14 @@ class AgentMemoryEngine:
         user_msg: str,
         model_response: str,
         mode: str,
-    ) -> list[MemoryOp]:
+    ) -> TurnExtraction:
         """Extrae ops de memoria del turno via el alias ``agente``.
 
         El contenido del turno NO se loguea (regla #4: ningun dato de
-        usuario a logs). Si el LLM falla por algo permanente o devuelve JSON
-        invalido, devuelve [] sin propagar. Una falla transitoria (o una
-        respuesta degradada) levanta ``LlmTransientError``: el worker reintenta.
+        usuario a logs). Si el LLM falla por algo permanente devuelve una
+        ``TurnExtraction`` vacia (sin ops ni modelo) sin propagar; si responde JSON
+        invalido, sin ops pero con el modelo que respondio. Una falla transitoria (o
+        una respuesta degradada) levanta ``LlmTransientError``: el worker reintenta.
         """
         user_content = _EXTRACTION_USER_TMPL.format(
             mode=mode,
@@ -408,10 +458,13 @@ class AgentMemoryEngine:
             # Permanente (credencial rechazada, request invalido, modelo no servido) u
             # otro fallo: reintentar da lo mismo. Regla #4a: solo el tipo, sin contenido.
             logger.warning("memory_engine: extraccion descartada (%s)", type(exc).__name__)
-            return []
+            return TurnExtraction()
 
         _raise_if_degraded(result)
-        return _parse_ops(result.text)
+        return TurnExtraction(
+            ops=_parse_ops(result.text),
+            model_id=_audit_model_id(result.model_name, self._model),
+        )
 
     async def summarize(self, *, transcript: str, mode: str) -> SessionSummary:
         """Resume un transcript de sesion a un ``SessionSummary`` via el alias ``agente``.
@@ -424,7 +477,8 @@ class AgentMemoryEngine:
         a logs). Si el LLM falla por algo permanente o devuelve JSON invalido,
         devuelve un ``SessionSummary`` vacio (``summary=""``) sin propagar: el
         caller NO crea el episodio cuando el summary es vacio. Una falla
-        transitoria (o una respuesta degradada) levanta ``LlmTransientError``.
+        transitoria (o una respuesta degradada) levanta ``LlmTransientError``. Si el
+        modelo respondio, ``model_id`` trae su id (ver ``_audit_model_id``).
         """
         user_content = _SUMMARY_USER_TMPL.format(mode=mode, transcript=transcript)
         messages = [
@@ -450,7 +504,10 @@ class AgentMemoryEngine:
             return SessionSummary()
 
         _raise_if_degraded(result)
-        return _parse_summary(result.text)
+        return replace(
+            _parse_summary(result.text),
+            model_id=_audit_model_id(result.model_name, self._model),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -459,11 +516,22 @@ class AgentMemoryEngine:
 
 
 class FakeMemoryEngine:
-    """Implementacion para tests: ops + summary prefijados, sin llamar al LLM."""
+    """Implementacion para tests: ops + summary prefijados, sin llamar al LLM.
 
-    def __init__(self, ops: list[MemoryOp], *, summary: SessionSummary | None = None) -> None:
+    ``model_id`` es el id de modelo que devuelve ``consolidate`` junto a las ops
+    (``None`` por default: el fake no simula un proveedor).
+    """
+
+    def __init__(
+        self,
+        ops: list[MemoryOp],
+        *,
+        summary: SessionSummary | None = None,
+        model_id: str | None = None,
+    ) -> None:
         self._ops = list(ops)
         self._summary = summary if summary is not None else SessionSummary()
+        self._model_id = model_id
         self.consolidate_calls: list[dict[str, str]] = []
         self.summarize_calls: list[dict[str, str]] = []
 
@@ -473,11 +541,11 @@ class FakeMemoryEngine:
         user_msg: str,
         model_response: str,
         mode: str,
-    ) -> list[MemoryOp]:
+    ) -> TurnExtraction:
         self.consolidate_calls.append(
             {"user_msg": user_msg, "model_response": model_response, "mode": mode}
         )
-        return list(self._ops)
+        return TurnExtraction(ops=list(self._ops), model_id=self._model_id)
 
     async def summarize(self, *, transcript: str, mode: str) -> SessionSummary:
         self.summarize_calls.append({"transcript": transcript, "mode": mode})
@@ -497,7 +565,7 @@ async def apply_ops(
     procedural_store: Any,
     source_session_id: UUID | None = None,
     audit_store: AuditStore | None = None,
-    origin_model: LlmModel | None = None,
+    origin_model_id: str | None = None,
     origin_mode: Mode | None = None,
 ) -> int:
     """Aplica cada op contra los stores de memoria.
@@ -564,8 +632,9 @@ async def apply_ops(
         audit_store: ``AuditStore`` del usuario (misma sesion que los stores de
             memoria) o ``None``. Si es ``None``, no se escribe auditoria (back-compat
             con los tests/callers que no la pasan).
-        origin_model: Modelo LLM que origino la consolidacion (``LlmModel.QWEN`` en
-            el path real). Se persiste como ``origin_model`` en cada fila de audit.
+        origin_model_id: Id del modelo que extrajo las ops (``TurnExtraction.model_id``
+            en el path real). Se persiste como ``origin_model_id`` en cada fila de
+            audit; ``origin_model`` (el enum de antes de ADR-028) queda en NULL.
         origin_mode: Modo activo de la sesion, ya parseado a ``Mode`` (o ``None`` si
             el modo era invalido). Se persiste como ``origin_mode`` en cada fila.
 
@@ -578,7 +647,7 @@ async def apply_ops(
         "procedural_store": procedural_store,
         "source_session_id": source_session_id,
         "audit_store": audit_store,
-        "origin_model": origin_model,
+        "origin_model_id": origin_model_id,
         "origin_mode": origin_mode,
     }
     for op in ops:
@@ -615,7 +684,7 @@ async def _apply_single_op(
     procedural_store: Any,
     source_session_id: UUID | None,
     audit_store: AuditStore | None,
-    origin_model: LlmModel | None,
+    origin_model_id: str | None,
     origin_mode: Mode | None,
 ) -> bool:
     """Aplica UNA op (memoria + su fila de audit) y devuelve ``True`` si cambio el estado.
@@ -640,7 +709,7 @@ async def _apply_single_op(
                 target_layer=target_layer,
                 target_id=target_id,
                 record_hash=record_hash,
-                origin_model=origin_model,
+                origin_model_id=origin_model_id,
                 origin_mode=origin_mode,
                 sensitive=False,
             )

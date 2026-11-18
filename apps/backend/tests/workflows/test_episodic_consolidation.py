@@ -29,7 +29,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.enums import AuditOperation, LlmModel, MemoryLayer, Mode, TurnRole
+from app.enums import AuditOperation, MemoryLayer, Mode, TurnRole
 from app.llm.clients.embedding import FakeEmbeddingClient
 from app.llm.clients.fakes import FakeLlmClient
 from app.llm.clients.reranker import FakeReranker
@@ -452,7 +452,7 @@ class TestAsyncConsolidateSession:
         assert count == 1
 
     async def test_audit_log_one_write_episodic_row(self, db_session: AsyncSession) -> None:
-        """Crear un episodio escribe 1 fila WRITE/EPISODIC en audit_log con origin QWEN."""
+        """Crear un episodio escribe 1 fila WRITE/EPISODIC con el modelo que resumió."""
         user = await _seed_user(db_session)
         cs = await _seed_session(db_session, user_id=user.id)
         await _seed_turns(db_session, user_id=user.id, session_id=cs.id)
@@ -477,7 +477,9 @@ class TestAsyncConsolidateSession:
         audit = rows[0]
         assert audit.operation == AuditOperation.WRITE
         assert audit.target_layer == MemoryLayer.EPISODIC
-        assert audit.origin_model == LlmModel.QWEN
+        # El id que informó el cliente (model_name del CompletionResult), no el enum viejo.
+        assert audit.origin_model is None
+        assert audit.origin_model_id == "org/agent"
         # record_hash es un sha256 hex (64 chars), NUNCA el summary en claro.
         assert len(audit.record_hash) == 64
 

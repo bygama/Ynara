@@ -193,9 +193,11 @@ async def test_seed_audit_marker_and_no_plaintext(db_session: AsyncSession) -> N
         rows = await _audit_rows(db_session, user.id)
         assert rows  # hay filas que inspeccionar
         for row in rows:
-            # Marcador NUEVO: distinto del QWEN (origin_model) y del owner-edit (todo None).
+            # Marcador NUEVO: distinto de la consolidación (origin_model_id) y del
+            # owner-edit (todo None).
             assert row.origin_tool == ONBOARDING_AUDIT_ORIGIN
             assert row.origin_model is None
+            assert row.origin_model_id is None
             assert row.origin_mode is None
             # record_hash es sha256 hex de 64 chars.
             assert len(row.record_hash) == 64
@@ -208,6 +210,7 @@ async def test_seed_audit_marker_and_no_plaintext(db_session: AsyncSession) -> N
                     row.target_layer,
                     row.target_id,
                     row.origin_model,
+                    row.origin_model_id,
                     row.origin_mode,
                     row.origin_tool,
                     row.record_hash,
