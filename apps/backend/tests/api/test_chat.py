@@ -10,7 +10,7 @@ clientes Fake, sin red ni Redis:
 - ``get_llm_client`` / ``get_embedder`` / ``get_reranker`` se overridean con
   Fakes; el ``FakeLlmClient`` se programa con ``CompletionResult`` para que
   ``route()`` responda determinista.
-- ``app.services.chat.consolidate_turn`` se parchea (Qwen encola post-commit; no
+- ``app.services.chat.consolidate_turn`` se parchea (el alias agente encola post-commit; no
   hay Redis). El enqueue vive en ``ChatService`` (movido de ``route()`` en M10 Ola 0).
 
 Limpieza: el endpoint commitea, asi que el rollback del fixture NO alcanza para
@@ -18,7 +18,7 @@ los datos persistidos. Cada test borra el ``User`` que sembro al final
 (``ON DELETE CASCADE`` arrastra sus ``ChatSession``), dejando la DB de tests
 idempotente.
 
-Cubre el mapeo de errores (decision #7 M9): 200 happy path (Gemma/Qwen), reuso
+Cubre el mapeo de errores (decision #7 M9): 200 happy path (conversacional/agente), reuso
 de sesion, 401 (sin/invalid token), 422 (validacion), 404 (sesion ajena), 409
 (mode mismatch).
 """
@@ -64,7 +64,7 @@ def _completion(
     text: str = "hola",
     finish_reason: str = "stop",
     tool_calls: list[ToolCall] | None = None,
-    model_name: str = "gemma4",
+    model_name: str = "org/chat",
 ) -> CompletionResult:
     """``CompletionResult`` minimo para programar el ``FakeLlmClient``."""
     return CompletionResult(
@@ -161,15 +161,15 @@ class _BoomRedisClient:
 
 
 # ---------------------------------------------------------------------------
-# Happy path: Gemma (vida) — conversacional, sin tools, no encola consolidacion
+# Happy path: conversacional (vida) — sin tools, no encola consolidacion
 # ---------------------------------------------------------------------------
 
 
-async def test_happy_path_gemma_vida_creates_session(db_session: AsyncSession) -> None:
+async def test_happy_path_conversacional_vida_creates_session(db_session: AsyncSession) -> None:
     """200 + body ChatHttpResponse; se crea una ChatSession persistida."""
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_completion(text="hola, todo bien?", model_name="gemma4"))
+    fake.queue_result(_completion(text="hola, todo bien?", model_name="org/chat"))
 
     client = await _client(db_session, llm_client=fake)
     try:
@@ -199,21 +199,21 @@ async def test_happy_path_gemma_vida_creates_session(db_session: AsyncSession) -
 
 
 # ---------------------------------------------------------------------------
-# Happy path: Qwen (productividad) — agent, tool loop con actions
+# Happy path: agente (productividad) — tool loop con actions
 # ---------------------------------------------------------------------------
 
 
-async def test_happy_path_qwen_productividad_with_actions(db_session: AsyncSession) -> None:
+async def test_happy_path_agente_productividad_with_actions(db_session: AsyncSession) -> None:
     """200 + actions pobladas (tool loop). Encola consolidacion (mockeada)."""
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"agente"}))
     # Vuelta 1: tool_call memory.search; vuelta 2: stop con texto.
     tc = ToolCall(id="tc-1", name="memory.search", arguments={"query": "reuniones"})
     fake.queue_result(
-        _completion(text="", finish_reason="tool_calls", tool_calls=[tc], model_name="qwen")
+        _completion(text="", finish_reason="tool_calls", tool_calls=[tc], model_name="org/agent")
     )
     fake.queue_result(
-        _completion(text="Listo, lo agende.", finish_reason="stop", model_name="qwen")
+        _completion(text="Listo, lo agende.", finish_reason="stop", model_name="org/agent")
     )
 
     client = await _client(db_session, llm_client=fake)
@@ -240,7 +240,7 @@ async def test_happy_path_qwen_productividad_with_actions(db_session: AsyncSessi
         assert action["id"] == "tc-1"
         assert action["name"] == "memory.search"
         assert action["arguments"] == {"query": "reuniones"}
-        # Qwen escribe memoria -> se encolo la consolidacion (post-commit).
+        # El alias agente escribe memoria -> se encolo la consolidacion (post-commit).
         mock_task.delay.assert_called_once()
         # Los kwargs son primitivos JSON: los str que pasaba route() mas el
         # ``turn_seq`` del turno del usuario (0: primer turno de la sesion), la marca
@@ -274,14 +274,14 @@ async def test_enqueue_failure_does_not_break_turn(db_session: AsyncSession) -> 
 
     El turno ya esta commiteado cuando se encola; un fallo del enqueue debe
     degradar (fail-open, igual que el TokenStore), no devolver 500 con el turno
-    ya persistido. Usa Qwen (``writes_memory=True``) para ejercitar el path de
+    ya persistido. Usa el alias agente (``writes_memory=True``) para ejercitar el path de
     enqueue y parchea ``delay`` para que tire ``RuntimeError`` (simula
     OperationalError / ConnectionError del broker Redis).
     """
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"agente"}))
     fake.queue_result(
-        _completion(text="Listo, lo agende.", finish_reason="stop", model_name="qwen")
+        _completion(text="Listo, lo agende.", finish_reason="stop", model_name="org/agent")
     )
 
     client = await _client(db_session, llm_client=fake)
@@ -342,10 +342,12 @@ async def test_chat_executes_calendar_tool_synchronously_and_persists(
         },
     )
     fake.queue_result(
-        _completion(text="", finish_reason="tool_calls", tool_calls=[tc], model_name="qwen")
+        _completion(text="", finish_reason="tool_calls", tool_calls=[tc], model_name="org/agent")
     )
     fake.queue_result(
-        _completion(text="Listo, te agendé el dentista.", finish_reason="stop", model_name="qwen")
+        _completion(
+            text="Listo, te agendé el dentista.", finish_reason="stop", model_name="org/agent"
+        )
     )
 
     client = await _client(db_session, llm_client=fake)
@@ -420,7 +422,7 @@ async def test_chat_degraded_after_tool_flush_rolls_back_event(
         },
     )
     fake.queue_result(
-        _completion(text="", finish_reason="tool_calls", tool_calls=[tc], model_name="qwen")
+        _completion(text="", finish_reason="tool_calls", tool_calls=[tc], model_name="org/agent")
     )
     # Vuelta 2: el LLM falla -> route() captura el LlmError y devuelve finish_reason='degraded'.
     fake.queue_error(LlmUnavailableError("backend caido"))
@@ -458,7 +460,7 @@ async def test_chat_degraded_after_tool_flush_rolls_back_event(
 
 
 async def test_chat_non_calendar_mode_creates_no_events(db_session: AsyncSession) -> None:
-    """Un modo SIN 'calendar' en tools_enabled (vida, gemma) NO crea eventos (gating ADR-022).
+    """Un modo SIN 'calendar' (vida, conversacional) NO crea eventos (gating ADR-022).
 
     El registry del chat para vida (``tools_enabled=[]``) queda vacio, asi que ni
     siquiera se expone calendar al modelo: no hay efecto.
@@ -466,7 +468,7 @@ async def test_chat_non_calendar_mode_creates_no_events(db_session: AsyncSession
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
     fake.queue_result(
-        _completion(text="todo bien por aca.", finish_reason="stop", model_name="gemma4")
+        _completion(text="todo bien por aca.", finish_reason="stop", model_name="org/chat")
     )
 
     client = await _client(db_session, llm_client=fake)
@@ -509,7 +511,7 @@ async def test_chat_ok_persists_two_turns_user_and_model(db_session: AsyncSessio
     """
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_completion(text="hola, todo bien?", model_name="gemma4"))
+    fake.queue_result(_completion(text="hola, todo bien?", model_name="org/chat"))
 
     client = await _client(db_session, llm_client=fake)
     try:
@@ -543,7 +545,7 @@ async def test_chat_degraded_response_persists_no_turns(db_session: AsyncSession
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"agente"}))
     fake.queue_result(
-        _completion(text="respuesta degradada", finish_reason="degraded", model_name="qwen")
+        _completion(text="respuesta degradada", finish_reason="degraded", model_name="agente")
     )
 
     client = await _client(db_session, llm_client=fake)
@@ -585,8 +587,8 @@ async def test_reused_session_id_does_not_create_second_session(
     """Pasar el session_id devuelto reusa la misma ChatSession (mismo id)."""
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_completion(text="uno", model_name="gemma4"))
-    fake.queue_result(_completion(text="dos", model_name="gemma4"))
+    fake.queue_result(_completion(text="uno", model_name="org/chat"))
+    fake.queue_result(_completion(text="dos", model_name="org/chat"))
 
     client = await _client(db_session, llm_client=fake)
     try:
@@ -716,7 +718,7 @@ async def test_session_of_other_user_returns_404(db_session: AsyncSession) -> No
 
     # owner crea una sesion (commit del endpoint).
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_completion(text="hola", model_name="gemma4"))
+    fake.queue_result(_completion(text="hola", model_name="org/chat"))
     client = await _client(db_session, llm_client=fake)
     try:
         async with client:
@@ -750,7 +752,7 @@ async def test_session_of_other_user_returns_404(db_session: AsyncSession) -> No
 async def test_mode_mismatch_returns_409(db_session: AsyncSession) -> None:
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_completion(text="hola", model_name="gemma4"))
+    fake.queue_result(_completion(text="hola", model_name="org/chat"))
     client = await _client(db_session, llm_client=fake)
     try:
         async with client:
@@ -798,7 +800,7 @@ async def test_chat_rate_limit_429(
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
     for _ in range(2):
-        fake.queue_result(_completion(text="hola", model_name="gemma4"))
+        fake.queue_result(_completion(text="hola", model_name="org/chat"))
 
     store = InMemoryTokenStore()
     client = await _client(db_session, llm_client=fake, store=store)
@@ -835,7 +837,7 @@ async def test_chat_rate_limit_fail_open(db_session: AsyncSession) -> None:
     """
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_completion(text="hola", model_name="gemma4"))
+    fake.queue_result(_completion(text="hola", model_name="org/chat"))
 
     store = RedisTokenStore(_BoomRedisClient())
     client = await _client(db_session, llm_client=fake, store=store)

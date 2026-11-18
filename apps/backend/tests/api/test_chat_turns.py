@@ -36,7 +36,7 @@ pytestmark = pytest.mark.integration
 
 
 def _completion(
-    *, text: str = "hola", finish_reason: str = "stop", model_name: str = "gemma4"
+    *, text: str = "hola", finish_reason: str = "stop", model_name: str = "org/chat"
 ) -> CompletionResult:
     return CompletionResult(
         text=text,
@@ -89,7 +89,7 @@ async def test_chat_persists_two_encrypted_turns(db_session: AsyncSession) -> No
     """Un turno OK persiste user(seq=0) + model(seq=1) cifrados en la misma sesion."""
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_completion(text="hola, todo bien?", model_name="gemma4"))
+    fake.queue_result(_completion(text="hola, todo bien?", model_name="org/chat"))
 
     client = await _client(db_session, llm_client=fake)
     try:
@@ -147,8 +147,8 @@ async def test_chat_multi_turn_same_session_increments_seq(db_session: AsyncSess
     """
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_completion(text="primera respuesta", model_name="gemma4"))
-    fake.queue_result(_completion(text="segunda respuesta", model_name="gemma4"))
+    fake.queue_result(_completion(text="primera respuesta", model_name="org/chat"))
+    fake.queue_result(_completion(text="segunda respuesta", model_name="org/chat"))
 
     client = await _client(db_session, llm_client=fake)
     try:
@@ -205,7 +205,7 @@ async def test_chat_degraded_persists_no_turns(db_session: AsyncSession) -> None
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"agente"}))
     fake.queue_result(
-        _completion(text="respuesta degradada", finish_reason="degraded", model_name="qwen")
+        _completion(text="respuesta degradada", finish_reason="degraded", model_name="agente")
     )
 
     client = await _client(db_session, llm_client=fake)

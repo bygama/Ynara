@@ -232,9 +232,11 @@ async def test_serving_never_exposes_base_url(db_session: AsyncSession) -> None:
                 resp = await client.get("/v1/admin/serving", headers=_bearer(admin.id))
 
         assert resp.status_code == 200
-        # Ni el campo, ni el host de serving por default (localhost:11434).
+        # Ni el campo, ni el host y la credencial del proveedor (LLM_PROVIDERS), ni el
+        # host de las connection strings de Postgres/Redis.
         assert "base_url" not in resp.text
-        assert "11434" not in resp.text
+        assert "api.proveedor.test" not in resp.text
+        assert "sk-test-principal-0123" not in resp.text
         assert "localhost" not in resp.text
     finally:
         app.dependency_overrides.clear()
