@@ -33,6 +33,7 @@ from app.llm.errors import (
     LlmProviderRejectedError,
     LlmRateLimitError,
     LlmTimeoutError,
+    LlmTransientError,
     LlmUnavailableError,
     ToolParsingError,
 )
@@ -190,6 +191,29 @@ async def test_provider_answer_does_not_open_breaker(error: LlmError) -> None:
     result = await _complete(resilient)
 
     assert result.text == "desde el respaldo"
+    assert _state(resilient, primary) is CircuitState.CLOSED
+
+
+@pytest.mark.parametrize("status", [408, 425])
+async def test_4xx_that_asks_to_repeat_is_retried_without_opening_breaker(status: int) -> None:
+    """408/425 (``LlmTransientError`` pelado): backoff contra el mismo y después el respaldo.
+
+    El proveedor contestó: no es una caída (el breaker no abre) ni una sobrecarga (no se
+    pasa al respaldo sin reintentar, como un 429 sin ``Retry-After``).
+    """
+    primary, secondary = _fake(), _fake()
+    for _ in range(3):
+        primary.queue_error(LlmTransientError(f"HTTP {status}"))
+    secondary.queue_result(_result("desde el respaldo"))
+    clock = _Clock()
+    sleep = _AdvancingSleep(clock)
+    resilient = _resilient([primary, secondary], clock=clock, sleep=sleep)
+
+    result = await _complete(resilient)
+
+    assert result.text == "desde el respaldo"
+    assert len(primary.complete_calls) == 3  # los 3 intentos contra el mismo proveedor
+    assert len(sleep.delays) == 2  # un backoff entre cada par de intentos
     assert _state(resilient, primary) is CircuitState.CLOSED
 
 

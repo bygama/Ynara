@@ -14,10 +14,14 @@ import logging
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
+import httpx
 import pytest
+from pydantic import SecretStr
 
 from app.llm.clients.fakes import FakeLlmClient
 from app.llm.clients.pool import ClientPool, FirstHealthy
+from app.llm.clients.providers.embeddings import ApiEmbeddingClient
+from app.llm.clients.reranker import FakeReranker
 from app.llm.clients.resilient import ResilientClient
 from app.llm.errors import (
     LlmAuthError,
@@ -34,6 +38,7 @@ from app.llm.memory_engine import (
     TurnExtraction,
     apply_ops,
 )
+from app.memory.semantic import SemanticMemoryStore
 
 _SECRET = "mi diagnostico es privado"
 
@@ -187,6 +192,40 @@ async def test_apply_ops_propagates_a_transient_embedder_error() -> None:
         await apply_ops(ops, semantic_store=semantic, procedural_store=procedural)
 
     assert semantic.add.await_count == 2
+    procedural.upsert.assert_not_awaited()
+
+
+@pytest.mark.parametrize("status", [408, 425])
+async def test_apply_ops_propagates_a_4xx_that_asks_to_repeat(status: int) -> None:
+    """408/425 del proveedor de embeddings: se reintenta el turno, no se saltea el hecho.
+
+    Cliente de embeddings y store semantico reales; solo la red es un ``MockTransport``.
+    El embed falla antes de tocar la sesion, asi que alcanza con un stub.
+    """
+    requests: list[httpx.Request] = []
+
+    def _provider(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(status, json={"error": {"message": "reintentar"}})
+
+    embedder = ApiEmbeddingClient(
+        base_url="https://embeddings.proveedor.test/v1",
+        api_key=SecretStr("sk-test-embeddings-0123456789abcdef"),
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(_provider)),
+    )
+    semantic = SemanticMemoryStore(MagicMock(), uuid4(), embedder, FakeReranker())
+    procedural = AsyncMock()
+    ops = [
+        _semantic_add(_SECRET),
+        MemoryOp(op="ADD", layer="procedural", key="idioma", value={"lang": "es-AR"}),
+    ]
+
+    with pytest.raises(LlmTransientError) as excinfo:
+        await apply_ops(ops, semantic_store=semantic, procedural_store=procedural)
+
+    assert str(excinfo.value) == f"falla transitoria del proveedor LLM: HTTP {status}"
+    assert len(requests) == 1
+    # El turno se corta: la op siguiente no se aplica en este intento.
     procedural.upsert.assert_not_awaited()
 
 

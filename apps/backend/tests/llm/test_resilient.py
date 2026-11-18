@@ -206,9 +206,10 @@ async def test_permanent_error_reraised_without_fallback() -> None:
 
 
 async def test_unclassified_llm_error_degrades() -> None:
-    # LlmError base (408/425 / "respuesta sin choices" del cliente de un
-    # proveedor) no es permanente: debe ser fallback-able y terminar degradado,
-    # nunca escaparse cruda al caller (contrato central de M3 + regla #4).
+    # LlmError base ("respuesta sin choices" del cliente de un proveedor) no es
+    # permanente: debe ser fallback-able y terminar degradado, nunca escaparse
+    # cruda al caller (contrato central de M3 + regla #4). El 408/425 ya no llega
+    # como LlmError base: es LlmTransientError (test_resilient_policy.py).
     client = _fake()
     for _ in range(3):
         client.queue_error(LlmError("respuesta sin choices"))
