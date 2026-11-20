@@ -180,6 +180,40 @@ async def test_base_url_trailing_slash_is_ignored() -> None:
     assert captured["request"].url.path == "/v1/chat/completions"
 
 
+@pytest.mark.parametrize("raw_finish_reason", [None, ""])
+async def test_tool_calls_without_finish_reason_reports_tool_calls(
+    raw_finish_reason: str | None,
+) -> None:
+    """Un proveedor que devuelve tool_calls sin finish_reason no corta el agente (#15)."""
+    body = {
+        "model": _MODEL_ID,
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "memory__list",
+                                "arguments": "{}",
+                            },
+                        }
+                    ],
+                },
+                "finish_reason": raw_finish_reason,
+            }
+        ],
+    }
+    client = _client(lambda request: httpx.Response(200, json=body))
+    result = await _complete(client)
+    assert len(result.tool_calls) == 1
+    assert result.finish_reason == "tool_calls"
+
+
 async def test_model_name_falls_back_to_provider_model_id() -> None:
     body = _completion({"role": "assistant", "content": "ok"})
     del body["model"]

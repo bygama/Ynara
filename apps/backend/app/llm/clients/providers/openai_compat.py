@@ -296,7 +296,8 @@ class OpenAICompatClient:
         return CompletionResult(
             text=text,
             tool_calls=tool_calls,
-            finish_reason=finish_reason(choice.get("finish_reason"), bool(tool_calls)) or "stop",
+            finish_reason=finish_reason(choice.get("finish_reason"), bool(tool_calls))
+            or ("tool_calls" if tool_calls else "stop"),
             prompt_tokens=token_count(usage.get("prompt_tokens")),
             completion_tokens=token_count(usage.get("completion_tokens")),
             model_name=model_name,
