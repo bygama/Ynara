@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import AsyncIterator
 
+from app.llm.errors import degraded_response
 from app.llm.schemas import (
     ChatMessage,
     CompletionChunk,
@@ -28,15 +29,36 @@ from app.llm.schemas import (
     ToolSpec,
 )
 
+# Texto neutro cuando el fake de la app (sin proveedor configurado) atiende un turno
+# sin respuestas programadas (degrade_when_empty=True).
+_FAKE_DEGRADED_TEXT = "La IA está pausada en este entorno (sin proveedor configurado)."
+
 
 class FakeLlmClient:
     """Implementa ``LLMClient`` con respuestas programables."""
 
-    def __init__(self, *, models: frozenset[str]) -> None:
-        """``models``: los modelos que el fake dice servir (``serves_model``)."""
+    def __init__(
+        self,
+        *,
+        models: frozenset[str],
+        record_calls: bool = True,
+        degrade_when_empty: bool = False,
+    ) -> None:
+        """``models``: los modelos que el fake dice servir (``serves_model``).
+
+        - ``record_calls``: ``True`` (default para tests) guarda cada llamada en
+          ``complete_calls`` y ``stream_calls``. ``False`` (singleton de la app) no
+          acumula mensajes ni memoria descifrada en RAM.
+        - ``degrade_when_empty``: ``False`` (default para tests) levanta
+          ``AssertionError`` si no hay respuestas programadas. ``True`` (servidor de dev
+          con ``LLM_BACKEND=fake``) devuelve una respuesta degradada (``finish_reason=
+          "degraded"``) en vez de 500.
+        """
         self._models = models
-        self._results: deque[CompletionResult | Exception] = deque()
-        self._chunks: deque[list[CompletionChunk] | Exception] = deque()
+        self._record_calls = record_calls
+        self._degrade_when_empty = degrade_when_empty
+        self._results: deque[CompletionResult | BaseException] = deque()
+        self._chunks: deque[list[CompletionChunk] | BaseException] = deque()
         self._healthy = True
         self.complete_calls: list[dict[str, object]] = []
         self.stream_calls: list[dict[str, object]] = []
@@ -53,7 +75,7 @@ class FakeLlmClient:
         """
         self._results.append(result)
 
-    def queue_error(self, error: Exception) -> None:
+    def queue_error(self, error: BaseException) -> None:
         """Encola un error para la proxima llamada a ``complete``."""
         self._results.append(error)
 
@@ -62,7 +84,7 @@ class FakeLlmClient:
         ``stream``."""
         self._chunks.append(chunks)
 
-    def queue_stream_error(self, error: Exception) -> None:
+    def queue_stream_error(self, error: BaseException) -> None:
         """Encola un error para la proxima llamada a ``stream``."""
         self._chunks.append(error)
 
@@ -88,13 +110,16 @@ class FakeLlmClient:
         # ``thinking`` se registra para que los tests de routing por rol (ADR-012
         # D4) puedan afirmar que el router lo deriva correcto (False conversacional,
         # True agente, None desconocido).
-        self.complete_calls.append(
-            {"model": model, "messages": messages, "tools": tools, "thinking": thinking}
-        )
+        if self._record_calls:
+            self.complete_calls.append(
+                {"model": model, "messages": messages, "tools": tools, "thinking": thinking}
+            )
         if not self._results:
+            if self._degrade_when_empty:
+                return degraded_response(text=_FAKE_DEGRADED_TEXT, model_name=model)
             raise AssertionError("FakeLlmClient: no hay resultados programados")
         item = self._results.popleft()
-        if isinstance(item, Exception):
+        if isinstance(item, BaseException):
             raise item
         return item
 
@@ -109,13 +134,14 @@ class FakeLlmClient:
         thinking: bool | None = None,
         timeout_s: float | None = None,
     ) -> AsyncIterator[CompletionChunk]:
-        self.stream_calls.append(
-            {"model": model, "messages": messages, "tools": tools, "thinking": thinking}
-        )
+        if self._record_calls:
+            self.stream_calls.append(
+                {"model": model, "messages": messages, "tools": tools, "thinking": thinking}
+            )
         if not self._chunks:
             raise AssertionError("FakeLlmClient: no hay chunks programados")
         item = self._chunks.popleft()
-        if isinstance(item, Exception):
+        if isinstance(item, BaseException):
             raise item
         for chunk in item:
             yield chunk

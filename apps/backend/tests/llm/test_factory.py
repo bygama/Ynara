@@ -158,6 +158,30 @@ def test_llm_client_is_fake_by_default(environment: str) -> None:
     assert not client.serves_model("qwen")
 
 
+async def test_fake_llm_client_from_factory_does_not_record_and_degrades() -> None:
+    """El fake de la app no acumula mensajes en RAM y degrada sin respuestas (#90)."""
+    client = build_llm_client(_settings(), _config())
+    assert isinstance(client, FakeLlmClient)
+    result = await client.complete(
+        model="conversacional",
+        messages=[ChatMessage(role="user", content="secreto del usuario")],
+    )
+    assert result.finish_reason == "degraded"
+    assert client.complete_calls == []
+
+
+async def test_fake_llm_client_from_factory_no_degrade_raises() -> None:
+    """Con ``degrade=False`` (workers) el fake sin respuestas sigue levantando."""
+    client = build_llm_client(_settings(), _config(), degrade=False)
+    assert isinstance(client, FakeLlmClient)
+    with pytest.raises(AssertionError):
+        await client.complete(
+            model="agente",
+            messages=[ChatMessage(role="user", content="turno")],
+        )
+    assert client.complete_calls == []
+
+
 def test_llm_client_api_builds_one_client_per_provider_in_priority_order() -> None:
     """``LLM_BACKEND=api``: un cliente por proveedor, el principal primero."""
     clients = _provider_clients(build_llm_client(_settings(llm_backend="api"), _config()))
