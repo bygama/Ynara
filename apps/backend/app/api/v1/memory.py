@@ -369,6 +369,12 @@ async def update_memory(
         item = await service.update_item(layer=layer, ref=ref, body=body)
     except MemoryServiceError as exc:
         raise _to_http(exc) from exc
+    except LlmError as exc:
+        # PATCH semantic re-embeddea el contenido nuevo: si falla el proveedor de
+        # embeddings, responder 503 neutro (mismo contrato que /memory/search) sin
+        # filtrar el contenido (regla #4).
+        logger.warning("memory update: embeddings no disponibles: %s", type(exc).__name__)
+        raise service_unavailable(_retry_after(exc)) from exc
     # Persistir la edición + la fila de audit atómicamente (el store solo hace flush;
     # get_db no commitea). Va solo en el happy path.
     await session.commit()
