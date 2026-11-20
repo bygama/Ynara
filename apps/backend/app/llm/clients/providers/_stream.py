@@ -87,7 +87,7 @@ class StreamDecoder:
             text=text, reasoning=reasoning, tool_calls=released, choice={}, finish_reason=None
         )
 
-    def _decode_tool_calls(self, fragments: Any) -> list[dict[str, Any]]:
+    def _decode_tool_calls(self, fragments: object) -> list[dict[str, Any]]:
         if not isinstance(fragments, list):
             return []
         decoded: list[dict[str, Any]] = []

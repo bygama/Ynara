@@ -91,7 +91,7 @@ def json_body(response: httpx.Response) -> Any:
         raise LlmError("respuesta malformada") from exc
 
 
-def content_text(content: Any) -> str:
+def content_text(content: object) -> str:
     """``content`` del wire como texto: string, lista de partes de texto o nada."""
     if content is None:
         return ""
@@ -117,7 +117,7 @@ def reasoning_channel(container: dict[str, Any]) -> str | None:
     return None
 
 
-def finish_reason(raw: Any, has_tool_calls: bool) -> str | None:
+def finish_reason(raw: object, has_tool_calls: bool) -> str | None:
     """``finish_reason`` del wire; ``"stop"`` con tool calls se informa como ``"tool_calls"``.
 
     Algunos proveedores cierran con ``"stop"`` aunque el mensaje traiga tool calls, y el
@@ -130,7 +130,7 @@ def finish_reason(raw: Any, has_tool_calls: bool) -> str | None:
     return raw
 
 
-def token_count(raw: Any) -> int:
+def token_count(raw: object) -> int:
     """Un contador de ``usage`` como ``int`` (``0`` si falta o no es un número)."""
     if isinstance(raw, bool) or not isinstance(raw, int | float) or not math.isfinite(raw):
         return 0
