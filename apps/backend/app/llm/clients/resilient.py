@@ -284,6 +284,11 @@ class ResilientClient:
                 raise LlmTransientError("presupuesto agotado") from None
             logger.warning("llm: presupuesto agotado, respuesta degradada")
             return degraded_response(text=self._degraded_text, model_name=model)
+        except BaseException:
+            # Cancelacion del caller (CancelledError) u otra BaseException: liberar
+            # una prueba HALF_OPEN en vuelo sin marcar exito ni fallo del proveedor.
+            tally.cancel()
+            raise
         if result is not None:
             return result
         if not self._degrade:
@@ -511,6 +516,11 @@ class ResilientClient:
                 )
             except Exception:
                 breaker.record_failure()
+                raise
+            except BaseException:
+                # CancelledError / GeneratorExit: no es fallo del proveedor, pero
+                # libera la prueba HALF_OPEN para que no quede colgada.
+                breaker.cancel_probe()
                 raise
             else:
                 breaker.record_success()

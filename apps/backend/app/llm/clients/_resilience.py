@@ -188,3 +188,9 @@ class BreakerTally:
             breaker.record_failure()
         else:
             breaker.record_success()
+
+    def cancel(self) -> None:
+        """Libera una prueba ``HALF_OPEN`` si el request fue cancelado por el caller."""
+        breaker, self._breaker = self._breaker, None
+        if breaker is not None:
+            breaker.cancel_probe()
