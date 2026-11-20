@@ -90,7 +90,7 @@ fi
 header 4 "IA externa solo desde llm/clients/providers/ (regla #4b)"
 ai_providers_dir="apps/backend/app/llm/clients/providers/"
 ai_apis=$(grep -rn --include='*.py' \
-  -E '^(import|from) (openai|anthropic|google\.generativeai|cohere|mistralai)' \
+  -E '^[[:space:]]*(import|from)[[:space:]]+(openai|anthropic|google\.generativeai|cohere|mistralai)([^A-Za-z0-9_]|$)' \
   apps/backend/app 2>/dev/null \
   | grep -v "^${ai_providers_dir}" || true)
 if [ -n "$ai_apis" ]; then
