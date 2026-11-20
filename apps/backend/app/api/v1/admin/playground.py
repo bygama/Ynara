@@ -194,7 +194,7 @@ async def admin_serving(
         request_timeout_s=PROVIDER_REQUEST_TIMEOUT_S,
         low_perf_available=is_real,
         models=models,
-        embedder=settings.embedding_model,
+        embedder=settings.embedding_backend,
         reranker=RERANKER_PASSTHROUGH,
     )
 
@@ -280,7 +280,7 @@ async def admin_playground(
     return PlaygroundOut(
         text=clean_text,
         finish_reason=result.finish_reason,
-        model_name=result.model_name,
+        model_name=model_cfg.alias,
         prompt_tokens=result.prompt_tokens,
         completion_tokens=result.completion_tokens,
         latency_ms=result.latency_ms,
