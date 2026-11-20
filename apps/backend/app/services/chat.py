@@ -52,6 +52,7 @@ iteración posterior"), eliminando el desajuste DB-tiene-evento / turnos-vacíos
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
@@ -370,6 +371,7 @@ class ChatService:
                 model_response=resp.text,
                 mode=body.mode.value,
                 turn_seq=turn_seq,
+                enqueued_at=datetime.now(UTC).isoformat(),
             )
         except Exception as exc:  # best-effort: el broker caído NO rompe el turno.
             logger.warning("consolidate_turn enqueue failed: %s", type(exc).__name__)

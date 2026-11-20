@@ -75,6 +75,7 @@ from app.schemas.memory import EpisodicMemoryCreate
 from app.workers.celery_app import celery_app
 from app.workflows._engine import worker_session
 from app.workflows._turn_marker import TurnClaim, claim_turn
+from app.workflows._wipe_guard import was_wiped_after
 
 logger = logging.getLogger(__name__)
 
@@ -214,6 +215,22 @@ def _parse_origin_mode(mode: str) -> Mode | None:
         return None
 
 
+def _parse_enqueued_at(raw: str | None) -> datetime | None:
+    """Parsea ``enqueued_at`` (ISO-8601 UTC) de forma defensiva para la guarda de wipe (#56).
+
+    ``None`` o un valor invalido degradan a ``None`` (compatibilidad con mensajes
+    encolados antes de que existiera el campo). Si viene naive, se interpreta como UTC.
+    """
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except (ValueError, TypeError):
+        logger.warning("consolidation: enqueued_at invalido, se omite guarda de wipe")
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
 # ---------------------------------------------------------------------------
 # Cuerpo async de la consolidacion (separado para inyeccion en tests)
 # ---------------------------------------------------------------------------
@@ -232,12 +249,13 @@ async def _consolidate_turn_in_db(
     llm_client: LLMClient,
     embedder: EmbeddingClient,
     reranker: Reranker,
+    enqueued_at: datetime | None = None,
 ) -> int:
     """Nucleo de la consolidacion de UN turno sobre una ``session`` ya abierta.
 
-    Retorna la cantidad de ops aplicadas (0 si el turno ya estaba consolidado). NO
-    commitea: el commit lo da el caller (``worker_session`` en prod, o el fixture en
-    tests).
+    Retorna la cantidad de ops aplicadas (0 si el turno ya estaba consolidado o si el
+    usuario borro toda su memoria despues de encolar el turno). NO commitea: el commit
+    lo da el caller (``worker_session`` en prod, o el fixture en tests).
 
     INTENTO ATOMICO: la marca del turno, las ops y su auditoria van en un
     SAVEPOINT. Si algo levanta en el medio (p.ej. una falla transitoria del embedder
@@ -250,7 +268,19 @@ async def _consolidate_turn_in_db(
     sin fila (los turnos ya se purgaron al cerrar la sesion) se consolida igual:
     saltearlo perderia el turno. La extraccion con el LLM corre ANTES de tomar la fila,
     asi el lock dura lo que tarda ``apply_ops`` y no la llamada al modelo.
+
+    GUARDA DE WIPE (#56): si ``enqueued_at`` viene y el usuario ejecuto un wipe total
+    en ese momento o despues, se descarta antes de llamar al LLM y se re-chequea antes
+    de aplicar las ops (cubre un wipe ocurrido durante la llamada al modelo).
     """
+    if enqueued_at is not None and await was_wiped_after(
+        session, user_id=user_id, since=enqueued_at
+    ):
+        logger.info(
+            "consolidate_turn: memoria borrada despues del turno session=%s, no-op",
+            source_session_id,
+        )
+        return 0
     mem_engine = AgentMemoryEngine(
         llm_client, model=MODEL_ALIAS_AGENT, reraise=_WORKER_CONTROL_ERRORS
     )
@@ -262,6 +292,14 @@ async def _consolidate_turn_in_db(
         mode=mode,
     )
     async with session.begin_nested():
+        if enqueued_at is not None and await was_wiped_after(
+            session, user_id=user_id, since=enqueued_at
+        ):
+            logger.info(
+                "consolidate_turn: memoria borrada durante la extraccion session=%s, no-op",
+                source_session_id,
+            )
+            return 0
         if source_session_id is not None and turn_seq is not None:
             claim = await claim_turn(
                 session, user_id=user_id, session_id=source_session_id, seq=turn_seq
@@ -302,6 +340,8 @@ async def _async_consolidate(
     mode: str,
     # seq del turno del usuario en conversation_turns (marca de idempotencia)
     turn_seq: int | None = None,
+    # timestamp ISO-8601 UTC del enqueue (guarda contra wipe durante reintento, #56)
+    enqueued_at: str | None = None,
     # Inyectables para tests (None => construir desde get_settings())
     settings: Settings | None = None,
     llm_client: LLMClient | None = None,
@@ -337,6 +377,7 @@ async def _async_consolidate(
     source_session_id = _parse_source_session_id(session_id)
     # Parse defensivo del mode -> origin_mode de audit_log (nullable, best-effort).
     origin_mode = _parse_origin_mode(mode)
+    parsed_enqueued_at = _parse_enqueued_at(enqueued_at)
 
     # --- Dependencias inyectadas o construidas ---
     # Las que arma la task se cierran al salir del bloque, ande o no el intento; las
@@ -359,6 +400,7 @@ async def _async_consolidate(
                 llm_client=effective_llm,
                 embedder=effective_embedder,
                 reranker=effective_reranker,
+                enqueued_at=parsed_enqueued_at,
             )
 
         if session is not None:
@@ -474,6 +516,7 @@ def consolidate_turn(
     model_response: str,
     mode: str,
     turn_seq: int | None = None,
+    enqueued_at: str | None = None,
 ) -> None:
     """Task Celery: consolida el turno del usuario en memoria semantica + procedural.
 
@@ -508,6 +551,7 @@ def consolidate_turn(
                 model_response=model_response,
                 mode=mode,
                 turn_seq=turn_seq,
+                enqueued_at=enqueued_at,
             )
         )
         logger.info(
