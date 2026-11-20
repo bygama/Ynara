@@ -192,8 +192,9 @@ logs de `api`). Vida, que solo lee la memoria procedural, sigue andando.
 `GET /v1/memory/search` responde 503
 (`memory search: embeddings no disponibles: <Clase>`), con `Retry-After`
 si el 429 del proveedor lo trajo. Editar un hecho
-(`PATCH /v1/memory/semantic/{ref}`) todavía responde 500, porque
-re-embeddea el contenido nuevo.
+(`PATCH /v1/memory/semantic/{ref}`) también responde 503 con el mismo
+detail neutro (`memory update: embeddings no disponibles: <Clase>`),
+porque re-embeddea el contenido nuevo.
 
 1. Confirmar en System Health y en la página de estado del proveedor.
 2. La consolidación reintenta sola las caídas y los 429 del embedder (ver
