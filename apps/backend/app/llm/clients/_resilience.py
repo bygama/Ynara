@@ -194,6 +194,12 @@ class BreakerTally:
         else:
             breaker.record_success()
 
+    def cancel(self) -> None:
+        """Libera una prueba ``HALF_OPEN`` si el request fue cancelado por el caller."""
+        breaker, self._breaker = self._breaker, None
+        if breaker is not None:
+            breaker.cancel_probe()
+
 
 class ChainOutcome:
     """Como termino cada candidato de un ``complete()`` que se quedo sin resultado.

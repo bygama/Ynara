@@ -119,6 +119,17 @@ class CircuitBreaker:
         if self._failures >= self._failure_threshold:
             self._open()
 
+    def cancel_probe(self) -> None:
+        """Libera una prueba ``HALF_OPEN`` cancelada sin marcar exito ni fallo.
+
+        Si el caller cancela la coroutine en curso (``CancelledError`` /
+        ``GeneratorExit``) mientras hay una prueba ``HALF_OPEN`` en vuelo, el
+        proveedor no alcanzo a responder ni a fallar: dejar ``_probe_in_flight``
+        en ``True`` bloquearia al candidato hasta reiniciar el proceso.
+        """
+        if self._state is CircuitState.HALF_OPEN:
+            self._probe_in_flight = False
+
     def _open(self) -> None:
         """Transiciona a ``OPEN`` y arranca el temporizador de recuperacion."""
         self._state = CircuitState.OPEN
