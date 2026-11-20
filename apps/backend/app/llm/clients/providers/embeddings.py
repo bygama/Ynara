@@ -47,7 +47,7 @@ from app.llm.clients.providers._http import (
     transport_errors,
 )
 from app.llm.clients.providers._wire import json_body
-from app.llm.errors import EmbeddingDimensionError, LlmError
+from app.llm.errors import EmbeddingDimensionError, LlmError, LlmTransientError
 from app.llm.schemas import ModelHealth
 
 _EMBEDDINGS_PATH = "/embeddings"
@@ -156,7 +156,11 @@ class ApiEmbeddingClient:
                 auth=self._auth,
             )
         raise_for_provider_status(response)
-        return _parse_vectors(json_body(response), expected=len(batch))
+        try:
+            body = json_body(response)
+        except LlmError as exc:
+            raise LlmTransientError(_MALFORMED) from exc
+        return _parse_vectors(body, expected=len(batch))
 
 
 def _parse_vectors(body: Any, *, expected: int) -> list[list[float]]:
@@ -165,15 +169,17 @@ def _parse_vectors(body: Any, *, expected: int) -> list[list[float]]:
     El body tiene la forma de OpenAI: ``data`` con un ``{"index", "embedding"}`` por
     texto, en cualquier orden. Exige un vector por texto, los ``index`` de ``0`` a
     ``expected - 1`` sin repetir y, en cada vector, ``EMBEDDING_DIM`` números finitos.
-    Ningún error muestra el body (regla #4a).
+    Una respuesta malformada levanta ``LlmTransientError`` (el worker de consolidación
+    reintenta); una dimensión inesperada sigue siendo ``EmbeddingDimensionError``
+    (permanente, error de configuración). Ningún error muestra el body (regla #4a).
     """
     data = body.get("data") if isinstance(body, dict) else None
     if not isinstance(data, list) or len(data) != expected:
-        raise LlmError(_MALFORMED)
+        raise LlmTransientError(_MALFORMED)
     by_index: dict[int, list[float]] = {}
     for item in data:
         if not isinstance(item, dict):
-            raise LlmError(_MALFORMED)
+            raise LlmTransientError(_MALFORMED)
         index = item.get("index")
         if (
             isinstance(index, bool)
@@ -181,7 +187,7 @@ def _parse_vectors(body: Any, *, expected: int) -> list[list[float]]:
             or not 0 <= index < expected
             or index in by_index
         ):
-            raise LlmError(_MALFORMED)
+            raise LlmTransientError(_MALFORMED)
         by_index[index] = _vector(item.get("embedding"))
     return [by_index[index] for index in range(expected)]
 
@@ -189,7 +195,7 @@ def _parse_vectors(body: Any, *, expected: int) -> list[list[float]]:
 def _vector(raw: Any) -> list[float]:
     """Un ``embedding`` del body como ``EMBEDDING_DIM`` floats, sin recortar ni rellenar."""
     if not isinstance(raw, list):
-        raise LlmError(_MALFORMED)
+        raise LlmTransientError(_MALFORMED)
     if len(raw) != EMBEDDING_DIM:
         raise EmbeddingDimensionError(
             f"{len(raw)} en vez de {EMBEDDING_DIM}",
@@ -197,7 +203,7 @@ def _vector(raw: Any) -> list[float]:
             received=len(raw),
         )
     if not all(_is_finite_number(value) for value in raw):
-        raise LlmError(_MALFORMED)
+        raise LlmTransientError(_MALFORMED)
     return [float(value) for value in raw]
 
 
