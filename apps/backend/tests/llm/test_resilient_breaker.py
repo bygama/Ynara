@@ -11,12 +11,16 @@ programable, ``sleep`` y ``clock`` fakes.
 
 from __future__ import annotations
 
+import asyncio
+
+import pytest
+
 from app.llm.clients.circuit import CircuitBreaker, CircuitState
 from app.llm.clients.fakes import FakeLlmClient
 from app.llm.clients.pool import ClientPool, FirstHealthy
 from app.llm.clients.resilient import ResilientClient
 from app.llm.errors import LlmTimeoutError, LlmUnavailableError
-from app.llm.schemas import ChatMessage, CompletionResult
+from app.llm.schemas import ChatMessage, CompletionChunk, CompletionResult
 
 _MODEL = "agente"
 
@@ -123,3 +127,65 @@ async def test_requests_answered_on_retry_never_open_breaker() -> None:
 
     assert _state(resilient, primary) is CircuitState.CLOSED
     assert secondary.complete_calls == []
+
+
+async def test_cancelled_half_open_probe_in_complete_does_not_wedge_breaker() -> None:
+    """Cancelar un complete() en HALF_OPEN libera la prueba para el siguiente request (#14)."""
+    primary = _fake()
+    clock = _Clock()
+    resilient = _resilient(
+        [primary],
+        max_attempts=1,
+        breaker_factory=lambda: CircuitBreaker(
+            failure_threshold=1, recovery_timeout_s=30.0, clock=clock
+        ),
+    )
+    primary.queue_error(LlmTimeoutError("timeout HTTP"))
+    assert (await _complete(resilient)).finish_reason == "degraded"
+    assert _state(resilient, primary) is CircuitState.OPEN
+
+    clock.now = 30.0
+    primary.queue_error(asyncio.CancelledError())
+    with pytest.raises(asyncio.CancelledError):
+        await _complete(resilient)
+
+    # El breaker sigue en HALF_OPEN pero con la prueba liberada: el proximo entra y cierra.
+    assert _state(resilient, primary) is CircuitState.HALF_OPEN
+    primary.queue_result(_result("volvio"))
+    assert (await _complete(resilient)).text == "volvio"
+    assert _state(resilient, primary) is CircuitState.CLOSED
+
+
+async def test_cancelled_half_open_probe_in_stream_does_not_wedge_breaker() -> None:
+    """Cancelar un stream() en HALF_OPEN libera la prueba para el siguiente request (#14)."""
+    primary = _fake()
+    clock = _Clock()
+    resilient = _resilient(
+        [primary],
+        max_attempts=1,
+        breaker_factory=lambda: CircuitBreaker(
+            failure_threshold=1, recovery_timeout_s=30.0, clock=clock
+        ),
+    )
+    primary.queue_error(LlmTimeoutError("timeout HTTP"))
+    assert (await _complete(resilient)).finish_reason == "degraded"
+    assert _state(resilient, primary) is CircuitState.OPEN
+
+    clock.now = 30.0
+    primary.queue_stream_error(asyncio.CancelledError())
+    with pytest.raises(asyncio.CancelledError):
+        async for _ in resilient.stream(
+            model=_MODEL, messages=[ChatMessage(role="user", content="x")]
+        ):
+            pass
+
+    assert _state(resilient, primary) is CircuitState.HALF_OPEN
+    primary.queue_chunks([CompletionChunk(delta_text="ok", finish_reason="stop")])
+    chunks = [
+        c
+        async for c in resilient.stream(
+            model=_MODEL, messages=[ChatMessage(role="user", content="x")]
+        )
+    ]
+    assert "".join(c.delta_text for c in chunks) == "ok"
+    assert _state(resilient, primary) is CircuitState.CLOSED

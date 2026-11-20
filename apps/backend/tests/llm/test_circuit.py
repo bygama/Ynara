@@ -129,3 +129,19 @@ def test_would_allow_has_no_side_effects() -> None:
     assert breaker.would_allow() is False  # prueba en curso
     breaker.record_success()
     assert breaker.would_allow() is True
+
+
+def test_cancel_probe_releases_half_open_without_recording_outcome() -> None:
+    """Cancelar una prueba HALF_OPEN libera el cupo sin abrir ni cerrar el breaker (#14)."""
+    clock = _Clock()
+    breaker = _breaker(clock, threshold=1, recovery=30.0)
+    breaker.record_failure()
+    clock.now = 30.0
+    assert breaker.allow() is True  # -> HALF_OPEN con prueba en vuelo
+    assert breaker.allow() is False
+    breaker.cancel_probe()
+    assert breaker.state is CircuitState.HALF_OPEN
+    assert breaker.would_allow() is True
+    assert breaker.allow() is True  # permite volver a probar
+    breaker.record_success()
+    assert breaker.state is CircuitState.CLOSED
