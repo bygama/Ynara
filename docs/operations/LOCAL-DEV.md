@@ -1,6 +1,7 @@
 # LOCAL-DEV.md — Flujo de desarrollo diario
 
-> Asume que ya hiciste el INSTALL.md una vez.
+> Asume que ya hiciste el INSTALL.md una vez. Para el backend se requiere `uv >= 0.11.0`
+> (fijado en `apps/backend/pyproject.toml` para compatibilidad con `uv.lock`).
 
 ## Levantar el stack
 
@@ -47,8 +48,9 @@ backend (auth, sesiones, memoria, agenda), pero el chat no contesta:
   vector), sin similitud semántica real.
 - `FakeLlmClient` responde solo lo que un test le programa. En el servidor
   de dev no tiene nada programado, así que un turno de `/v1/chat` o
-  `/v1/chat/stream` termina en 500 y el playground del panel admin
-  responde 409. Para chatear hace falta un proveedor: ver
+  `/v1/chat/stream` devuelve una respuesta degradada («IA pausada», sin
+  guardar el turno) y el playground del panel admin responde 409. Para
+  chatear hace falta un proveedor: ver
   [Probar contra un proveedor de IA](#probar-contra-un-proveedor-de-ia).
 
 El reranker es siempre un passthrough (ADR-028 D5).
