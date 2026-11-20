@@ -257,20 +257,22 @@ def _nan_response(request: httpx.Request) -> httpx.Response:
 )
 async def test_malformed_body_raises_llm_error(body: Any) -> None:
     client = _client(lambda request: httpx.Response(200, json=body))
-    with pytest.raises(LlmError) as excinfo:
+    with pytest.raises(LlmTransientError) as excinfo:
         await client.embed(["a", "b"])
     assert not isinstance(excinfo.value, EmbeddingDimensionError)
-    assert str(excinfo.value) == "error de inferencia LLM: respuesta de embeddings malformada"
+    assert str(excinfo.value) == (
+        "falla transitoria del proveedor LLM: respuesta de embeddings malformada"
+    )
 
 
 async def test_non_finite_values_are_rejected() -> None:
-    with pytest.raises(LlmError, match="respuesta de embeddings malformada"):
+    with pytest.raises(LlmTransientError, match="respuesta de embeddings malformada"):
         await _client(_nan_response).embed(["a"])
 
 
 async def test_non_json_body_raises_llm_error() -> None:
     client = _client(lambda request: httpx.Response(200, content=b"<html>proxy</html>"))
-    with pytest.raises(LlmError, match="respuesta malformada"):
+    with pytest.raises(LlmTransientError, match="respuesta de embeddings malformada"):
         await client.embed(["a"])
 
 
