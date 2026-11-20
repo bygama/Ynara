@@ -29,7 +29,7 @@ describe("AiProviders", () => {
     const p = within(principal);
     expect(p.getByText("Principal")).toBeInTheDocument();
     expect(p.getByText("principal")).toBeInTheDocument();
-    expect(p.getByText("OK")).toBeInTheDocument();
+    expect(p.getByText("Operativo")).toBeInTheDocument();
     expect(p.getByText("api.example.com")).toBeInTheDocument();
     expect(p.getByText("api")).toBeInTheDocument();
     expect(p.getByText("agente")).toBeInTheDocument();
@@ -43,13 +43,13 @@ describe("AiProviders", () => {
     expect(r.getByText("respaldo.example.com")).toBeInTheDocument();
   });
 
-  it("muestra los embeddings con modelo, dimensión, modo y su estado sin configurar", () => {
+  it("muestra los embeddings con modelo, dimensión, modo y su estado no en uso", () => {
     render(<AiProviders ai={systemFixture().ai} />);
 
     expect(screen.getByText("BAAI/bge-m3")).toBeInTheDocument();
     expect(screen.getByText("1024")).toBeInTheDocument();
     expect(screen.getByText("fake")).toBeInTheDocument();
-    expect(screen.getByText("Sin configurar")).toBeInTheDocument();
+    expect(screen.getByText("No en uso")).toBeInTheDocument();
     expect(screen.getByText("Sin URL configurada")).toBeInTheDocument();
   });
 
