@@ -138,6 +138,7 @@ class TestConsolidateTurnWrapper:
                 model_response="chau",
                 mode=MODE,
                 turn_seq=None,
+                enqueued_at=None,
             )
 
     def test_passes_turn_seq_through(self) -> None:

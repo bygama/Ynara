@@ -90,6 +90,18 @@ def _parse_origin_mode(mode: str) -> Mode | None:
         return None
 
 
+def _parse_enqueued_at(raw: str | None) -> datetime | None:
+    """Parsea ``enqueued_at`` (ISO-8601 UTC) de forma defensiva para la guarda de wipe."""
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except (ValueError, TypeError):
+        logger.warning("consolidation: enqueued_at invalido, se omite guarda de wipe")
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
 def _retry_or_give_up(
     task: Task,
     exc: LlmTransientError | SoftTimeLimitExceeded,
