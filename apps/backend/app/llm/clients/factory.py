@@ -138,10 +138,17 @@ def build_llm_client(
     distinguir una falla transitoria de un rechazo permanente.
 
     ``fake`` (default dev/test): ``FakeLlmClient`` que sirve los alias de la config.
-    No abre red y no tiene cadena que agotar, asi que ignora ``degrade``.
+    Va con ``record_calls=False`` (es un singleton de la app y no acumula mensajes en
+    RAM) y ``degrade_when_empty=degrade`` (en el servidor de dev devuelve respuesta
+    degradada en vez de 500; en el worker de consolidacion sigue levantando para que el
+    motor aplique 0 ops).
     """
     if not _wants_real_llm(settings):
-        return FakeLlmClient(models=frozenset(config.models))
+        return FakeLlmClient(
+            models=frozenset(config.models),
+            record_calls=False,
+            degrade_when_empty=degrade,
+        )
 
     check_resilience_budget()
     _quiet_httpx_request_logs()
