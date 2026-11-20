@@ -17,13 +17,13 @@ type Props = {
 };
 
 /**
- * Label y color de cada estado. Decisión de marca, igual que `StatusCard`: OK =
- * azul plano (sin verde), caído = `--color-error`, sin configurar = `ink-soft`.
+ * Label y color de cada estado. Decisión de marca, igual que `StatusCard`: Operativo =
+ * azul plano (sin verde), caído = `--color-error`, no en uso = `ink-soft`.
  */
 const STATUS_META: Record<AiStatusT, { label: string; colorVar: string }> = {
-  ok: { label: "OK", colorVar: "--color-blue-flat" },
+  ok: { label: "Operativo", colorVar: "--color-blue-flat" },
   down: { label: "Caído", colorVar: "--color-error" },
-  unconfigured: { label: "Sin configurar", colorVar: "--color-ink-soft" },
+  unconfigured: { label: "No en uso", colorVar: "--color-ink-soft" },
 };
 
 /**
@@ -37,8 +37,8 @@ const STATUS_META: Record<AiStatusT, { label: string; colorVar: string }> = {
  * modelo y la dimensión del vector. Del backend llega solo el host de cada URL base,
  * nunca la URL entera ni la credencial.
  *
- * Con el backend `fake` el panel no sondea a nadie: el estado es "Sin configurar",
- * no OK. Los valores técnicos van con `tabular-nums`.
+ * Con el backend `fake` el panel no sondea a nadie: el estado es "No en uso",
+ * no Operativo. Los valores técnicos van con `tabular-nums`.
  */
 export function AiProviders({ ai, className }: Props) {
   const { llm, embeddings } = ai;
