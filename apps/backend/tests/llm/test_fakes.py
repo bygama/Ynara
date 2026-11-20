@@ -107,3 +107,25 @@ async def test_health_toggle() -> None:
     assert (await fake.health()).healthy is True
     fake.set_health(False)
     assert (await fake.health()).healthy is False
+
+
+@pytest.mark.asyncio
+async def test_record_calls_false_does_not_accumulate_messages() -> None:
+    fake = FakeLlmClient(models=frozenset({_MODEL}), record_calls=False)
+    fake.queue_result(_result("hola"))
+    fake.queue_chunks([CompletionChunk(delta_text="ho")])
+    await fake.complete(model=_MODEL, messages=_messages())
+    async for _ in fake.stream(model=_MODEL, messages=_messages()):
+        pass
+    assert fake.complete_calls == []
+    assert fake.stream_calls == []
+
+
+@pytest.mark.asyncio
+async def test_degrade_when_empty_returns_degraded_response() -> None:
+    fake = FakeLlmClient(models=frozenset({_MODEL}), degrade_when_empty=True)
+    result = await fake.complete(model=_MODEL, messages=_messages())
+    assert result.finish_reason == "degraded"
+    assert result.model_name == _MODEL
+    assert result.tool_calls == []
+    assert result.text
