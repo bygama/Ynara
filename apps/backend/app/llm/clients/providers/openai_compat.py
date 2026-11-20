@@ -109,7 +109,9 @@ class OpenAICompatClient:
         base_url = validated_base_url(base_url)
         if not api_key.get_secret_value().strip():
             raise ValueError("el proveedor necesita una credencial")
-        if not model_map or not all(alias and model_id for alias, model_id in model_map.items()):
+        if not model_map or not all(
+            alias.strip() and model_id.strip() for alias, model_id in model_map.items()
+        ):
             raise ValueError("el mapa de modelos del proveedor está vacío o incompleto")
         for effort in (reasoning_effort_on, reasoning_effort_off):
             if effort is not None and not effort.strip():
@@ -272,7 +274,7 @@ class OpenAICompatClient:
             payload["reasoning_effort"] = effort
         return payload
 
-    def _parse_completion(self, body: Any, model_id: str, latency_ms: float) -> CompletionResult:
+    def _parse_completion(self, body: object, model_id: str, latency_ms: float) -> CompletionResult:
         if not isinstance(body, dict):
             raise LlmError("respuesta malformada")
         choices = body.get("choices")

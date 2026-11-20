@@ -355,6 +355,8 @@ async def test_key_never_reaches_logs_repr_or_errors(caplog: pytest.LogCaptureFi
         {"api_key": SecretStr("  ")},
         {"model_map": {}},
         {"model_map": {_ALIAS: ""}},
+        {"model_map": {_ALIAS: "   "}},
+        {"model_map": {"   ": _MODEL_ID}},
         {"reasoning_effort_on": ""},
         {"reasoning_effort_off": " "},
     ],
