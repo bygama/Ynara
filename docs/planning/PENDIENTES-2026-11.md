@@ -809,7 +809,7 @@ corregir leyendo el código.
       preparar la demo. [V]
       Evidencia: scripts/export-user-data.sh:16-22; scripts/reset-memory.sh:24-33;
       scripts/seed-db.sh:9-14; Makefile:128-135
-- [ ] **AUD-BE-07 · .env.example del backend no lista todas las variables que el
+- [x] **AUD-BE-07 · .env.example del backend no lista todas las variables que el
       código lee.** (baja) Completar el ejemplo con todas las variables que lee
       el código; sumar el chequeo al doctor (CI-12). [V]
 
