@@ -198,7 +198,7 @@ antes de fusionar duplicados (por ejemplo, "borrar cuenta" apareció en cuatro).
       `render_context_block` corre fuera del `try` que degrada; el modo "IA
       pausada" de ADR-027 no funciona como se describe.
       `apps/backend/app/llm/router.py:225`. **S** [V+] (REL-01, AI-46)
-      *(Resuelto en migración ADR-028: el turno degrada sin llamar al modelo y `/v1/memory/search` + `PATCH /v1/memory/semantic/{ref}` devuelven 503 con `Retry-After`.)*
+      *(Resuelto en migración ADR-028: el turno degrada sin llamar al modelo y `/v1/memory/search` + `PATCH /v1/memory/semantic/{ref}` devuelven 503, con `Retry-After` cuando el proveedor responde 429 con espera.)*
 - [ ] **M-40 · La ventana de contexto presupuestada no coincide con la servida.**
       El config no coincide con lo medido en ADR-012 y el contexto puede
       truncarse. Tampoco se versiona la configuración del servidor de modelos.
