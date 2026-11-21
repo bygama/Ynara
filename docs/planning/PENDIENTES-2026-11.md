@@ -124,7 +124,7 @@ Ya está hecho; queda como línea de base.
       acento; el deck usa violeta, Índigo y Azul violáceo, que existen como tokens
       pero no figuran en `REBUILD-BRIEF.md:72-83`. Hex sueltos: `#6e92cc`
       (`living-field/field/climate.ts:20,21,24`) y `#14171f` (`CascadeField.tsx:489`). [V]
-- [ ] **DECK-26 · Páginas internas de la landing entran al build público.** Revisar
+- [x] **DECK-26 · Páginas internas de la landing entran al build público.** Revisar
       la configuración de indexación y decidir si se excluyen del build. [V]
 - [ ] **DECK-27 · Landing sin tests ni CI propia** (ver CI-01). [V]
 
@@ -748,7 +748,7 @@ reconocen los nombres reales de las tools del backend.
       .env.example. Agregar global-error.tsx y un error.tsx en onboarding. [V]
       Evidencia: apps/web/src/app/(app)/error.tsx:25;
       apps/admin/src/app/(panel)/error.tsx:16-17; apps/mobile/.env.example:17-18
-- [ ] **AUD-FE-10 · Las páginas de prueba de la web entran al build de producción.**
+- [x] **AUD-FE-10 · Las páginas de prueba de la web entran al build de producción.**
       (baja) Devolver notFound() en esas páginas en producción, salvo que se
       necesiten para la regresión visual de UI-17, y dejarlo anotado. [V]
 
