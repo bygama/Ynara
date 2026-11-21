@@ -22,7 +22,13 @@ from pydantic_settings import (
 )
 
 from app.core.constants import DEFAULT_EMBEDDING_BATCH_SIZE, DEFAULT_EMBEDDING_MODEL
-from app.core.llm_providers import LLM_API_KEY_PREFIX, LlmProvider, _LlmApiKeysSource
+from app.core.llm_providers import (
+    LLM_API_KEY_PREFIX,
+    LlmProvider,
+    _LlmApiKeysSource,
+    validate_embedding_api_config,
+    validate_llm_api_config,
+)
 from app.core.urls import validated_base_url
 
 __all__ = ["LLM_API_KEY_PREFIX", "LlmProvider", "Settings", "get_settings"]
@@ -460,63 +466,25 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _require_llm_api(self) -> Settings:
-        """Fail-fast de la inferencia por API (ADR-028 D7).
-
-        En production el LLM tiene que ser ``api``: con ``fake`` el chat le contestaría
-        a un usuario real con el cliente de prueba. Con ``api``, en cualquier entorno,
-        tiene que haber al menos un proveedor y cada uno con su credencial
-        ``LLM_API_KEY_<NAME>``. El error nombra la variable que falta, nunca un valor.
-        """
-        if self.environment == "production" and self.llm_backend != "api":
-            raise ValueError(
-                "LLM_BACKEND tiene que ser 'api' en production: el cliente fake no le "
-                "contesta a usuarios reales (ADR-028)"
-            )
-        if self.llm_backend != "api":
-            return self
-        if not self.llm_providers:
-            raise ValueError(
-                "LLM_PROVIDERS está vacío: con LLM_BACKEND=api hace falta al menos un proveedor"
-            )
-        missing = [
-            p.api_key_env
-            for p in self.llm_providers
-            if not (key := self.llm_api_keys.get(p.name)) or not key.get_secret_value().strip()
-        ]
-        if missing:
-            raise ValueError(f"falta la credencial del proveedor: {', '.join(missing)}")
+        """Fail-fast de la inferencia por API (ADR-028 D7; lógica en ``llm_providers``)."""
+        validate_llm_api_config(
+            environment=self.environment,
+            llm_backend=self.llm_backend,
+            llm_providers=self.llm_providers,
+            llm_api_keys=self.llm_api_keys,
+        )
         return self
 
     @model_validator(mode="after")
     def _require_embedding_api(self) -> Settings:
-        """Fail-fast de los embeddings por API (ADR-028 D7).
-
-        En production el embedder tiene que ser ``api``: con ``fake`` la memoria de un
-        usuario real se guardaría con vectores que no representan al texto, y la búsqueda
-        por similitud no encontraría nada. Con ``api``, en cualquier entorno, hacen falta
-        la URL base, la credencial y el modelo. El error nombra las variables que faltan,
-        nunca un valor (por eso acá solo se miran booleanos).
-        """
-        if self.environment == "production" and self.embedding_backend != "api":
-            raise ValueError(
-                "EMBEDDING_BACKEND tiene que ser 'api' en production: el embedder fake no "
-                "sirve para la memoria de usuarios reales (ADR-028)"
-            )
-        if self.embedding_backend != "api":
-            return self
-        missing = [
-            name
-            for name, present in (
-                ("EMBEDDING_BASE_URL", bool(self.embedding_base_url)),
-                ("EMBEDDING_API_KEY", bool(self.embedding_api_key.get_secret_value())),
-                ("EMBEDDING_MODEL", bool(self.embedding_model)),
-            )
-            if not present
-        ]
-        if missing:
-            raise ValueError(
-                f"falta la configuración del proveedor de embeddings: {', '.join(missing)}"
-            )
+        """Fail-fast de los embeddings por API (ADR-028 D7; lógica en ``llm_providers``)."""
+        validate_embedding_api_config(
+            environment=self.environment,
+            embedding_backend=self.embedding_backend,
+            embedding_base_url=self.embedding_base_url,
+            embedding_api_key=self.embedding_api_key,
+            embedding_model=self.embedding_model,
+        )
         return self
 
 

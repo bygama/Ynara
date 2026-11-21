@@ -113,3 +113,75 @@ class _LlmApiKeysSource(PydanticBaseSettingsSource):
                     else:
                         keys.pop(provider_name, None)
         return {"llm_api_keys": keys} if keys else {}
+
+
+def validate_llm_api_config(
+    *,
+    environment: str,
+    llm_backend: str,
+    llm_providers: list[LlmProvider],
+    llm_api_keys: Mapping[str, SecretStr],
+) -> None:
+    """Fail-fast de la inferencia por API (ADR-028 D7).
+
+    En production el LLM tiene que ser ``api``: con ``fake`` el chat le contestaría
+    a un usuario real con el cliente de prueba. Con ``api``, en cualquier entorno,
+    tiene que haber al menos un proveedor y cada uno con su credencial
+    ``LLM_API_KEY_<NAME>``. El error nombra la variable que falta, nunca un valor.
+    """
+    if environment == "production" and llm_backend != "api":
+        raise ValueError(
+            "LLM_BACKEND tiene que ser 'api' en production: el cliente fake no le "
+            "contesta a usuarios reales (ADR-028)"
+        )
+    if llm_backend != "api":
+        return
+    if not llm_providers:
+        raise ValueError(
+            "LLM_PROVIDERS está vacío: con LLM_BACKEND=api hace falta al menos un proveedor"
+        )
+    missing = [
+        p.api_key_env
+        for p in llm_providers
+        if not (key := llm_api_keys.get(p.name)) or not key.get_secret_value().strip()
+    ]
+    if missing:
+        raise ValueError(f"falta la credencial del proveedor: {', '.join(missing)}")
+
+
+def validate_embedding_api_config(
+    *,
+    environment: str,
+    embedding_backend: str,
+    embedding_base_url: str,
+    embedding_api_key: SecretStr,
+    embedding_model: str,
+) -> None:
+    """Fail-fast de los embeddings por API (ADR-028 D7).
+
+    En production el embedder tiene que ser ``api``: con ``fake`` la memoria de un
+    usuario real se guardaría con vectores que no representan al texto, y la búsqueda
+    por similitud no encontraría nada. Con ``api``, en cualquier entorno, hacen falta
+    la URL base, la credencial y el modelo. El error nombra las variables que faltan,
+    nunca un valor.
+    """
+    if environment == "production" and embedding_backend != "api":
+        raise ValueError(
+            "EMBEDDING_BACKEND tiene que ser 'api' en production: el embedder fake no "
+            "sirve para la memoria de usuarios reales (ADR-028)"
+        )
+    if embedding_backend != "api":
+        return
+    missing = [
+        name
+        for name, present in (
+            ("EMBEDDING_BASE_URL", bool(embedding_base_url)),
+            ("EMBEDDING_API_KEY", bool(embedding_api_key.get_secret_value())),
+            ("EMBEDDING_MODEL", bool(embedding_model)),
+        )
+        if not present
+    ]
+    if missing:
+        raise ValueError(
+            f"falta la configuración del proveedor de embeddings: {', '.join(missing)}"
+        )
