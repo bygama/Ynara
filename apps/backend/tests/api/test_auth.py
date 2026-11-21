@@ -365,7 +365,7 @@ async def test_token_usable_contra_ruta_protegida(db_session: AsyncSession) -> N
             tool_calls=[],
             prompt_tokens=10,
             completion_tokens=5,
-            model_name="gemma4",
+            model_name="org/chat",
             latency_ms=42.0,
         )
     )

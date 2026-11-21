@@ -1,5 +1,12 @@
 # Roadmap: Web a funcionalidad completa (salir de mock-first)
 
+> **Actualización (noviembre 2026):** [ADR-028](../architecture/adrs/ADR-028-inferencia-por-api.md)
+> reemplazó Ollama y los modelos propios por proveedores de IA por API: «gemma» se
+> lee como el alias `conversacional` y «qwen», como el alias `agente`. La "capa
+> qwen por detrás" de ADR-021 quedó parcialmente superseded por ADR-022 (las tools
+> del agente corren síncronas en el chat) y enmendada por ADR-028. El cuerpo no se
+> reescribe.
+
 > Estado: vivo · Última actualización: 2026-06-22
 > Dueño del orden: agente (autonomía dada por @bygama — "mejor práctica, lo más
 > escalable posible"). Cada PR con migración requiere **1 aprobación humana** (regla #3).

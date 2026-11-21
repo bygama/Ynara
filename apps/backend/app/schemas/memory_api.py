@@ -67,7 +67,7 @@ class MemoryGroupedResponse(YnaraBaseModel):
 class MemoryExport(YnaraBaseModel):
     """Export JSON versionado de ``GET /v1/memory/export``: las 3 capas COMPLETAS.
 
-    Sin paginar (on-prem, pocos hechos por user). ``version`` permite evolucionar
+    Sin paginar (pocos hechos por user). ``version`` permite evolucionar
     el formato; ``exported_at`` es ``datetime.now(UTC)`` del momento del export.
     El contenido va descifrado (los ``*Out`` traen ``content`` / ``summary`` en
     plaintext); el blob cifrado nunca viaja.

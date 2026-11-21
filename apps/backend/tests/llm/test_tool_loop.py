@@ -448,7 +448,7 @@ def _looping_registry_and_spec() -> tuple[ToolRegistry, ToolSpec]:
 async def test_guard_max_iteraciones_fuerza_respuesta_final() -> None:
     """Al agotar MAX_TOOL_ITERATIONS con texto vacío, una completion final SIN tools.
 
-    Regresión (#260): un modelo que loopea llamando tools (p.ej. qwen reintentando el
+    Regresión (#260): un modelo que loopea llamando tools (p.ej. el agente reintentando el
     stub memory.add) agotaba las iteraciones sin dar un texto final -> el usuario veía
     el ``fallback_text`` ("no pude procesar...") AUNQUE las tools sí se ejecutaron. Ahora
     se fuerza UNA completion sin tools: sin tools que llamar, el modelo responde en
@@ -750,7 +750,7 @@ async def test_result_text_vacio_final_usa_fallback() -> None:
 
 @pytest.mark.asyncio
 async def test_specs_vacia_pasa_tools_none() -> None:
-    """Cuando specs=[], complete() debe recibir tools=None (Gemma conversacional)."""
+    """Cuando specs=[], complete() debe recibir tools=None (alias conversacional)."""
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
     fake.queue_result(_make_result(text="ok", finish_reason="stop"))
 

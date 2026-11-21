@@ -22,7 +22,7 @@ from app.llm.clients.providers.openai_compat import OpenAICompatClient
         ("  https://api.proveedor.test/v1/  ", "https://api.proveedor.test/v1"),
         ("https://api.proveedor.test:8443/openai/v1", "https://api.proveedor.test:8443/openai/v1"),
         ("HTTPS://API.Proveedor.test/v1", "HTTPS://API.Proveedor.test/v1"),
-        ("http://localhost:11434/v1", "http://localhost:11434/v1"),
+        ("http://localhost:8080/v1", "http://localhost:8080/v1"),
         ("http://inferencia.localhost/v1", "http://inferencia.localhost/v1"),
         ("http://127.0.0.1:8000/v1", "http://127.0.0.1:8000/v1"),
         ("http://[::1]:8000/v1", "http://[::1]:8000/v1"),

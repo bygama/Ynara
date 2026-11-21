@@ -1,5 +1,14 @@
 # FRONTEND-APP-BUILD-PLAN — Construcción de todas las vistas de Ynara
 
+> **Actualización (noviembre 2026):** con [ADR-028](../architecture/adrs/ADR-028-inferencia-por-api.md)
+> la inferencia sale por proveedores de IA por API, no por una GPU propia. Donde
+> este plan dice que el "LLM real" necesita infra GPU/vLLM on-prem y que la regla
+> #4 exige inferencia y datos dentro del perímetro, vale lo nuevo: el LLM real se
+> prende con `LLM_BACKEND=api` y la lista `LLM_PROVIDERS`, y la regla #4 está
+> partida en 4a (datos de usuario) y 4b (proveedores de IA). Hasta cerrar las
+> compuertas de ADR-028, los proveedores reciben solo datos sintéticos. El cuerpo
+> no se reescribe.
+
 > **Propósito.** Construir **todas las vistas** del producto Ynara según los
 > wireframes de media fidelidad (`C:\Users\mateo\Desktop\Uni\Tesis-Ynara\wireframes`,
 > archivo `.pen` de Pencil, 20 pantallas) y **conectarlas al backend donde se

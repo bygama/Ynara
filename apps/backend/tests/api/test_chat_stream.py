@@ -15,7 +15,7 @@ clientes Fake, sin red ni Redis.
 ``await client.post('/v1/chat/stream', ...)`` ya da ``resp.text`` con el wire
 SSE completo: NO hace falta ``client.stream()``.
 
-Cubre: happy path Gemma (tokens + done) y Qwen (actions en done), reuso de
+Cubre: happy path conversacional (tokens + done) y agente (actions en done), reuso de
 sesion, mapeo de errores HTTP normales (401/422/404/409, NUNCA como eventos
 SSE), los invariantes del wire (``''.join(deltas) == text``, todo bloque cierra
 en ``\\n\\n``, ningun newline crudo parte el bloque), la coercion de
@@ -63,7 +63,7 @@ def _completion(
     text: str = "hola",
     finish_reason: str = "stop",
     tool_calls: list[ToolCall] | None = None,
-    model_name: str = "gemma4",
+    model_name: str = "org/chat",
     reasoning: str | None = None,
 ) -> CompletionResult:
     """``CompletionResult`` minimo para programar el ``FakeLlmClient``.
@@ -188,15 +188,15 @@ def _done(events: list[tuple[str, dict]]) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# 1. Happy path: Gemma (vida) — tokens + done, sesion persistida
+# 1. Happy path: conversacional (vida) — tokens + done, sesion persistida
 # ---------------------------------------------------------------------------
 
 
-async def test_happy_gemma_tokens_y_done(db_session: AsyncSession) -> None:
+async def test_happy_conversacional_tokens_y_done(db_session: AsyncSession) -> None:
     """200 + tokens que reconstruyen el texto + done con actions vacias."""
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_completion(text="hola, todo bien?", model_name="gemma4"))
+    fake.queue_result(_completion(text="hola, todo bien?", model_name="org/chat"))
 
     client = await _client(db_session, llm_client=fake)
     try:
@@ -231,20 +231,20 @@ async def test_happy_gemma_tokens_y_done(db_session: AsyncSession) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 2. Happy path: Qwen (productividad) — actions pobladas en el done
+# 2. Happy path: agente (productividad) — actions pobladas en el done
 # ---------------------------------------------------------------------------
 
 
-async def test_happy_qwen_actions_en_done(db_session: AsyncSession) -> None:
+async def test_happy_agente_actions_en_done(db_session: AsyncSession) -> None:
     """200 + actions en done (tool loop). Encola consolidacion (mockeada)."""
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"agente"}))
     # Vuelta 1: tool_call memory.search; vuelta 2: stop con texto.
     tc = ToolCall(id="tc-1", name="memory.search", arguments={"query": "reuniones"})
     fake.queue_result(
-        _completion(text="", finish_reason="tool_calls", tool_calls=[tc], model_name="qwen")
+        _completion(text="", finish_reason="tool_calls", tool_calls=[tc], model_name="org/agent")
     )
-    fake.queue_result(_completion(text="Listo", finish_reason="stop", model_name="qwen"))
+    fake.queue_result(_completion(text="Listo", finish_reason="stop", model_name="org/agent"))
 
     client = await _client(db_session, llm_client=fake)
     try:
@@ -271,8 +271,8 @@ async def test_happy_qwen_actions_en_done(db_session: AsyncSession) -> None:
         assert action["id"] == "tc-1"
         assert action["name"] == "memory.search"
         assert action["arguments"] == {"query": "reuniones"}
-        # Qwen escribe memoria -> /chat/stream TAMBIEN encola (hereda el enqueue
-        # post-commit de ChatService.run_turn, igual que /chat).
+        # El alias agente escribe memoria -> /chat/stream TAMBIEN encola (hereda el
+        # enqueue post-commit de ChatService.run_turn, igual que /chat).
         mock_task.delay.assert_called_once()
     finally:
         app.dependency_overrides.clear()
@@ -290,12 +290,12 @@ async def test_stream_enqueues_consolidate_post_commit(db_session: AsyncSession)
     El enqueue se movio de ``route()`` a ``ChatService.run_turn`` (M10 Ola 0), que
     ambos endpoints comparten: este test prueba que /chat/stream (no solo /chat)
     encola, y que cuando lo hace la ``ChatSession`` YA esta persistida en la DB
-    (enqueue post-commit) con los kwargs que pasaba ``route()``. Qwen
-    (productividad) tiene ``writes_memory=True``.
+    (enqueue post-commit) con los kwargs que pasaba ``route()``. El alias
+    agente (productividad) tiene ``writes_memory=True``.
     """
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"agente"}))
-    fake.queue_result(_completion(text="Hecho", finish_reason="stop", model_name="qwen"))
+    fake.queue_result(_completion(text="Hecho", finish_reason="stop", model_name="org/agent"))
 
     client = await _client(db_session, llm_client=fake)
     try:
@@ -344,8 +344,8 @@ async def test_reuso_session_id(db_session: AsyncSession) -> None:
     """El session_id devuelto reusa la misma ChatSession (mismo id)."""
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_completion(text="uno", model_name="gemma4"))
-    fake.queue_result(_completion(text="dos", model_name="gemma4"))
+    fake.queue_result(_completion(text="uno", model_name="org/chat"))
+    fake.queue_result(_completion(text="dos", model_name="org/chat"))
 
     client = await _client(db_session, llm_client=fake)
     try:
@@ -476,7 +476,7 @@ async def test_session_otro_user_404(db_session: AsyncSession) -> None:
     intruder = await _seed_user(db_session)
 
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_completion(text="hola", model_name="gemma4"))
+    fake.queue_result(_completion(text="hola", model_name="org/chat"))
     client = await _client(db_session, llm_client=fake)
     try:
         async with client:
@@ -511,7 +511,7 @@ async def test_session_otro_user_404(db_session: AsyncSession) -> None:
 async def test_mode_mismatch_409(db_session: AsyncSession) -> None:
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_completion(text="hola", model_name="gemma4"))
+    fake.queue_result(_completion(text="hola", model_name="org/chat"))
     client = await _client(db_session, llm_client=fake)
     try:
         async with client:
@@ -555,7 +555,7 @@ async def test_invariante_join_igual_text(db_session: AsyncSession, payload_text
     """El wire nunca se parte por newlines: ''.join(deltas) == text EXACTO."""
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_completion(text=payload_text, model_name="gemma4"))
+    fake.queue_result(_completion(text=payload_text, model_name="org/chat"))
 
     client = await _client(db_session, llm_client=fake)
     try:
@@ -697,7 +697,7 @@ async def test_wire_estructura(db_session: AsyncSession) -> None:
     """El wire arranca con 'event: token\\ndata: ', cierra en '\\n\\n', parsea ok."""
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_completion(text="hola mundo", model_name="gemma4"))
+    fake.queue_result(_completion(text="hola mundo", model_name="org/chat"))
 
     client = await _client(db_session, llm_client=fake)
     try:
@@ -750,7 +750,7 @@ async def test_commit_falla_500_sin_stream_parcial(
     """
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
-    fake.queue_result(_completion(text="hola", model_name="gemma4"))
+    fake.queue_result(_completion(text="hola", model_name="org/chat"))
 
     async def _boom() -> None:
         raise RuntimeError("commit boom")
@@ -808,7 +808,7 @@ async def test_error_mid_stream_emite_event_error_neutro(
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
     # Texto largo (>1 ventana de _TOKEN_CHUNK_SIZE=6 code-points) -> el for itera
     # varias veces, asi hay un 1er token antes de que falle la 2da invocacion.
-    fake.queue_result(_completion(text="hola mundo, esto es largo", model_name="gemma4"))
+    fake.queue_result(_completion(text="hola mundo, esto es largo", model_name="org/chat"))
 
     real_sse_event = _sse_event
     calls = {"n": 0}
@@ -875,7 +875,7 @@ async def test_reasoning_events_antes_de_tokens(db_session: AsyncSession) -> Non
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
     fake.queue_result(
-        _completion(text="respuesta final", reasoning="estoy pensando esto", model_name="gemma4")
+        _completion(text="respuesta final", reasoning="estoy pensando esto", model_name="org/chat")
     )
 
     client = await _client(db_session, llm_client=fake)
@@ -912,7 +912,7 @@ async def test_sin_reasoning_no_emite_eventos_reasoning(db_session: AsyncSession
     user = await _seed_user(db_session)
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
     # Sin reasoning encolado -> CompletionResult.reasoning None -> ChatResponse.reasoning None.
-    fake.queue_result(_completion(text="hola mundo", model_name="gemma4"))
+    fake.queue_result(_completion(text="hola mundo", model_name="org/chat"))
 
     client = await _client(db_session, llm_client=fake)
     try:

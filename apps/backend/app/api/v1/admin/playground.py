@@ -117,7 +117,7 @@ def _resolve_playground_request(body: PlaygroundIn) -> _ResolvedPlayground:
         )
 
     # 3) Thinking efectivo: override manual del body, si no el default por role
-    #    (False conversational / True agent; gotcha Gemma+thinking -> content vacío).
+    #    (False conversational / True agent: intención por rol, ADR-028 D3).
     thinking = body.thinking if body.thinking is not None else model_cfg.role == "agent"
 
     # 4) Params efectivos; el preset low_perf pisa max_tokens/temp/thinking + timeout.
@@ -318,7 +318,7 @@ async def admin_playground_stream(
     Contrato de eventos (consumido por el panel):
       - ``token``     -> ``{"delta": <str>}`` por cada chunk de TEXTO del modelo.
       - ``reasoning`` -> ``{"delta": <str>}`` por cada fragmento del canal de
-        razonamiento SEPARADO (qwen thinking; APARTE del ``content``). Se pinta en
+        razonamiento SEPARADO del proveedor (APARTE del ``content``). Se pinta en
         vivo y el ``thinking`` final del ``done`` lo trae acumulado. NO cuenta como
         ``completion_token`` (esos son solo los del texto de respuesta).
       - ``done``  -> métricas finales (finish_reason, model_name, completion_tokens,
@@ -359,7 +359,7 @@ async def admin_playground_stream(
                 thinking=effective_thinking,
                 timeout_s=timeout_s,
             ):
-                # Canal de razonamiento (qwen): llega APARTE del content. Se emite en
+                # Canal de razonamiento del proveedor: llega APARTE del content. Se emite en
                 # vivo para pintar "qué piensa" mientras pasa; NO suma completion_token.
                 if chunk.reasoning_delta:
                     reasoning_parts.append(chunk.reasoning_delta)

@@ -2,7 +2,7 @@
 
 UNIT: el wrapper ``consolidate_session`` (firma JSON, fail-open, no propaga salvo
   lo transitorio) y ``_async_consolidate_session`` con session inyectada (0 turnos
-  -> 0, transcript -> 1 episodio, JSON corrupto de Qwen -> parseo defensivo,
+  -> 0, transcript -> 1 episodio, JSON corrupto del modelo -> parseo defensivo,
   is_sensitive bienestar con retention <= 365).
 INTEGRATION (``@pytest.mark.integration``, DB real): close -> exactamente 1
   episodio cifrado con embedding + turnos purgados; idempotencia doble-cierre -> 1
@@ -61,7 +61,7 @@ def _make_llm_with_summary(summary: str, topics: dict | None = None) -> FakeLlmC
             finish_reason="stop",
             prompt_tokens=10,
             completion_tokens=20,
-            model_name="qwen",
+            model_name="org/agent",
             latency_ms=5.0,
         )
     )
@@ -249,7 +249,8 @@ class TestAsyncConsolidateSession:
         assert turns_count == 0
 
     async def test_empty_summary_creates_no_episode(self, db_session: AsyncSession) -> None:
-        """Qwen devuelve JSON corrupto -> parseo defensivo -> summary vacio -> 0 episodios.
+        """El modelo devuelve JSON corrupto -> parseo defensivo -> summary vacio -> 0
+        episodios.
 
         Ademas: los turnos NO se purgan (un reintento futuro podria resumir).
         """
@@ -263,7 +264,7 @@ class TestAsyncConsolidateSession:
                 finish_reason="stop",
                 prompt_tokens=5,
                 completion_tokens=5,
-                model_name="qwen",
+                model_name="org/agent",
                 latency_ms=1.0,
             )
         )

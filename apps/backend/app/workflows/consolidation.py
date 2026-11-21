@@ -2,7 +2,7 @@
 
 Reglas no negociables (ADR-010 + critica adversarial M8):
 
-1. Solo encolada cuando el modelo del modo escribe memoria (Qwen). El caller
+1. Solo encolada cuando el modelo del modo escribe memoria (alias agente). El caller
    (``ChatService.run_turn`` en el endpoint) ya filtra; esta task no re-chequea.
 2. La task NUNCA esta en el path de respuesta: ``ChatService.run_turn`` encola con
    ``.delay()`` DESPUES del commit (M10 Ola 0); la escritura ocurre aqui,
@@ -17,10 +17,11 @@ Reglas no negociables (ADR-010 + critica adversarial M8):
    cierra los clientes que armo al terminar cada intento (``_aclose_quietly``).
    El engine de DB usa ``NullPool`` obligatorio (sin el, reusar conexiones
    entre event loops distintos da 'Future attached to a different loop').
-5. Parseo defensivo heredado de ``QwenMemoryEngine._parse_ops``: JSON
+5. Parseo defensivo heredado de ``AgentMemoryEngine`` (``_parse_ops``): JSON
    invalido / ops malformadas -> [] sin crashear el worker.
 6. Ningun dato de usuario a logs (regla #4): el payload (turno del usuario)
-   queda on-prem en Redis/worker. Solo se loguea el conteo de ops aplicadas
+   queda en Redis y el worker; al proveedor de IA va solo lo que pide la
+   llamada (reglas #4a y #4b). Solo se loguea el conteo de ops aplicadas
    y errores tecnicos SIN contenido.
 7. Idempotencia sin tocar ``app/memory/`` ni el schema sagrado: cada intento es
    todo-o-nada (la marca del turno, las ops y su auditoria van en un SAVEPOINT) y,
@@ -54,7 +55,7 @@ from app.llm.clients.factory import build_embedder, build_llm_client, build_rera
 from app.llm.clients.reranker import Reranker
 from app.llm.config import load_llm_config
 from app.llm.errors import LlmTransientError
-from app.llm.memory_engine import QwenMemoryEngine, apply_ops
+from app.llm.memory_engine import AgentMemoryEngine, apply_ops
 from app.memory.audit import AuditStore
 from app.memory.config import MemoryConfigError, RetentionConfig, load_retention_config
 from app.memory.episodic import EpisodicMemoryStore  # noqa: F401 -- target de patch en tests
@@ -155,7 +156,7 @@ async def _consolidate_turn_in_db(
     saltearlo perderia el turno. La extraccion con el LLM corre ANTES de tomar la fila,
     asi el lock dura lo que tarda ``apply_ops`` y no la llamada al modelo.
     """
-    mem_engine = QwenMemoryEngine(llm_client, model=MODEL_ALIAS_AGENT)
+    mem_engine = AgentMemoryEngine(llm_client, model=MODEL_ALIAS_AGENT)
     # Una falla transitoria del LLM (LlmTransientError) sale de aca, antes de tocar la DB.
     ops = await mem_engine.consolidate(
         user_msg=user_msg,
@@ -304,8 +305,8 @@ def consolidate_turn(
             ``sessions.id``). El cuerpo async lo parsea a ``UUID`` de forma
             defensiva y lo propaga como ``source_session_id`` (provenance) en el
             ADD semantic (M10 Ola 1). Si fuera basura no-UUID, degrada a ``None``.
-        user_msg: Mensaje del usuario (on-prem, NO se loguea).
-        model_response: Respuesta del modelo (on-prem, NO se loguea).
+        user_msg: Mensaje del usuario (NO se loguea).
+        model_response: Respuesta del modelo (NO se loguea).
         mode: Modo activo de la sesion (p.ej. 'vida', 'estudio').
         turn_seq: ``seq`` del turno del usuario en ``conversation_turns``, para marcarlo
             como consolidado (idempotencia). ``None`` si el turno no se persistio o el

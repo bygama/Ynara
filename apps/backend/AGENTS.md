@@ -90,7 +90,7 @@ llm/
 ├── schemas.py         # ChatRequest/Response, ChatMessage, ToolSpec/ToolCall, CompletionResult/Chunk, ModelHealth
 ├── errors.py          # taxonomía LlmError (transient/permanent/semantic, con LlmAuthError, LlmProviderRejectedError, LlmRateLimitError y EmbeddingDimensionError) + degraded_response(); NUNCA filtra texto de usuario
 ├── context.py         # build_memory_context() + render_context_block(): recupera capas, formatea en Markdown, aplica presupuesto de tokens
-├── memory_engine.py   # QwenMemoryEngine: extrae MemoryOp del turno, aplica contra los stores vía apply_ops(); el módulo más grande de llm/
+├── memory_engine.py   # AgentMemoryEngine: extrae MemoryOp del turno con el alias agente, aplica contra los stores vía apply_ops(); el módulo más grande de llm/
 ├── tool_loop.py       # run_tool_loop(): itera LLM call + ejecución de tools (guard MAX_TOOL_ITERATIONS=5) hasta finish_reason stop/length/degraded
 ├── clients/
 │   ├── base.py        # Protocols LLMClient + ToolCallParser

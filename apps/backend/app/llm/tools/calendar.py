@@ -173,11 +173,12 @@ class _AgentCreateEventArgs(BaseModel):
 
     model_config = ConfigDict(strict=False, extra="forbid")
 
-    # Cotas superiores LLM-fed (defensa en profundidad): estos args los llena qwen,
-    # así que se ACOTAN para que un título de 50KB, una duración absurda o una lista de
-    # recurrencia gigante no lleguen al store / la DB. ``EventCreate`` (el dominio de
-    # #402) NO lleva estos caps (su contrato es el del front, "Pydantic gana"); el cap
-    # vive SOLO en la superficie del agente, que es la no confiable.
+    # Cotas superiores LLM-fed (defensa en profundidad): estos args los llena el modelo
+    # del alias agente, así que se ACOTAN para que un título de 50KB, una duración
+    # absurda o una lista de recurrencia gigante no lleguen al store / la DB.
+    # ``EventCreate`` (el dominio de #402) NO lleva estos caps (su contrato es el del
+    # front, "Pydantic gana"); el cap vive SOLO en la superficie del agente, que es la
+    # no confiable.
     title: Annotated[str, Field(min_length=1, max_length=200)]
     start_at: IsoDatetime
     # 43200 = un mes en minutos (30 días * 24h * 60min): cota razonable para un único
@@ -256,10 +257,11 @@ class _AgentListEventsArgs(BaseModel):
 class AgentCreateEventTool:
     """Agenda un evento REAL en ``calendar_events`` (Fase E, ADR-021).
 
-    La pasada asíncrona del agente (qwen por detrás de la conversación) llama esta
-    tool para agendar lo conversado. Escribe vía ``CalendarEventStore`` (ligado al
-    ``user_id`` real): aislamiento estructural + idempotencia (un retry de Celery no
-    duplica el evento; ver ``CalendarEventStore.create_event``).
+    La pasada asíncrona del agente (el modelo del alias agente, por detrás de la
+    conversación) llama esta tool para agendar lo conversado. Escribe vía
+    ``CalendarEventStore`` (ligado al ``user_id`` real): aislamiento estructural +
+    idempotencia (un retry de Celery no duplica el evento; ver
+    ``CalendarEventStore.create_event``).
 
     El resultado es un dict serializable (``id`` + campos del evento), NO el ORM:
     el modelo / el caller ven el evento creado sin metadata interna (``user_id`` /

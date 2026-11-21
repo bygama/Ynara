@@ -14,7 +14,7 @@ from app.llm.clients.fakes import FakeLlmClient
 from app.llm.errors import LlmTimeoutError
 from app.llm.schemas import ChatMessage, CompletionChunk, CompletionResult
 
-_MODEL = "qwen-3.5-9b"
+_MODEL = "agente"
 
 
 def _result(text: str = "ok") -> CompletionResult:

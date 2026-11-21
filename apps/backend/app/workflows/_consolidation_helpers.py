@@ -27,7 +27,7 @@ from app.llm.clients.base import LLMClient
 from app.llm.clients.embedding import EmbeddingClient
 from app.llm.clients.reranker import Reranker
 from app.llm.errors import LlmTransientError
-from app.llm.memory_engine import QwenMemoryEngine
+from app.llm.memory_engine import AgentMemoryEngine
 from app.memory.audit import AuditStore
 from app.memory.config import RetentionConfig
 from app.memory.conversation_turns import ConversationTurnStore
@@ -167,7 +167,7 @@ async def _consolidate_session_in_db(
         return 0
 
     transcript = _build_transcript(turns)
-    mem_engine = QwenMemoryEngine(llm_client, model=MODEL_ALIAS_AGENT)
+    mem_engine = AgentMemoryEngine(llm_client, model=MODEL_ALIAS_AGENT)
     summary = await mem_engine.summarize(transcript=transcript, mode=mode)
     if not summary.summary:
         logger.info("consolidate_session: resumen vacio session=%s, no-op", source_session_id)

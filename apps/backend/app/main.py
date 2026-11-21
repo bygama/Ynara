@@ -192,7 +192,7 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url="/docs" if get_settings().environment != "production" else None,
     # openapi_url cerrado en prod junto con docs: no exponer el schema (superficie de
-    # ataque) sin auth en una API privada on-prem. En dev queda abierto para Swagger.
+    # ataque) sin auth en una API privada. En dev queda abierto para Swagger.
     openapi_url="/openapi.json" if get_settings().environment != "production" else None,
     redoc_url=None,
 )

@@ -103,7 +103,7 @@ def _make_llm_with_ops(ops_json: str) -> FakeLlmClient:
             finish_reason="stop",
             prompt_tokens=10,
             completion_tokens=20,
-            model_name="qwen",
+            model_name="org/agent",
             latency_ms=5.0,
         )
     )
@@ -441,7 +441,7 @@ async def test_apply_ops_without_audit_store_writes_no_audit(db_session: AsyncSe
 async def test_consolidate_end_to_end_writes_n_audit_rows(db_session: AsyncSession) -> None:
     """``_async_consolidate`` con N ops aplicadas escribe N filas de audit (write).
 
-    Usa el camino real (``QwenMemoryEngine`` sobre un ``FakeLlmClient`` con ops
+    Usa el camino real (``AgentMemoryEngine`` sobre un ``FakeLlmClient`` con ops
     encoladas) + la session inyectada del fixture, que es como corre el branch de
     test de ``_async_consolidate``: construye el ``AuditStore`` y lo pasa a
     ``apply_ops``.
@@ -489,7 +489,7 @@ async def test_consolidate_with_fake_engine_writes_audit(db_session: AsyncSessio
     """Sanity con ``FakeMemoryEngine``: 3 ops aplicadas -> 3 filas de audit vía apply_ops.
 
     Ejercita ``apply_ops`` + ``AuditStore`` con ops construidas a mano (sin pasar
-    por el parseo de Qwen), cubriendo las 3 capas/operaciones en un solo turno.
+    por el parseo del modelo), cubriendo las 3 capas/operaciones en un solo turno.
     """
     user = await _seed_user(db_session)
     semantic, procedural, audit = _make_stores(db_session, user.id)

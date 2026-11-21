@@ -57,7 +57,7 @@ def _coerce_layer_to_semantic(value: object) -> str:
     """Normaliza cualquier ``layer`` a ``'semantic'`` (única capa soportada hoy).
 
     ``memory.add`` sólo escribe semantic por ahora (episodic/procedural se escriben
-    vía el pipeline async de M8). Un modelo chico (Qwen) alucina valores de ``layer``
+    vía el pipeline async de M8). El modelo puede alucinar valores de ``layer``
     ('personal', 'base', ...) o pide capas aún no cableadas (episodic/procedural); con
     un ``Literal['semantic']`` estricto eso fallaba con ``invalid_arguments``, lo que
     hacía que el AGENTE le reportara al usuario un FALSO 'no pude guardar' aunque la
@@ -184,7 +184,7 @@ class MemoryAddTool:
     modelo, en lenguaje natural.
 
     Antes devolvía un stub ``not_wired`` con jerga interna
-    (``"consolidacion async pendiente (M8)"``): Qwen lo leía como una FALLA y le
+    (``"consolidacion async pendiente (M8)"``): el modelo lo leía como una FALLA y le
     reportaba al usuario un falso "hubo un error ejecutando la acción". El acuse de
     recibo en prosa natural evita eso (el modelo confirma "listo, lo voy a recordar").
     """
@@ -212,7 +212,7 @@ class MemoryAddTool:
         # jerga de implementación. La escritura real es async (el worker de
         # consolidación del turno, encolado por ChatService), pero ese mecanismo NO
         # debe filtrarse a la respuesta del modelo (VOICE: "no narrás lo que hacés por
-        # dentro"). Así qwen confirma natural ("listo, lo anoté") sin mencionar
+        # dentro"). Así el agente confirma natural ("listo, lo anoté") sin mencionar
         # "consolidación"/"segundo plano" ni inventar una falla.
         return {
             "status": "ok",
