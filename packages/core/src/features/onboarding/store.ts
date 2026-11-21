@@ -24,6 +24,7 @@ export type OnboardingDraft = {
   // Step 1 — Auth
   authedUserId: string | null;
   authedToken: string | null;
+  authedRefreshToken: string | null;
   authMode: "signup" | "login" | null;
 
   // Step 2 — Nombre
@@ -55,7 +56,12 @@ export type OnboardingDraft = {
 
 type OnboardingActions = {
   setStep: (step: OnboardingStep) => void;
-  setAuth: (input: { userId: string; token: string; mode: "signup" | "login" }) => void;
+  setAuth: (input: {
+    userId: string;
+    token: string;
+    refreshToken?: string | null;
+    mode: "signup" | "login";
+  }) => void;
   setDisplayName: (name: string) => void;
   setMood: (mood: string[], freeText: string) => void;
   setInterestedModes: (modes: string[]) => void;
@@ -80,6 +86,7 @@ const initialState: OnboardingDraft = {
   currentStep: "auth",
   authedUserId: null,
   authedToken: null,
+  authedRefreshToken: null,
   authMode: null,
   displayName: "",
   mood: [],
@@ -105,8 +112,13 @@ export function createOnboardingStore(storage: StateStorage) {
       (set) => ({
         ...initialState,
         setStep: (currentStep) => set({ currentStep }),
-        setAuth: ({ userId, token, mode }) =>
-          set({ authedUserId: userId, authedToken: token, authMode: mode }),
+        setAuth: ({ userId, token, refreshToken = null, mode }) =>
+          set({
+            authedUserId: userId,
+            authedToken: token,
+            authedRefreshToken: refreshToken,
+            authMode: mode,
+          }),
         setDisplayName: (displayName) => set({ displayName }),
         setMood: (mood, moodFreeText) => set({ mood, moodFreeText }),
         setInterestedModes: (interestedModes) => set({ interestedModes }),

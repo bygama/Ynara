@@ -18,7 +18,11 @@ import { useUserStore } from "@/stores/user";
  */
 export function recoverProfileFromLogin(session: LoginResult): void {
   const userStore = useUserStore.getState();
-  userStore.setAuth({ userId: session.userId, token: session.token });
+  userStore.setAuth({
+    userId: session.userId,
+    token: session.token,
+    refreshToken: session.refreshToken,
+  });
 
   // Se calcula ANTES de aplicar: `local` refleja el estado del dispositivo
   // (vacío/default en uno nuevo → se adopta todo del backend).

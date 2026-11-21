@@ -56,4 +56,76 @@ describe("api — inyección de auth (Bearer)", () => {
     await api.get("https://evil.example.com/steal");
     expect(authHeaderOf(fetchMock)).toBeNull();
   });
+
+  it("rota el refresh token en 401, actualiza el store y reintenta el request", async () => {
+    useUserStore.getState().setAuth({
+      userId: "u1",
+      token: "tok-viejo",
+      refreshToken: "rt-1",
+    });
+
+    const rotatingFetch = vi.fn(async (url: string, init?: { headers?: Headers }) => {
+      if (url.endsWith("/v1/auth/refresh")) {
+        return {
+          ok: true,
+          status: 200,
+          headers: {
+            get: (k: string) => (k.toLowerCase() === "content-type" ? "application/json" : null),
+          },
+          json: async () => ({
+            access_token: "tok-nuevo",
+            token_type: "bearer",
+            refresh_token: "rt-2",
+          }),
+          text: async () => "",
+        };
+      }
+      const auth = init?.headers?.get("Authorization");
+      if (auth === "Bearer tok-nuevo") {
+        return {
+          ok: true,
+          status: 200,
+          headers: {
+            get: (k: string) => (k.toLowerCase() === "content-type" ? "application/json" : null),
+          },
+          json: async () => ({ items: [] }),
+          text: async () => "",
+        };
+      }
+      return {
+        ok: false,
+        status: 401,
+        headers: {
+          get: (k: string) => (k.toLowerCase() === "content-type" ? "application/json" : null),
+        },
+        json: async () => ({ detail: "credenciales invalidas" }),
+        text: async () => "",
+      };
+    });
+    vi.stubGlobal("fetch", rotatingFetch);
+
+    const data = await api.get<{ items: unknown[] }>("/v1/tasks");
+    expect(data).toEqual({ items: [] });
+    expect(useUserStore.getState().token).toBe("tok-nuevo");
+    expect(useUserStore.getState().refreshToken).toBe("rt-2");
+  });
+
+  it("limpia la sesión local ante 401 sin refresh token", async () => {
+    useUserStore.getState().setAuth({ userId: "u1", token: "tok-muerto" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 401,
+        headers: {
+          get: (k: string) => (k.toLowerCase() === "content-type" ? "application/json" : null),
+        },
+        json: async () => ({ detail: "credenciales invalidas" }),
+        text: async () => "",
+      })),
+    );
+
+    await expect(api.get("/v1/tasks")).rejects.toThrow();
+    expect(useUserStore.getState().token).toBeNull();
+  });
 });

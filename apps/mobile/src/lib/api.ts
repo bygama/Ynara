@@ -1,6 +1,8 @@
 import { configureApi } from "@ynara/core/api";
+import { refreshAuthToken } from "@ynara/core/features/auth";
 import { useUserStore } from "@/stores/user";
 import { env, shouldEnableMocks } from "./env";
+import { clearMobileSession } from "./session";
 
 type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -44,6 +46,24 @@ const lazyMockFetch: FetchFn = async (input, init) => {
 configureApi({
   baseUrl: env.EXPO_PUBLIC_API_URL,
   getToken: () => useUserStore.getState().token,
+  refreshSession: async () => {
+    const rt = useUserStore.getState().refreshToken;
+    if (!rt) return null;
+    try {
+      const next = await refreshAuthToken(rt);
+      useUserStore.getState().setTokens({
+        token: next.access_token,
+        refreshToken: next.refresh_token,
+      });
+      return next.access_token;
+    } catch {
+      return null;
+    }
+  },
+  onUnauthorized: () => {
+    if (useUserStore.getState().token === null) return;
+    clearMobileSession(undefined, { revokeRemote: false });
+  },
   ...(__DEV__ && shouldEnableMocks ? { fetchImpl: lazyMockFetch } : {}),
 });
 

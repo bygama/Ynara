@@ -76,6 +76,7 @@ export function useCompleteOnboarding(): Returns & {
       useUserStore.getState().setAuth({
         userId: d.authedUserId,
         token: d.authedToken,
+        refreshToken: d.authedRefreshToken,
       });
       useUserStore.getState().setDisplayName(data.displayName);
       useUserStore.getState().setMood(data.mood, data.moodFreeText ?? "");

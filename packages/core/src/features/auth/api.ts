@@ -17,7 +17,7 @@ import { type TokenResponse, TokenResponseSchema } from "./schemas";
 export type Credentials = { email: string; password: string };
 
 /** Sesión resuelta: lo que el draft store del onboarding necesita para `setAuth`. */
-export type AuthSession = { userId: string; token: string };
+export type AuthSession = { userId: string; token: string; refreshToken?: string | null };
 
 /**
  * Resultado del login: la sesión + el **perfil completo** (`UserOut`) del usuario.
@@ -49,7 +49,7 @@ export async function login(input: Credentials): Promise<TokenResponse> {
 export async function signUp(input: Credentials & { displayName?: string }): Promise<AuthSession> {
   const user = await register(input);
   const token = await login({ email: input.email, password: input.password });
-  return { userId: user.id, token: token.access_token };
+  return { userId: user.id, token: token.access_token, refreshToken: token.refresh_token };
 }
 
 /**
@@ -66,7 +66,17 @@ export async function logIn(input: Credentials): Promise<LoginResult> {
     headers: { Authorization: `Bearer ${token.access_token}` },
   });
   const user = UserOutSchema.parse(raw);
-  return { userId: user.id, token: token.access_token, user };
+  return { userId: user.id, token: token.access_token, refreshToken: token.refresh_token, user };
+}
+
+/** `POST /v1/auth/refresh` — rota el refresh token y devuelve un par nuevo. */
+export async function refreshAuthToken(refreshToken: string): Promise<TokenResponse> {
+  const raw = await api.post<unknown>(
+    "/v1/auth/refresh",
+    { refresh_token: refreshToken },
+    { skipAuth: true },
+  );
+  return TokenResponseSchema.parse(raw);
 }
 
 /**

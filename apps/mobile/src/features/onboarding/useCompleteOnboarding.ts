@@ -53,6 +53,7 @@ export function useCompleteOnboarding(): Returns {
       user.setAuth({
         userId: d.authedUserId,
         token: d.authedToken,
+        refreshToken: d.authedRefreshToken,
       });
       user.setDisplayName(data.displayName);
       user.setMood(data.mood, data.moodFreeText ?? "");

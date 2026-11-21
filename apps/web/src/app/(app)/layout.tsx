@@ -27,8 +27,9 @@ const getHydratedServerSnapshot = () => false;
 export default function AppLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const onboardingCompleted = useUserStore((s) => s.onboardingCompleted);
+  const token = useUserStore((s) => s.token);
 
-  // Esperar a que zustand REHIDRATE desde localStorage antes de evaluar el guard.
+  // Esperar a que zustand REHIDRATE desde sessionStorage antes de evaluar el guard.
   // En un reload DURO el store arranca en initialState (`onboardingCompleted=false`)
   // y la persistencia rehidrata async; sin esperarla, el guard redirige a
   // `/onboarding` por error a un user que SÍ está onboardeado (race de hidratación,
@@ -43,19 +44,19 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   );
 
   // `allowed` (render del shell) se DERIVA del estado, no se guarda como state
-  // encadenado: evita el render extra entre commits. El gate sigue tapando el
-  // shell hasta validar (no flashea el shell antes del redirect).
-  const allowed = hydrated && onboardingCompleted;
+  // encadenado: evita el render extra entre commits. Exige sesión activa (`token`)
+  // además de onboarding completo y tapa el shell hasta validar.
+  const allowed = hydrated && onboardingCompleted && token !== null;
 
   useEffect(() => {
     if (!hydrated) return;
-    if (!onboardingCompleted) {
-      // Guard client-only: `onboardingCompleted` vive en localStorage (zustand);
-      // el server no lo conoce, un redirect SSR no puede evaluar este guard.
+    if (!onboardingCompleted || token === null) {
+      // Guard client-only: la sesión vive en sessionStorage (zustand);
+      // el server no la conoce, un redirect SSR no puede evaluar este guard.
       // react-doctor-disable-next-line react-doctor/nextjs-no-client-side-redirect
       router.replace("/onboarding");
     }
-  }, [hydrated, onboardingCompleted, router]);
+  }, [hydrated, onboardingCompleted, token, router]);
 
   if (!allowed) {
     return (

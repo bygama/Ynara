@@ -79,6 +79,7 @@ export function WelcomeScreen() {
       useOnboardingStore.getState().setAuth({
         userId: result.userId,
         token: result.token,
+        refreshToken: result.refreshToken,
         mode: "login",
       });
       useOnboardingStepStore.getState().setStep("nombre");

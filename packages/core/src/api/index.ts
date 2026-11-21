@@ -1,1 +1,9 @@
-export { ApiError, api, applyAuthHeader, configureApi, getBaseUrl } from "./client";
+export {
+  ApiError,
+  api,
+  applyAuthHeader,
+  configureApi,
+  getBaseUrl,
+  notifyUnauthorized,
+  tryRefreshSession,
+} from "./client";
