@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { ChatMockSmoke } from "./ChatMockSmoke";
 import { TestMockClient } from "./TestMockClient";
 
@@ -9,6 +10,10 @@ export const metadata: Metadata = {
 };
 
 export default function TestMockPage() {
+  // Ruta interna de sandbox de mocks: no disponible en producción.
+  if (process.env.NODE_ENV === "production") {
+    notFound();
+  }
   return (
     <main className="mx-auto flex min-h-dvh max-w-[640px] flex-col gap-6 px-6 py-12">
       <header className="flex flex-col gap-2">

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { LivingField } from "@/components/ui/LivingField";
@@ -56,6 +57,10 @@ const TYPE_TOKENS = [
 ] as const;
 
 export default function TestDsPage() {
+  // Ruta interna de sandbox visual: no disponible en producción (solo dev/QA local).
+  if (process.env.NODE_ENV === "production") {
+    notFound();
+  }
   return (
     <main className="mx-auto max-w-[1120px] px-6 py-16">
       {/* Switch claro/Noche (§3.1) — el sandbox se revisa en ambos temas. */}
