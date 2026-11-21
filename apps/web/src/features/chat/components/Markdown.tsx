@@ -1,22 +1,47 @@
 "use client";
 
 import ReactMarkdown from "react-markdown";
-import rehypeSanitize from "rehype-sanitize";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+
+const ALLOWED_TAGS = [
+  "a",
+  "blockquote",
+  "br",
+  "code",
+  "del",
+  "em",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "hr",
+  "li",
+  "ol",
+  "p",
+  "pre",
+  "strong",
+  "ul",
+];
 
 /**
- * Renderer de markdown **sanitizado** para las respuestas del assistant.
- *
- * Seguridad (plan §2 + AGENTS.md regla #4 / TS strict): `rehype-sanitize`
- * con su schema por defecto (GitHub-like) corre sobre el AST y elimina
- * cualquier HTML crudo / atributos peligrosos. NO se usa
- * `dangerouslySetInnerHTML`. Los links se fuerzan a abrir en pestaña nueva
- * con `rel="noopener noreferrer"`.
- *
- * El subset queda acotado a lo que los modelos emiten: bold, listas, inline
- * code, code blocks, links, párrafos. No hay imágenes ni tablas custom por
- * ahora (el schema default las permitiría, pero el modelo no las produce; si
- * hiciera falta restringir más, se pasa un schema propio acá).
+ * Schema acotado para `rehype-sanitize`: permite únicamente el subset de texto
+ * enriquecido y enlaces HTTP(S)/mailto que emite el asistente, excluyendo
+ * elementos embebidos o multimedia (`img`, `iframe`, `svg`, etc.).
  */
+export const CHAT_MARKDOWN_SCHEMA = {
+  ...defaultSchema,
+  tagNames: ALLOWED_TAGS,
+  attributes: {
+    a: ["href"],
+    code: ["className"],
+  },
+  protocols: {
+    href: ["http", "https", "mailto"],
+  },
+};
+
+const DISALLOWED_ELEMENTS = ["img", "picture", "source", "iframe", "video", "audio", "svg"];
+
 type Props = {
   children: string;
 };
@@ -25,7 +50,8 @@ export function Markdown({ children }: Props) {
   return (
     <div className="chat-markdown flex flex-col gap-2">
       <ReactMarkdown
-        rehypePlugins={[rehypeSanitize]}
+        rehypePlugins={[[rehypeSanitize, CHAT_MARKDOWN_SCHEMA]]}
+        disallowedElements={DISALLOWED_ELEMENTS}
         components={{
           a: ({ children: linkChildren, href }) => (
             <a
