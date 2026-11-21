@@ -25,9 +25,34 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import ConfigDict, EmailStr, Field
+from pydantic import ConfigDict, EmailStr, Field, ValidationInfo, field_validator
 
 from app.schemas.base import YnaraBaseModel
+
+PASSWORD_MIN_LENGTH = 10
+PASSWORD_MAX_LENGTH = 128
+
+# Lista acotada de contraseñas comunes que cumplen longitud + letra + dígito.
+_COMMON_PASSWORDS: frozenset[str] = frozenset(
+    {
+        "123456789a",
+        "1234567890a",
+        "abc1234567",
+        "admin12345",
+        "changeme12",
+        "contrasena1",
+        "contraseña1",
+        "iloveyou12",
+        "letmein123",
+        "password12",
+        "password123",
+        "password1234",
+        "qwerty1234",
+        "qwerty12345",
+        "welcome123",
+        "ynara12345",
+    }
+)
 
 
 class RegisterRequest(YnaraBaseModel):
@@ -45,11 +70,29 @@ class RegisterRequest(YnaraBaseModel):
         from_attributes=True,
         populate_by_name=True,
         extra="forbid",
+        hide_input_in_errors=True,
     )
 
     email: EmailStr
-    password: str = Field(min_length=8, max_length=128)
+    password: str = Field(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
     display_name: str | None = Field(default=None, max_length=40)
+
+    @field_validator("password")
+    @classmethod
+    def _validate_password_strength(cls, value: str, info: ValidationInfo) -> str:
+        """Exige letra + dígito, rechaza contraseñas comunes y el propio email (sin ecoar)."""
+        if not any(ch.isalpha() for ch in value) or not any(ch.isdigit() for ch in value):
+            raise ValueError("la contraseña debe incluir al menos una letra y un número")
+        if value.strip().lower() in _COMMON_PASSWORDS:
+            raise ValueError("la contraseña elegida es demasiado común")
+        email_val = info.data.get("email")
+        if email_val:
+            lowered = value.lower()
+            email_lower = str(email_val).lower()
+            local_part = email_lower.split("@", 1)[0]
+            if email_lower in lowered or (len(local_part) >= 4 and local_part in lowered):
+                raise ValueError("la contraseña no puede incluir tu dirección de correo")
+        return value
 
 
 class LoginRequest(YnaraBaseModel):
