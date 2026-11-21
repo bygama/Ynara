@@ -1,6 +1,7 @@
 import type { Action, ChatResponse, Mode } from "@ynara/shared-schemas";
 import { create } from "zustand";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
+import { createChatStorage, pruneChatHistory } from "./persistence";
 
 /**
  * Store de conversación del chat, compartido web + mobile (ADR-012).
@@ -180,7 +181,12 @@ function newId(): string {
  * vez con el storage de su plataforma.
  */
 export function createChatStore(storage: StateStorage) {
-  return create<ChatState & ChatActions>()(
+  let storeRef: { getState: () => ChatState } | null = null;
+  const safeStorage = createChatStorage(
+    storage,
+    () => storeRef?.getState().streamStatus === "streaming",
+  );
+  const store = create<ChatState & ChatActions>()(
     persist(
       (set) => ({
         ...initialState,
@@ -434,18 +440,11 @@ export function createChatStore(storage: StateStorage) {
       }),
       {
         name: "ynara.chat",
-        storage: createJSONStorage(() => storage),
-        // streamStatus es efímero: se omite de la persistencia (al rehidratar
-        // toma su valor inicial "idle" de initialState), no se escribe a disco.
-        // `reasoning` también se excluye por mensaje (`stripReasoning`): es
-        // efímero (se recibe por stream) y puede ser largo — no inflamos el
-        // localStorage con la cadena de pensamiento.
-        partialize: (s) => ({
-          sessions: s.sessions,
-          messages: Object.fromEntries(
-            Object.entries(s.messages).map(([sid, list]) => [sid, list.map(stripReasoning)]),
-          ),
-        }),
+        storage: createJSONStorage(() => safeStorage),
+        // streamStatus es efímero: se omite de la persistencia. `pruneChatHistory`
+        // acota sesiones/mensajes recientes y excluye `reasoning` para no inflar
+        // el storage local.
+        partialize: (s) => pruneChatHistory(s.sessions, s.messages),
         // Reconciliación post-rehidratación: si la app se cerró/crasheó con un
         // stream en vuelo, el status del mensaje (que vive en `messages`, SÍ
         // persistido) quedó en "streaming"/"sending". `streamStatus` se resetea a
@@ -469,18 +468,8 @@ export function createChatStore(storage: StateStorage) {
       },
     ),
   );
-}
-
-/**
- * Devuelve una copia del mensaje SIN `reasoning` (para la persistencia). Si el
- * mensaje no tiene `reasoning`, lo devuelve tal cual (sin copia innecesaria).
- * Inmutable: nunca muta el mensaje original del store.
- */
-function stripReasoning(message: ChatUiMessage): ChatUiMessage {
-  if (message.reasoning === undefined) return message;
-  const copy = { ...message };
-  copy.reasoning = undefined;
-  return copy;
+  storeRef = store;
+  return store;
 }
 
 /** Agrega un mensaje a una sesión y toca su `updatedAt` (usa `Date.now()`). */

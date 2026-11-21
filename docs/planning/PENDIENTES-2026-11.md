@@ -717,7 +717,7 @@ reconocen los nombres reales de las tools del backend.
       Evidencia: apps/mobile/src/stores/a11y.ts:4-8;
       apps/mobile/src/features/profile/TuScreen.tsx:66-71;
       docs/planning/PENDIENTES-2026-11.md:354
-- [ ] **AUD-FE-05 · El store de chat persiste todo el historial por cada token y no
+- [x] **AUD-FE-05 · El store de chat persiste todo el historial por cada token y no
       tiene tope.** (media) Persistir solo al cerrar el stream (o con
       escritura diferida), poner tope de sesiones y mensajes guardados y
       envolver la escritura en try/catch. [V, falta verlo en ejecución]
