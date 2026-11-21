@@ -1,4 +1,9 @@
-import { applyAuthHeader, getBaseUrl } from "@ynara/core/api";
+import {
+  applyAuthHeader,
+  getBaseUrl,
+  notifyUnauthorized,
+  tryRefreshSession,
+} from "@ynara/core/api";
 import { extractErrorCode } from "@ynara/core/features/chat";
 import { type ChatRequest, createSseParser, SseParseError } from "@ynara/shared-schemas";
 import { fetch as expoFetch } from "expo/fetch";
@@ -83,12 +88,33 @@ export function useChatStream(sessionId: string): UseChatStream {
         let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
 
         try {
-          const response = await expoFetch(url, {
+          let response = await expoFetch(url, {
             method: "POST",
             headers,
             body: JSON.stringify(req),
             signal: controller.signal,
           });
+
+          if (response.status === 401) {
+            const refreshedToken = await tryRefreshSession();
+            if (controller.signal.aborted) return;
+            if (refreshedToken) {
+              const retryHeaders = new Headers({
+                "Content-Type": "application/json",
+                Accept: "text/event-stream",
+                Authorization: `Bearer ${refreshedToken}`,
+              });
+              response = await expoFetch(url, {
+                method: "POST",
+                headers: retryHeaders,
+                body: JSON.stringify(req),
+                signal: controller.signal,
+              });
+            }
+            if (response.status === 401) {
+              notifyUnauthorized();
+            }
+          }
 
           if (!response.ok || !response.body) {
             const body = await response.json().catch(() => null);

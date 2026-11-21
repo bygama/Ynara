@@ -20,6 +20,13 @@ function authHeaderOf(fetchMock: ReturnType<typeof mockFetch>): string | null {
   return init?.headers.get("Authorization") ?? null;
 }
 
+function jsonRes(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 describe("api — inyección de auth (Bearer)", () => {
   let fetchMock: ReturnType<typeof mockFetch>;
 
@@ -66,41 +73,17 @@ describe("api — inyección de auth (Bearer)", () => {
 
     const rotatingFetch = vi.fn(async (url: string, init?: { headers?: Headers }) => {
       if (url.endsWith("/v1/auth/refresh")) {
-        return {
-          ok: true,
-          status: 200,
-          headers: {
-            get: (k: string) => (k.toLowerCase() === "content-type" ? "application/json" : null),
-          },
-          json: async () => ({
-            access_token: "tok-nuevo",
-            token_type: "bearer",
-            refresh_token: "rt-2",
-          }),
-          text: async () => "",
-        };
+        return jsonRes(200, {
+          access_token: "tok-nuevo",
+          token_type: "bearer",
+          refresh_token: "rt-2",
+        });
       }
       const auth = init?.headers?.get("Authorization");
       if (auth === "Bearer tok-nuevo") {
-        return {
-          ok: true,
-          status: 200,
-          headers: {
-            get: (k: string) => (k.toLowerCase() === "content-type" ? "application/json" : null),
-          },
-          json: async () => ({ items: [] }),
-          text: async () => "",
-        };
+        return jsonRes(200, { items: [] });
       }
-      return {
-        ok: false,
-        status: 401,
-        headers: {
-          get: (k: string) => (k.toLowerCase() === "content-type" ? "application/json" : null),
-        },
-        json: async () => ({ detail: "credenciales invalidas" }),
-        text: async () => "",
-      };
+      return jsonRes(401, { detail: "credenciales invalidas" });
     });
     vi.stubGlobal("fetch", rotatingFetch);
 
@@ -114,15 +97,7 @@ describe("api — inyección de auth (Bearer)", () => {
     useUserStore.getState().setAuth({ userId: "u1", token: "tok-muerto" });
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => ({
-        ok: false,
-        status: 401,
-        headers: {
-          get: (k: string) => (k.toLowerCase() === "content-type" ? "application/json" : null),
-        },
-        json: async () => ({ detail: "credenciales invalidas" }),
-        text: async () => "",
-      })),
+      vi.fn(async () => jsonRes(401, { detail: "credenciales invalidas" })),
     );
 
     await expect(api.get("/v1/tasks")).rejects.toThrow();

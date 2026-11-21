@@ -102,6 +102,7 @@ export function useChatStream(sessionId: string): UseChatStream {
 
         if (response.status === 401) {
           const refreshedToken = await tryRefreshSession();
+          if (controller.signal.aborted) return;
           if (refreshedToken) {
             const retryHeaders = buildStreamHeaders(url);
             retryHeaders.set("Authorization", `Bearer ${refreshedToken}`);

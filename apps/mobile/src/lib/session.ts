@@ -8,6 +8,15 @@ import { useOnboardingStore } from "../stores/onboarding";
 import { useOnboardingStepStore } from "../stores/onboardingStep";
 import { useUserStore } from "../stores/user";
 
+type QueryClientLike = Pick<QueryClient, "clear">;
+
+let activeQueryClient: QueryClientLike | undefined;
+
+/** Registra el `QueryClient` activo para limpiarlo ante 401 fuera de React. */
+export function registerMobileQueryClient(client: QueryClientLike): void {
+  activeQueryClient = client;
+}
+
 export type ClearMobileSessionOptions = {
   /** Si es `true` (default), revoca la sesión en el servidor best-effort. */
   revokeRemote?: boolean;
@@ -21,9 +30,10 @@ export type ClearMobileSessionOptions = {
  * porque guarda preferencias del dispositivo, no datos de cuenta.
  */
 export function clearMobileSession(
-  queryClient?: Pick<QueryClient, "clear">,
+  queryClient?: QueryClientLike,
   options?: ClearMobileSessionOptions,
 ): void {
+  const client = queryClient ?? activeQueryClient;
   clearSession({
     getToken: () => useUserStore.getState().token,
     revokeRemote: options?.revokeRemote ?? true,
@@ -37,7 +47,7 @@ export function clearMobileSession(
       useOnboardingStepStore.getState().reset();
     },
     clearQueryCache: () => {
-      queryClient?.clear();
+      client?.clear();
     },
   });
 }

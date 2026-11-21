@@ -2,7 +2,7 @@ import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@ta
 import { type ReactNode, useState } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ApiError } from "@/lib/api";
-import { clearMobileSession } from "@/lib/session";
+import { clearMobileSession, registerMobileQueryClient } from "@/lib/session";
 import { useUserStore } from "@/stores/user";
 
 // Providers raíz de la app mobile. Misma config de TanStack Query que web
@@ -21,10 +21,12 @@ function makeQueryClient() {
       queries: {
         staleTime: 30 * 1000,
         refetchOnWindowFocus: false,
-        retry: 1,
+        retry: (failureCount, error) =>
+          !(error instanceof ApiError && error.status === 401) && failureCount < 1,
       },
     },
   });
+  registerMobileQueryClient(client);
   return client;
 }
 

@@ -10,7 +10,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 // El onboarding/chat/memoria ya lo importaban transitivamente; /hoy y otras no.
 import { ApiError } from "@/lib/api";
 import { shouldEnableMocks } from "@/lib/env";
-import { handleWebUnauthorized } from "@/lib/session";
+import { handleWebUnauthorized, registerWebQueryClient } from "@/lib/session";
 import { applyA11yClasses, useA11yStore } from "@/stores/a11y";
 import { applyThemeClass, useThemeStore } from "@/stores/theme";
 
@@ -28,10 +28,12 @@ function makeQueryClient() {
       queries: {
         staleTime: 30 * 1000,
         refetchOnWindowFocus: false,
-        retry: 1,
+        retry: (failureCount, error) =>
+          !(error instanceof ApiError && error.status === 401) && failureCount < 1,
       },
     },
   });
+  registerWebQueryClient(client);
   return client;
 }
 
