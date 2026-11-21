@@ -731,7 +731,7 @@ reconocen los nombres reales de las tools del backend.
       apps/admin/src/features/playground/hooks/usePlaygroundStream.ts:155-200;
       apps/web/src/lib/chat.ts:16-38;
       packages/core/src/features/chat/api.ts:14-32
-- [ ] **AUD-FE-07 · Hallazgo de web/admin.** (media)
+- [x] **AUD-FE-07 · Hallazgo de web/admin.** (media)
       Detalle reservado: se gestiona por el canal privado de `SECURITY.md`.
 - [ ] **AUD-FE-08 · Cobertura de pruebas muy despareja: admin, mobile y packages/ui
       casi sin tests.** (media) Priorizar tests de los flujos de autenticación de mobile, del
