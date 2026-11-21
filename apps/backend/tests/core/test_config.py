@@ -468,6 +468,30 @@ def test_api_empty_key_counts_as_missing(monkeypatch: pytest.MonkeyPatch) -> Non
         _api_settings([_PROVIDER])
 
 
+def test_api_empty_env_key_overrides_dotenv(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Una LLM_API_KEY_<NAME> vacía en el entorno anula la del .env."""
+    env_file = tmp_path / ".env"
+    env_file.write_text("LLM_API_KEY_PRINCIPAL=sk-from-dotenv\n", encoding="utf-8")
+    monkeypatch.setenv("LLM_API_KEY_PRINCIPAL", "")
+    with pytest.raises(ValueError, match="LLM_API_KEY_PRINCIPAL"):
+        Settings(
+            _env_file=env_file,
+            DATABASE_URL="postgresql://test:test@localhost/test",
+            REDIS_URL="redis://localhost:6379/0",
+            JWT_SECRET="test-secret",
+            LLM_BACKEND="api",
+            LLM_PROVIDERS=json.dumps([_PROVIDER]),
+        )  # type: ignore[call-arg]
+
+
+def test_api_blank_secret_in_llm_api_keys_kwarg_is_rejected() -> None:
+    """Un SecretStr vacío o solo espacios en llm_api_keys también cuenta como faltante."""
+    with pytest.raises(ValueError, match="LLM_API_KEY_PRINCIPAL"):
+        _api_settings([_PROVIDER], llm_api_keys={"principal": "   "})
+
+
 def test_prod_api_config_from_the_environment_starts(monkeypatch: pytest.MonkeyPatch) -> None:
     """Como en el arranque real: todo por variables de entorno, sin kwargs del LLM."""
     monkeypatch.setenv("LLM_BACKEND", "api")
