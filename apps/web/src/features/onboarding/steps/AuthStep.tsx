@@ -60,7 +60,12 @@ function SignupForm({ onSwitch }: { onSwitch: () => void }) {
   const mutation = useMutation({
     mutationFn: (values: SignupValues): Promise<AuthSession> => signUp(values),
     onSuccess: (session) => {
-      setAuth({ userId: session.userId, token: session.token, mode: "signup" });
+      setAuth({
+        userId: session.userId,
+        token: session.token,
+        refreshToken: session.refreshToken,
+        mode: "signup",
+      });
       // No hay query "me" en core (el perfil vive en el store), pero esto cruza
       // el borde de identidad: limpiamos los caches por usuario para que las
       // vistas posteriores no muestren datos de un estado previo.
@@ -170,7 +175,12 @@ function LoginForm({ onSwitch }: { onSwitch: () => void }) {
       // No completó: el token va al draft, el wizard continúa y al cerrar
       // `submitOnboarding` persiste todo. Login cruza el borde de identidad:
       // limpiamos los caches por usuario para no mostrar datos de otra sesión.
-      setAuth({ userId: session.userId, token: session.token, mode: "login" });
+      setAuth({
+        userId: session.userId,
+        token: session.token,
+        refreshToken: session.refreshToken,
+        mode: "login",
+      });
       invalidateUserScopedQueries(queryClient);
       next();
     },

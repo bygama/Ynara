@@ -21,6 +21,8 @@ export type UserProfile = {
    * adjuntar `Authorization: Bearer <token>`.
    */
   token: string | null;
+  /** Refresh token para renovar el access token vía `POST /v1/auth/refresh`. */
+  refreshToken: string | null;
   displayName: string;
   /** Resultado del step de mood. */
   mood: string[];
@@ -42,7 +44,8 @@ export type UserProfile = {
 };
 
 type UserActions = {
-  setAuth: (input: { userId: string; token: string }) => void;
+  setAuth: (input: { userId: string; token: string; refreshToken?: string | null }) => void;
+  setTokens: (input: { token: string; refreshToken?: string | null }) => void;
   setDisplayName: (name: string) => void;
   setMood: (mood: string[], freeText: string) => void;
   setInterestedModes: (modes: Mode[]) => void;
@@ -60,6 +63,7 @@ type UserActions = {
 const initialState: UserProfile = {
   userId: null,
   token: null,
+  refreshToken: null,
   displayName: "",
   mood: [],
   moodFreeText: "",
@@ -82,7 +86,12 @@ export function createUserStore(storage: StateStorage) {
     persist(
       (set) => ({
         ...initialState,
-        setAuth: ({ userId, token }) => set({ userId, token }),
+        setAuth: ({ userId, token, refreshToken = null }) => set({ userId, token, refreshToken }),
+        setTokens: ({ token, refreshToken }) =>
+          set((s) => ({
+            token,
+            refreshToken: refreshToken !== undefined ? refreshToken : s.refreshToken,
+          })),
         setDisplayName: (displayName) => set({ displayName }),
         setMood: (mood, moodFreeText) => set({ mood, moodFreeText }),
         setInterestedModes: (interestedModes) => set({ interestedModes }),

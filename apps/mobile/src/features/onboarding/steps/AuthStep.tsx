@@ -37,7 +37,12 @@ export function AuthStep() {
   const mutation = useMutation({
     mutationFn: (creds: { email: string; password: string }): Promise<AuthSession> => signUp(creds),
     onSuccess: (session) => {
-      setAuth({ userId: session.userId, token: session.token, mode: "signup" });
+      setAuth({
+        userId: session.userId,
+        token: session.token,
+        refreshToken: session.refreshToken,
+        mode: "signup",
+      });
       next();
     },
     onError: (error) => setSubmitError(authErrorMessage(error, "signup")),

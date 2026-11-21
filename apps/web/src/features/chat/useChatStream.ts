@@ -2,7 +2,7 @@
 
 import { type ChatRequest, createSseParser, SseParseError } from "@ynara/shared-schemas";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { applyAuthHeader } from "@/lib/api";
+import { applyAuthHeader, notifyUnauthorized, tryRefreshSession } from "@/lib/api";
 import { extractErrorCode } from "@/lib/chat";
 import { env } from "@/lib/env";
 import { useBackendSessionStore } from "./backendSessions";
@@ -93,12 +93,29 @@ export function useChatStream(sessionId: string): UseChatStream {
       let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
 
       try {
-        const response = await fetch(url, {
+        let response = await fetch(url, {
           method: "POST",
           headers: buildStreamHeaders(url),
           body: JSON.stringify(req),
           signal: controller.signal,
         });
+
+        if (response.status === 401) {
+          const refreshedToken = await tryRefreshSession();
+          if (refreshedToken) {
+            const retryHeaders = buildStreamHeaders(url);
+            retryHeaders.set("Authorization", `Bearer ${refreshedToken}`);
+            response = await fetch(url, {
+              method: "POST",
+              headers: retryHeaders,
+              body: JSON.stringify(req),
+              signal: controller.signal,
+            });
+          }
+          if (response.status === 401) {
+            notifyUnauthorized();
+          }
+        }
 
         if (!response.ok || !response.body) {
           // Error del transporte: leemos el body (json si lo hay) y mapeamos

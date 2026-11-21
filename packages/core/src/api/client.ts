@@ -10,6 +10,18 @@ type ApiConfig = {
   baseUrl: string;
   getToken: () => string | null;
   /**
+   * Renueva la sesión (p. ej. vía `POST /v1/auth/refresh`) y devuelve el nuevo
+   * access token, o `null` si no hay refresh token o falló la renovación. El
+   * cliente deduplica llamadas concurrentes (single-flight).
+   */
+  refreshSession?: () => Promise<string | null>;
+  /**
+   * Callback disparado cuando una request autenticada contra nuestra API recibe
+   * 401 y no se pudo recuperar la sesión. Cada app limpia sus stores y navega
+   * al login/onboarding.
+   */
+  onUnauthorized?: () => void;
+  /**
    * Transporte HTTP. Default: el `fetch` global, resuelto en cada llamada (no la
    * referencia capturada) para que un parche posterior —MSW sobre el fetch global
    * en web— tome efecto. Inyectable para mock-first sin tocar los hooks: mobile
@@ -26,9 +38,33 @@ let config: ApiConfig = {
   fetchImpl: (input, init) => fetch(input, init),
 };
 
+let inflightRefresh: Promise<string | null> | null = null;
+
 /** Cablea base URL y token provider. Cada app lo llama una vez al cargar. */
 export function configureApi(next: Partial<ApiConfig>): void {
   config = { ...config, ...next };
+}
+
+/**
+ * Intenta renovar la sesión con deduplicación single-flight: varias requests
+ * que caen en 401 al mismo tiempo comparten una única rotación de refresh token.
+ */
+export function tryRefreshSession(): Promise<string | null> {
+  if (!config.refreshSession) return Promise.resolve(null);
+  if (!inflightRefresh) {
+    inflightRefresh = Promise.resolve()
+      .then(() => config.refreshSession?.() ?? null)
+      .catch(() => null)
+      .finally(() => {
+        inflightRefresh = null;
+      });
+  }
+  return inflightRefresh;
+}
+
+/** Notifica a la app que la sesión ya no es válida (p. ej. 401 en streaming). */
+export function notifyUnauthorized(): void {
+  config.onUnauthorized?.();
 }
 
 /** Base URL configurada. Útil para el cliente de streaming (SSE). */
@@ -75,9 +111,15 @@ type FetchInit = Omit<RequestInit, "body"> & {
   skipAuth?: boolean;
 };
 
-async function request<T>(path: string, init: FetchInit = {}): Promise<T> {
+async function request<T>(
+  path: string,
+  init: FetchInit = {},
+  retried = false,
+  overrideToken?: string,
+): Promise<T> {
   const url = path.startsWith("http") ? path : `${config.baseUrl}${path}`;
   const headers = new Headers(init.headers);
+  const hadExplicitAuth = headers.has("Authorization");
   if (init.body !== undefined && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
@@ -89,7 +131,11 @@ async function request<T>(path: string, init: FetchInit = {}): Promise<T> {
   // Bearer SOLO viaja a nuestra API. `skipAuth` lo omite explícitamente en
   // endpoints públicos (login/register).
   if (!init.skipAuth) {
-    applyAuthHeader(headers, url);
+    if (overrideToken && url.startsWith(config.baseUrl)) {
+      headers.set("Authorization", `Bearer ${overrideToken}`);
+    } else {
+      applyAuthHeader(headers, url);
+    }
   }
 
   const response = await config.fetchImpl(url, {
@@ -97,6 +143,21 @@ async function request<T>(path: string, init: FetchInit = {}): Promise<T> {
     headers,
     body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
   });
+
+  if (
+    response.status === 401 &&
+    !init.skipAuth &&
+    !hadExplicitAuth &&
+    url.startsWith(config.baseUrl)
+  ) {
+    if (!retried) {
+      const refreshedToken = await tryRefreshSession();
+      if (refreshedToken) {
+        return request<T>(path, init, true, refreshedToken);
+      }
+    }
+    config.onUnauthorized?.();
+  }
 
   const isJson = response.headers.get("Content-Type")?.toLowerCase().includes("application/json");
   const payload = isJson ? await response.json() : await response.text();

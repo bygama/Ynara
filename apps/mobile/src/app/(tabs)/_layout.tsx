@@ -23,7 +23,8 @@ const TAB_BAR_BORDER = "rgba(243,240,234,0.10)"; // colors.border
  */
 export default function TabsLayout() {
   const onboardingCompleted = useUserStore((s) => s.onboardingCompleted);
-  if (!onboardingCompleted) return <Redirect href="/welcome" />;
+  const token = useUserStore((s) => s.token);
+  if (!onboardingCompleted || !token) return <Redirect href="/welcome" />;
 
   return (
     <Tabs

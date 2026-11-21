@@ -138,7 +138,7 @@ Ya está hecho; queda como línea de base.
       `CORS_ORIGINS` solo trae `:3000` y `:8081`. Con mocks apagados, todo
       `/v1/admin/*` falla en dev. `apps/backend/app/core/config.py:272-276`,
       `apps/admin/package.json:8`. [V]
-- [ ] **CON-02 · Nadie usa el refresh token ni maneja el 401.** El endpoint de refresh
+- [x] **CON-02 · Nadie usa el refresh token ni maneja el 401.** El endpoint de refresh
       existe, pero web y mobile descartan el `refresh_token`. Cuando el access
       vence quedan con sesión muerta sin volver al login. [V]
 - [ ] **CON-03 · Memoria sin paginar.** El cliente llama `GET /v1/memory` sin

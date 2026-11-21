@@ -1,6 +1,6 @@
 "use client";
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 // Side-effect import: corre `configureApi` (instala baseUrl + getToken del cliente
 // HTTP de @ynara/core) en TODA ruta, ANTES de cualquier request. Sin esto, una ruta
@@ -8,13 +8,22 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 // core, no `@/lib/api`) se carga con el cliente SIN configurar y las requests salen
 // sin Authorization (getToken default = () => null) → 401 en un load/reload directo.
 // El onboarding/chat/memoria ya lo importaban transitivamente; /hoy y otras no.
-import "@/lib/api";
+import { ApiError } from "@/lib/api";
 import { shouldEnableMocks } from "@/lib/env";
+import { handleWebUnauthorized } from "@/lib/session";
 import { applyA11yClasses, useA11yStore } from "@/stores/a11y";
 import { applyThemeClass, useThemeStore } from "@/stores/theme";
 
 function makeQueryClient() {
-  return new QueryClient({
+  let client: QueryClient;
+  const onAuthError = (error: unknown): void => {
+    if (error instanceof ApiError && error.status === 401) {
+      handleWebUnauthorized(client);
+    }
+  };
+  client = new QueryClient({
+    queryCache: new QueryCache({ onError: onAuthError }),
+    mutationCache: new MutationCache({ onError: onAuthError }),
     defaultOptions: {
       queries: {
         staleTime: 30 * 1000,
@@ -23,6 +32,7 @@ function makeQueryClient() {
       },
     },
   });
+  return client;
 }
 
 /**

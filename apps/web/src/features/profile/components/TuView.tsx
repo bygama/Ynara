@@ -1,7 +1,6 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { logOut } from "@ynara/core/features/auth";
 import { DisplayNameSchema } from "@ynara/shared-schemas";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -13,16 +12,12 @@ import { MODE_BY_ID } from "@/components/ui/modes";
 import { TextField } from "@/components/ui/TextField";
 import { Toast } from "@/components/ui/Toast";
 import { Toggle } from "@/components/ui/Toggle";
-import { useChatStore } from "@/features/chat/store";
 import { useMemoryExport } from "@/features/memory/api";
-import { useOnboardingStore } from "@/features/onboarding/store";
 import { useMe, useUpdateMe } from "@/features/profile/api";
-import { useAvisosStore } from "@/features/today/avisosStore";
 import { useActiveMode } from "@/hooks/useActiveMode";
 import { qk } from "@/lib/queryKeys";
+import { clearWebSession } from "@/lib/session";
 import { applyA11yClasses, type TextSize, useA11yStore } from "@/stores/a11y";
-import { useActiveModeStore } from "@/stores/mode";
-import { useShowReasoningStore } from "@/stores/showReasoning";
 import { applyThemeClass, type ThemePreference, useThemeStore } from "@/stores/theme";
 import { useUserStore } from "@/stores/user";
 import { LogoutDialog } from "./LogoutDialog";
@@ -89,7 +84,6 @@ export function TuView() {
   // Store de usuario
   const displayName = useUserStore((s) => s.displayName);
   const setDisplayName = useUserStore((s) => s.setDisplayName);
-  const resetUser = useUserStore((s) => s.reset);
   const token = useUserStore((s) => s.token);
 
   // Perfil real del backend (G3): trae la retención persistida. Solo con sesión
@@ -250,28 +244,7 @@ export function TuView() {
   // ── Logout ────────────────────────────────────────────────────────────────
 
   function handleLogout() {
-    // Revocación server-side best-effort: con el Bearer actual el backend revoca la
-    // FAMILIA entera de la sesión (claim `sid`) → el access y sus hermanos dejan de
-    // servir aunque no hayan expirado (sin esto, un token robado seguía válido hasta
-    // su expiración natural). Se captura el token ANTES del reset; fire-and-forget
-    // porque el logout local no debe bloquearse en la red: si falla, el token expira
-    // solo. No se manda el refresh (la family-revocation por `sid` ya lo cubre).
-    const { token } = useUserStore.getState();
-    if (token) void logOut(token).catch(() => {});
-    // Logout total: además de la sesión del usuario, limpiar TODO el estado con
-    // datos personales. `router.push` es navegación client-side (no recarga), así
-    // que el chat store (sessions+messages en localStorage), la preferencia
-    // show-reasoning y la cache de memoria de TanStack Query sobreviven al logout y
-    // los vería el próximo usuario del dispositivo. Por eso los limpiamos acá. Tema y
-    // a11y NO se tocan: son prefs del dispositivo, no datos del usuario (limpiar a11y
-    // degradaría la accesibilidad del próximo que use el equipo).
-    resetUser();
-    useChatStore.getState().reset();
-    useActiveModeStore.getState().reset();
-    useAvisosStore.getState().reset();
-    useOnboardingStore.getState().reset();
-    useShowReasoningStore.getState().reset();
-    queryClient.clear();
+    clearWebSession(queryClient);
     router.push("/onboarding");
   }
 
