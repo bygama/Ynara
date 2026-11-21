@@ -31,3 +31,19 @@ if (!parsed.success) {
 }
 
 export const env: ClientEnv = parsed.data;
+
+/**
+ * Determina si los mocks de desarrollo pueden activarse.
+ * En builds de release (`isDev === false`) devuelve siempre `false`.
+ */
+export function resolveMocksEnabled(isDev: boolean, flag: boolean): boolean {
+  return isDev && flag;
+}
+
+const isDevRuntime = typeof __DEV__ !== "undefined" && __DEV__;
+
+/** Flag efectivo de mocks: activo solo en desarrollo con `EXPO_PUBLIC_ENABLE_MOCKS=true`. */
+export const shouldEnableMocks: boolean = resolveMocksEnabled(
+  isDevRuntime,
+  env.EXPO_PUBLIC_ENABLE_MOCKS,
+);

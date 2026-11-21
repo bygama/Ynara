@@ -10,7 +10,7 @@ import { Text } from "@/components/ui/Text";
 import { TextField } from "@/components/ui/TextField";
 // Side-effect: asegura configureApi (baseUrl + token) antes del primer request.
 import "@/lib/api";
-import { env } from "@/lib/env";
+import { shouldEnableMocks } from "@/lib/env";
 import { useOnboardingStore } from "@/stores/onboarding";
 import { useOnboardingStepStore } from "@/stores/onboardingStep";
 import { useUserStore } from "@/stores/user";
@@ -91,7 +91,7 @@ export function WelcomeScreen() {
 
   const onOAuth = (provider: "google" | "apple") => {
     setSubmitError(undefined);
-    if (!env.EXPO_PUBLIC_ENABLE_MOCKS) {
+    if (!shouldEnableMocks) {
       // OAuth real (SDK nativo Google/Apple + backend) pendiente.
       setSubmitError(
         `Vinculación con ${provider === "google" ? "Google" : "Apple"}: próximamente.`,

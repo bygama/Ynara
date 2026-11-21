@@ -1,22 +1,36 @@
 import { configureApi } from "@ynara/core/api";
-import { agendaMockResponse } from "@/features/agenda/mocks";
-import { memoryMockResponse } from "@/features/memory/mocks";
-import { profileMockResponse } from "@/features/profile/mocks";
-import { todayMockFetch } from "@/features/today/mocks";
 import { useUserStore } from "@/stores/user";
-import { env } from "./env";
+import { env, shouldEnableMocks } from "./env";
 
-// Mock-first encadenado por dominio: Memoria → Agenda → Perfil → Hoy (terminal).
-// Cada handler devuelve Response|null; null pasa al siguiente. Hoy delega el
-// resto —auth incluido— al fetch real. Con el flag off no se setea fetchImpl.
-const mockFetch: (input: string, init?: RequestInit) => Promise<Response> = (input, init) => {
-  const mem = memoryMockResponse(input, init);
-  if (mem) return Promise.resolve(mem);
-  const agenda = agendaMockResponse(input, init);
-  if (agenda) return Promise.resolve(agenda);
-  const profile = profileMockResponse(input, init);
-  if (profile) return Promise.resolve(profile);
-  return todayMockFetch(input, init);
+type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;
+
+let mockFetchPromise: Promise<FetchFn> | null = null;
+
+// Carga diferida de los handlers de desarrollo: solo se importan cuando
+// `shouldEnableMocks` está activo en dev.
+function loadMockFetch(): Promise<FetchFn> {
+  if (!mockFetchPromise) {
+    mockFetchPromise = Promise.all([
+      import("@/features/agenda/mocks"),
+      import("@/features/memory/mocks"),
+      import("@/features/profile/mocks"),
+      import("@/features/today/mocks"),
+    ]).then(([agenda, memory, profile, today]) => (input, init) => {
+      const mem = memory.memoryMockResponse(input, init);
+      if (mem) return Promise.resolve(mem);
+      const ag = agenda.agendaMockResponse(input, init);
+      if (ag) return Promise.resolve(ag);
+      const prof = profile.profileMockResponse(input, init);
+      if (prof) return Promise.resolve(prof);
+      return today.todayMockFetch(input, init);
+    });
+  }
+  return mockFetchPromise;
+}
+
+const lazyMockFetch: FetchFn = async (input, init) => {
+  const impl = await loadMockFetch();
+  return impl(input, init);
 };
 
 // Wiring de plataforma (ADR-012): el cliente HTTP vive en @ynara/core; mobile
@@ -25,7 +39,7 @@ const mockFetch: (input: string, init?: RequestInit) => Promise<Response> = (inp
 configureApi({
   baseUrl: env.EXPO_PUBLIC_API_URL,
   getToken: () => useUserStore.getState().token,
-  ...(env.EXPO_PUBLIC_ENABLE_MOCKS ? { fetchImpl: mockFetch } : {}),
+  ...(shouldEnableMocks ? { fetchImpl: lazyMockFetch } : {}),
 });
 
 export { ApiError, api } from "@ynara/core/api";
