@@ -40,19 +40,14 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import AsyncExitStack
-from datetime import UTC, datetime
-from typing import Any
 from uuid import UUID
 
-from celery import Task
 from celery.exceptions import SoftTimeLimitExceeded
-from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.core.constants import MODEL_ALIAS_AGENT
-from app.enums import AuditOperation, LlmModel, MemoryLayer, Mode
+from app.enums import LlmModel, Mode
 from app.llm.clients.base import LLMClient
 from app.llm.clients.embedding import EmbeddingClient
 from app.llm.clients.factory import build_embedder, build_llm_client, build_reranker
@@ -62,14 +57,21 @@ from app.llm.errors import LlmTransientError
 from app.llm.memory_engine import QwenMemoryEngine, apply_ops
 from app.memory.audit import AuditStore
 from app.memory.config import MemoryConfigError, RetentionConfig, load_retention_config
-from app.memory.conversation_turns import ConversationTurnStore
-from app.memory.episodic import EpisodicMemoryStore
-from app.memory.hashing import compute_record_hash
+from app.memory.episodic import EpisodicMemoryStore  # noqa: F401 -- target de patch en tests
 from app.memory.procedural import ProceduralMemoryStore
 from app.memory.semantic import SemanticMemoryStore
-from app.models.memory import EpisodicMemory
-from app.schemas.memory import EpisodicMemoryCreate
 from app.workers.celery_app import celery_app
+from app.workflows._consolidation_helpers import (
+    _CONSOLIDATION_TASK_OPTIONS,
+    _aclose_quietly,  # noqa: F401 -- re-export para tests
+    _build_transcript,  # noqa: F401 -- re-export para tests
+    _consolidate_session_in_db,
+    _episode_exists,  # noqa: F401 -- re-export para tests
+    _owned,
+    _parse_origin_mode,
+    _parse_source_session_id,
+    _retry_or_give_up,
+)
 from app.workflows._engine import worker_session
 from app.workflows._turn_marker import TurnClaim, claim_turn
 
@@ -82,62 +84,18 @@ logger = logging.getLogger(__name__)
 
 
 def _build_embedder(settings: Settings) -> EmbeddingClient:
-    """Construye el cliente de embeddings para la consolidacion.
-
-    Delega en la factory (``build_embedder``): ``EMBEDDING_BACKEND=fake`` (default
-    de dev y CI) -> ``FakeEmbeddingClient``; ``api`` -> ``ApiEmbeddingClient``
-    contra el proveedor de embeddings (ADR-028 D4). El gate vive en un solo lugar.
-    """
+    """Construye el cliente de embeddings para la consolidacion (ADR-028 D4)."""
     return build_embedder(settings)
 
 
 def _build_consolidation_llm(settings: Settings) -> LLMClient:
-    """Construye el cliente LLM para consolidacion (alias ``agente``).
-
-    Delega en la factory (``build_llm_client``): en dev/test devuelve el
-    ``FakeLlmClient`` (sin resultados encolados -> el ``QwenMemoryEngine``
-    aplica 0 ops y commitea sin efectos, comportamiento historico de M8); con
-    ``LLM_BACKEND=api`` devuelve el ``ResilientClient`` sobre los proveedores de
-    ``LLM_PROVIDERS`` (ADR-028). El fake sirve los alias de ``ynara.config.json``.
-
-    Sin degradar (``degrade=False``): agotada la cadena, el cliente levanta el error en
-    vez de devolver la respuesta degradada del chat. Asi la task distingue un 429 o una
-    caida (``LlmTransientError``, se reintenta) de una credencial rechazada (permanente,
-    el motor la descarta sin reintentar).
-    """
+    """Construye el cliente LLM para consolidacion (alias ``agente``, ``degrade=False``)."""
     return build_llm_client(settings, load_llm_config(), degrade=False)
 
 
 def _build_reranker() -> Reranker:
-    """Construye el reranker para la consolidacion.
-
-    Delega en la factory (``build_reranker``): el ``FakeReranker`` passthrough, el
-    reranker de todos los entornos (ADR-028 D5).
-    """
+    """Construye el reranker passthrough para la consolidacion (ADR-028 D5)."""
     return build_reranker()
-
-
-async def _aclose_quietly(client: object) -> None:
-    """Cierra un cliente que armo la task (su ``httpx.AsyncClient``), sin propagar.
-
-    Cada intento corre en su propio event loop (``asyncio.run``) y arma clientes
-    nuevos: sin cerrarlos, cada intento dejaria conexiones abiertas hasta que el GC las
-    junte. Un cliente sin ``aclose`` (los fakes) se saltea. Un fallo al cerrar no
-    cambia el resultado del intento: se loguea solo el tipo.
-    """
-    aclose = getattr(client, "aclose", None)
-    if aclose is None:
-        return
-    try:
-        await aclose()
-    except Exception as exc:
-        logger.warning("consolidation: no se pudo cerrar un cliente: %s", type(exc).__name__)
-
-
-def _owned[ClientT](stack: AsyncExitStack, client: ClientT) -> ClientT:
-    """Anota ``client`` (armado por la task) para cerrarlo al salir de ``stack``."""
-    stack.push_async_callback(_aclose_quietly, client)
-    return client
 
 
 def _load_retention_config_safe() -> RetentionConfig:
@@ -158,49 +116,6 @@ def _load_retention_config_safe() -> RetentionConfig:
             "usando defaults ADR-007 D2 (default=365, sensible=180)"
         )
         return RetentionConfig()
-
-
-def _parse_source_session_id(session_id: str) -> UUID | None:
-    """Parsea ``session_id`` (str) a ``UUID`` de forma DEFENSIVA (M10 Ola 1).
-
-    El ``session_id`` que llega al worker es ``str(ChatSession.id)`` (el id real
-    de la sesion persistida; ver ``ChatService.run_turn`` en ``app.services.chat``), asi
-    que en el camino feliz es siempre un UUID valido. Pero el worker NUNCA debe
-    caerse por un payload corrupto en la cola: si el parse falla, se loguea un
-    mensaje tecnico SIN contenido del usuario (regla #4 — el ``session_id`` es un
-    identificador, no PII) y se devuelve ``None`` para que el hecho se persista
-    con ``source_session_id`` NULL en vez de tumbar la consolidacion.
-
-    Returns:
-        El ``UUID`` parseado, o ``None`` si ``session_id`` no es un UUID valido.
-    """
-    try:
-        return UUID(session_id)
-    except (ValueError, AttributeError, TypeError):
-        # session_id corrupto/no-UUID: degradar a None sin crashear el worker.
-        # No se loguea el valor (defensa en profundidad sobre regla #4).
-        logger.warning("consolidation: session_id no es un UUID valido, source_session_id=None")
-        return None
-
-
-def _parse_origin_mode(mode: str) -> Mode | None:
-    """Parsea ``mode`` (str) a ``Mode`` de forma DEFENSIVA (issue #158).
-
-    El ``origin_mode`` de ``audit_log`` es nullable y best-effort: si el ``mode``
-    del turno no es un valor valido de ``Mode`` (payload viejo/corrupto en la
-    cola), se degrada a ``None`` y la auditoria se escribe igual con
-    ``origin_mode=NULL`` en vez de tumbar la consolidacion. NO se loguea el valor
-    crudo (defensa en profundidad sobre regla #4: el modo no es PII, pero igual no
-    viaja a logs).
-
-    Returns:
-        El ``Mode`` parseado, o ``None`` si ``mode`` no es un valor valido.
-    """
-    try:
-        return Mode(mode)
-    except ValueError:
-        logger.warning("consolidation: mode no es un valor valido de Mode, origin_mode=None")
-        return None
 
 
 # ---------------------------------------------------------------------------
@@ -357,94 +272,7 @@ async def _async_consolidate(
 
 
 # ---------------------------------------------------------------------------
-# Politica de reintentos de las dos tasks de consolidacion
-# ---------------------------------------------------------------------------
-#
-# Una falla transitoria del proveedor (``LlmTransientError``: 429, 5xx, timeout,
-# breaker abierto, presupuesto agotado o respuesta degradada) no pierde el turno:
-# ``autoretry_for`` reprograma la task con backoff exponencial y jitter completo. El
-# countdown antes del reintento N+1 es ``randrange(min(600, 30 * 2**N) + 1)``, con N
-# los reintentos ya hechos: hasta 30s, 60s, 120s, 240s y 480s, unos 15 minutos en el
-# peor caso entre los 6 intentos. El jitter desparrama los reintentos de muchos turnos
-# que cayeron juntos (un 429 de todo el proveedor) en vez de devolverlos a todos en el
-# mismo segundo. Lo permanente (credencial rechazada, request invalido) no es
-# ``LlmTransientError``: el motor lo descarta con un log sin contenido y la task
-# termina sin reintentar.
-#
-# ``acks_late=True`` (at-least-once) solo en estas dos tasks: el mensaje se ackea al
-# terminar, asi un worker que muere en el medio no pierde el turno. El broker lo
-# re-entrega: en el acto si muere el proceso hijo (``task_reject_on_worker_lost``),
-# despues del ``visibility_timeout`` si cae el worker entero. Es seguro porque
-# re-ejecutar no duplica: cada intento es todo-o-nada (``worker_session`` revierte la
-# transaccion entera si algo levanta), el turno queda marcado como consolidado en la
-# misma transaccion que escribe la memoria (``claim_turn``) y el episodio de una
-# sesion es unico (``_episode_exists`` + UNIQUE(session_id)). El resto de las tasks
-# sigue at-most-once (``task_acks_late=False`` global, ver ``celery_app``).
-#
-# Limites de tiempo propios: el soft limit global (90s) es igual al presupuesto del
-# cliente LLM (``PROVIDER_TOTAL_BUDGET_S``), asi que saltaria antes de que el cliente
-# corte con ``LlmTransientError``. 180s cubren ese presupuesto mas los embeddings de
-# unas pocas ops (``EMBEDDING_TIMEOUT_S``, 30s por request): un proveedor colgado
-# corta antes por timeout, como ``LlmTransientError``. Uno lento que igual contesta
-# puede pasarse (muchas ops con embeddings lentos): ``SoftTimeLimitExceeded`` corta
-# el intento y la task lo reintenta como una falla transitoria; re-ejecutar no
-# duplica (ver arriba). El hard limit (210s) mata la task si el soft no alcanzo a
-# cortarla.
-_CONSOLIDATION_TASK_OPTIONS: dict[str, Any] = {
-    "autoretry_for": (LlmTransientError,),
-    "max_retries": 5,
-    "retry_backoff": 30,
-    "retry_backoff_max": 600,
-    "retry_jitter": True,
-    "acks_late": True,
-    "soft_time_limit": 180,
-    "time_limit": 210,
-}
-
-
-def _retry_or_give_up(
-    task: Task,
-    exc: LlmTransientError | SoftTimeLimitExceeded,
-    *,
-    label: str,
-    user_id: str,
-    session_id: str,
-) -> None:
-    """Re-levanta la falla transitoria para que Celery reintente, o la registra al agotar.
-
-    La falla es del proveedor (``LlmTransientError``) o un intento que vencio el soft
-    limit (``SoftTimeLimitExceeded``). Con reintentos disponibles levanta un
-    ``LlmTransientError`` nuevo y sin cadena (``from None``): ``autoretry_for``
-    reprograma la task y ni el log del reintento ni el backend de resultados guardan el
-    error original. Agotados, NO levanta: una task fallida hace que Celery loguee sus
-    kwargs (el turno del usuario, regla #4) en el ``extra`` del log. Se loguean solo los
-    ids, el intento y el tipo del error.
-    """
-    attempt = task.request.retries + 1
-    max_retries = task.max_retries
-    if max_retries is not None and task.request.retries >= max_retries:
-        logger.error(
-            "%s: reintentos agotados user=%s session=%s intentos=%d: %s (sin datos de usuario)",
-            label,
-            user_id,
-            session_id,
-            attempt,
-            type(exc).__name__,
-        )
-        return
-    logger.warning(
-        "%s: falla transitoria user=%s session=%s intento=%d: %s, se reintenta",
-        label,
-        user_id,
-        session_id,
-        attempt,
-        type(exc).__name__,
-    )
-    raise LlmTransientError("se reintenta la consolidacion") from None
-
-
-# ---------------------------------------------------------------------------
-# Task Celery — firma 100% JSON-serializable
+# Task Celery — firma 100% JSON-serializable (politica en _consolidation_helpers)
 # ---------------------------------------------------------------------------
 
 
@@ -517,166 +345,8 @@ def consolidate_turn(
 
 
 # ===========================================================================
-# Consolidacion EPISODICA (issue #209) — al cerrar la sesion
+# Consolidacion EPISODICA (issue #209) — nucleo en _consolidation_helpers
 # ===========================================================================
-#
-# Espejo defensivo de consolidate_turn, pero para la capa episodica:
-# - Firma 100% JSON (user_id:str, session_id:str). El cuerpo async se separa en
-#   _async_consolidate_session (inyectable en tests).
-# - Lee los turnos crudos de la sesion (ConversationTurnStore), los descifra y
-#   reconstruye el transcript; si 0 turnos -> 0 (no crea episodio vacio).
-# - Idempotencia: si ya existe un episodio para session_id -> no-op (un doble
-#   cierre no duplica el episodio). Ademas degrada el IntegrityError de la UNIQUE
-#   (session_id) de episodic_memory a no-op (carrera entre dos workers).
-# - Resume el transcript con Qwen (QwenMemoryEngine.summarize), persiste via
-#   EpisodicMemoryStore.add (embeddea+cifra), audita (AuditStore.record), y purga
-#   los turnos. summary+purge son atomicos (mismo commit).
-# - is_sensitive = (mode == BIENESTAR); el retention queda capeado por el
-#   model_validator de EpisodicMemoryCreate (ADR-007 D2).
-# - Regla #4: ningun contenido de usuario a logs (solo conteos / UUIDs /
-#   type(exc).__name__).
-# ---------------------------------------------------------------------------
-#
-# RETENTION CONFIG-DRIVEN (ADR-007 D2): los dias de retention (default y
-# sensible) salen de ``ynara.config.json[memory]`` via ``load_retention_config()``
-# (``app/memory/config.py``), NO de constantes hardcodeadas. Mismo patron que el
-# decay config-driven (#211): el ``RetentionConfig`` se inyecta en el cuerpo async
-# (``retention_config``) y, si es ``None`` (worker en prod), se carga del JSON. El
-# cap duro (<=365) para entradas sensibles lo sigue enforzando el model_validator
-# de ``EpisodicMemoryCreate`` + la CHECK constraint. Defaults del loader = los
-# valores que estaban hardcodeados aca (default=365, sensible=180): mismo
-# comportamiento si el config no trae las keys.
-# ---------------------------------------------------------------------------
-
-
-def _build_transcript(turns: list) -> str:
-    """Reconstruye el transcript plaintext de una sesion a partir de los turnos.
-
-    ``turns`` viene ORDER BY ``seq`` y descifrado (``ConversationTurnOut``). Se
-    serializa a un texto con prefijos de rol legibles para el modelo. NO se loguea
-    (es contenido del usuario, regla #4): solo se pasa al LLM on-prem.
-    """
-    lines: list[str] = []
-    for turn in turns:
-        speaker = "Usuario" if turn.role == "user" else "Asistente"
-        lines.append(f"{speaker}: {turn.content}")
-    return "\n".join(lines)
-
-
-async def _episode_exists(session: AsyncSession, source_session_id: UUID) -> bool:
-    """``True`` si ya existe un episodio para ``source_session_id`` (idempotencia).
-
-    Chequeo previo barato (espeja el UNIQUE(session_id) de episodic_memory): si el
-    episodio ya existe, el worker no re-resume ni re-inserta (un doble cierre no
-    duplica). El IntegrityError de la UNIQUE sigue siendo la red final ante una
-    carrera entre dos workers entre este SELECT y el INSERT.
-    """
-    stmt = (
-        select(func.count())
-        .select_from(EpisodicMemory)
-        .where(EpisodicMemory.session_id == source_session_id)
-    )
-    return ((await session.execute(stmt)).scalar_one() or 0) > 0
-
-
-async def _consolidate_session_in_db(
-    *,
-    session: AsyncSession,
-    user_id: UUID,
-    source_session_id: UUID,
-    mode: str,
-    origin_mode: Mode | None,
-    llm_client: LLMClient,
-    embedder: EmbeddingClient,
-    reranker: Reranker,
-    retention_config: RetentionConfig,
-) -> int:
-    """Nucleo de la consolidacion episodica sobre una ``session`` ya abierta.
-
-    Retorna 1 si se persistio un episodio nuevo, 0 si no (0 turnos, summary vacio,
-    o episodio ya existente). NO commitea: el commit lo da el caller
-    (``_async_consolidate_session`` en prod, o el fixture en tests).
-    """
-    # Idempotencia: si el episodio ya existe, no-op (doble cierre / reintento).
-    if await _episode_exists(session, source_session_id):
-        logger.info("consolidate_session: episodio ya existe session=%s, no-op", source_session_id)
-        return 0
-
-    turns_store = ConversationTurnStore(session, user_id)
-    turns = await turns_store.list_for_session(source_session_id)
-    if not turns:
-        # Sin turnos no hay nada que resumir: NO se crea un episodio vacio.
-        logger.info("consolidate_session: 0 turnos session=%s, no-op", source_session_id)
-        return 0
-
-    transcript = _build_transcript(turns)
-    mem_engine = QwenMemoryEngine(llm_client, model=MODEL_ALIAS_AGENT)
-    summary = await mem_engine.summarize(transcript=transcript, mode=mode)
-    if not summary.summary:
-        # Resumen vacio (JSON corrupto o un error permanente del LLM; lo transitorio y
-        # la respuesta degradada levantan y la task se reintenta): NO se persiste un
-        # episodio sin contenido. Los turnos NO se purgan: un reintento futuro podria
-        # resumir.
-        logger.info("consolidate_session: resumen vacio session=%s, no-op", source_session_id)
-        return 0
-
-    is_sensitive = origin_mode == Mode.BIENESTAR
-    # retention_days config-driven (ADR-007 D2): sensible vs default salen del
-    # RetentionConfig (``ynara.config.json[memory]``), no de constantes. El cap
-    # duro (<=365 para sensibles) lo enforcea el model_validator de
-    # EpisodicMemoryCreate + la CHECK constraint.
-    retention_days = (
-        retention_config.retention_sensitive_days
-        if is_sensitive
-        else retention_config.retention_default_days
-    )
-    payload = EpisodicMemoryCreate(
-        session_id=source_session_id,
-        summary=summary.summary,
-        occurred_at=datetime.now(UTC),
-        is_sensitive=is_sensitive,
-        retention_days=retention_days,
-        topics=summary.topics,
-    )
-
-    episodic_store = EpisodicMemoryStore(session, user_id, embedder, reranker)
-    audit_store = AuditStore(session, user_id)
-
-    try:
-        out = await episodic_store.add(payload)
-    except IntegrityError:
-        # Carrera: otro worker inserto el episodio entre el SELECT y el INSERT. La
-        # UNIQUE(session_id) lo rechaza -> degradar a no-op (no se duplica). Se
-        # revierte el estado parcial de esta op para no envenenar la transaccion.
-        await session.rollback()
-        logger.info(
-            "consolidate_session: IntegrityError (UNIQUE session_id) session=%s, no-op",
-            source_session_id,
-        )
-        return 0
-
-    # Auditoria: una fila WRITE/EPISODIC con record_hash del summary (regla #4: el
-    # hash es unidireccional, NUNCA el summary en claro). sensitive espeja la fila.
-    await audit_store.record(
-        operation=AuditOperation.WRITE,
-        target_layer=MemoryLayer.EPISODIC,
-        target_id=out.id,
-        record_hash=compute_record_hash(summary.summary),
-        origin_model=LlmModel.QWEN,
-        origin_mode=origin_mode,
-        sensitive=is_sensitive,
-    )
-
-    # Purga de los turnos crudos: su resumen ya quedo en episodic_memory. summary +
-    # purge van en el MISMO commit (atomicidad): el episodio existe sii los turnos
-    # se borraron.
-    purged = await turns_store.purge_session(source_session_id)
-    logger.info(
-        "consolidate_session: episodio creado session=%s turnos_purgados=%d",
-        source_session_id,
-        purged,
-    )
-    return 1
 
 
 async def _async_consolidate_session(
