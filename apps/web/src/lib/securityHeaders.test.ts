@@ -29,14 +29,12 @@ describe("securityHeaders", () => {
     expect(csp).not.toContain("upgrade-insecure-requests");
   });
 
-  it("ignora API URLs inválidas o con esquemas no HTTP", () => {
-    const csp = buildContentSecurityPolicy({
-      apiUrl: "javascript:alert(1)",
-      isProduction: true,
-    });
-
-    expect(csp).toContain("connect-src 'self'");
-    expect(csp).not.toContain("javascript:");
+  it("ignora API URLs inválidas, vacías o con esquemas no HTTP", () => {
+    for (const apiUrl of ["javascript:alert(1)", "no-es-una-url", undefined]) {
+      const csp = buildContentSecurityPolicy({ apiUrl, isProduction: true });
+      expect(csp).toContain("connect-src 'self';");
+      expect(csp).not.toContain("javascript:");
+    }
   });
 
   it("incluye HSTS y cabeceras estándar en producción", () => {
@@ -50,9 +48,7 @@ describe("securityHeaders", () => {
     expect(byKey["X-Content-Type-Options"]).toBe("nosniff");
     expect(byKey["Referrer-Policy"]).toBe("strict-origin-when-cross-origin");
     expect(byKey["Permissions-Policy"]).toContain("camera=()");
-    expect(byKey["Strict-Transport-Security"]).toBe(
-      "max-age=63072000; includeSubDomains; preload",
-    );
+    expect(byKey["Strict-Transport-Security"]).toBe("max-age=63072000; includeSubDomains; preload");
   });
 
   it("omite HSTS en desarrollo para no bloquear http://localhost", () => {
