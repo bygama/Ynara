@@ -58,8 +58,8 @@ export function useChatStream(sessionId: string): UseChatStream {
       setIsStreaming(true);
 
       try {
-        if (shouldEnableMocks) {
-          // Mock (solo dev): carga diferida de las respuestas canned por modo.
+        if (__DEV__ && shouldEnableMocks) {
+          // Mock (solo dev): encapsulado en rama condicional de desarrollo.
           const { cannedActions, cannedReply } = await import("@ynara/core/features/chat");
           const full = cannedReply(req.mode, req.text);
           const tokens = full.match(/\S+\s*/g) ?? [full];
