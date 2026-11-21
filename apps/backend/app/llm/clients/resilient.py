@@ -1,52 +1,8 @@
 """Cliente resiliente: retry + circuit breaker + respaldo (M3, ADR-028).
 
-``ResilientClient`` implementa ``LLMClient`` (drop-in para el router) y
-envuelve un ``ClientPool``. Politica de resiliencia, toda a mano con
-stdlib (regla M3: nada de tenacity/circuitbreaker):
-
-1. Pide al pool los candidatos para el modelo, en orden de preferencia
-   (el principal primero, el respaldo despues).
-2. Para cada candidato cuyo breaker ``allow()``:
-   - Reintenta ante errores TRANSITORIOS (timeout, caida, respuesta
-     invalida) con backoff exponencial + jitter, hasta ``max_attempts``.
-   - Ante un 429 o una sobrecarga, con un respaldo disponible pasa a el,
-     salvo que el ``Retry-After`` sea corto; sin respaldo espera el
-     ``Retry-After``, o el backoff si el proveedor no lo mando. Un
-     ``Retry-After`` solo se espera si despues queda margen en el
-     presupuesto global para el request; si no, pasa al siguiente candidato
-     o degrada.
-   - Ante un error del REQUEST (request invalido, contexto excedido, modelo
-     no servido) re-lanza de inmediato: es bug del request, no del
-     proveedor, y el respaldo fallaria igual.
-   - Ante una credencial rechazada (401/403) o un request que ese proveedor
-     no acepta (un 4xx propio, como un 404 por un id de modelo que no tiene)
-     no reintenta contra ese proveedor y pasa al siguiente, que tiene su
-     credencial y sus modelos.
-   - Si tiene exito, devuelve el resultado.
-3. Si todos los candidatos se agotan (o ninguno tiene el breaker cerrado), o
-   se vence el presupuesto global, devuelve ``degraded_response()``. NUNCA
-   propaga una excepcion de infra al caller (UX: siempre algo coherente).
-   Salvo con ``degrade=False``, que es para quien puede reintentar mas tarde
-   (la consolidacion de memoria, en un worker): ahi levanta el error, para
-   no confundir una falla transitoria con un rechazo permanente (ver
-   ``complete``).
-
-El breaker de cada candidato abre solo por caidas (timeout, 5xx, red:
-``BREAKER_ERRORS``) o porque el presupuesto global corto un request suyo en
-curso (cortar una espera entre intentos no cuenta). Cualquier otra respuesta
-(error del request, rechazo del proveedor, 429, respuesta invalida) quiere
-decir que el proveedor contesto: cuenta como exito y cierra la prueba
-HALF_OPEN si la habia. Un candidato que termina devolviendo un resultado
-siempre cuenta como exito, aunque un intento anterior haya sido una caida: el
-proveedor ya respondio, y una prueba HALF_OPEN que responde en el reintento
-vuelve a ``CLOSED`` (contrato de ``CircuitBreaker``).
-
-El respaldo es otro cliente del pool: el siguiente proveedor de
-``LLM_PROVIDERS`` (ADR-028, regla #4b). ``clock`` y ``sleep`` son inyectables
-para tests sin tiempo real.
-
-Que errores se reintentan, cuanto se espera y que le toca al breaker vive en
-``_resilience.py``; aca queda el recorrido de los candidatos y el presupuesto.
+``ResilientClient`` implementa ``LLMClient`` (drop-in para el router) y envuelve un
+``ClientPool``. Politica de errores, esperas y breaker vive en ``_resilience.py``; aca
+queda el recorrido de los candidatos, el streaming y el presupuesto global.
 """
 
 from __future__ import annotations
@@ -64,8 +20,9 @@ from app.llm.clients._resilience import (
     BreakerTally,
     ChainOutcome,
     RetryPolicy,
+    aggregate_health,
     client_label,
-    probe_health,
+    probe_all_health,
 )
 from app.llm.clients.base import LLMClient
 from app.llm.clients.circuit import CircuitBreaker
@@ -175,35 +132,12 @@ class ResilientClient:
         await self._pool.aclose()
 
     async def health(self) -> ModelHealth:
-        """Salud agregada: sano si al menos un cliente del pool responde.
-
-        Reporta el ``model_name`` del primer cliente sano; si ninguno
-        responde, el del primero del pool (o vacio si el pool esta vacio).
-        """
-        first_name = ""
-        for client in self._pool.clients:
-            try:
-                health = await client.health()
-            except Exception:  # noqa: S112 -- health() roto = no-sano; el logging real es M4
-                # Un cliente que rompe en health() se trata como no-sano: no
-                # debe tumbar el chequeo agregado. Probamos el siguiente.
-                continue
-            if not first_name:
-                first_name = health.model_name
-            if health.healthy:
-                return ModelHealth(model_name=health.model_name, healthy=True)
-        return ModelHealth(model_name=first_name, healthy=False)
+        """Salud agregada: sano si al menos un cliente del pool responde."""
+        return await aggregate_health(self._pool.clients)
 
     async def provider_health(self) -> list[ModelHealth]:
-        """Salud de cada cliente del pool, en el orden del pool (el principal primero).
-
-        A diferencia de ``health()``, que corta en el primer sano, sondea a todos a la
-        vez: el panel admin muestra el estado de cada proveedor por separado. El
-        ``model_name`` de cada uno es el nombre del proveedor (la clase del cliente si no
-        tiene ``name``). Un cliente que rompe en ``health()`` cuenta como no-sano y no
-        tumba al resto.
-        """
-        return list(await asyncio.gather(*(probe_health(c) for c in self._pool.clients)))
+        """Salud de cada cliente del pool en orden (sondeados en paralelo)."""
+        return await probe_all_health(self._pool.clients)
 
     async def complete(
         self,
