@@ -130,7 +130,7 @@ class TraceStep(YnaraBaseModel):
     """
 
     name: str  # "request" | "thinking" | "completion"
-    detail: str  # texto humano: "qwen · max_tokens=256 · temp=0.2"
+    detail: str  # texto humano: "agente · max_tokens=256 · temp=0.2"
     duration_ms: float | None = None  # hoy solo el step "completion" lo trae
 
 
