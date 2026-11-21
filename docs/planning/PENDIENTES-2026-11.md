@@ -701,7 +701,7 @@ reconocen los nombres reales de las tools del backend.
 
 - [x] **AUD-FE-01 · Hallazgo de mobile.** (alta)
       Detalle reservado: se gestiona por el canal privado de `SECURITY.md`.
-- [ ] **AUD-FE-02 · Mobile: preparar la configuración para el primer build de
+- [x] **AUD-FE-02 · Mobile: preparar la configuración para el primer build de
       release.** (media)
       Detalle reservado: se gestiona por el canal privado de `SECURITY.md`.
 - [ ] **AUD-FE-03 · Mobile: no se espera la hidratación del store seguro antes de

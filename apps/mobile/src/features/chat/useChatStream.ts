@@ -1,9 +1,9 @@
 import { applyAuthHeader, getBaseUrl } from "@ynara/core/api";
-import { cannedActions, cannedReply, extractErrorCode } from "@ynara/core/features/chat";
+import { extractErrorCode } from "@ynara/core/features/chat";
 import { type ChatRequest, createSseParser, SseParseError } from "@ynara/shared-schemas";
 import { fetch as expoFetch } from "expo/fetch";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { env } from "@/lib/env";
+import { shouldEnableMocks } from "@/lib/env";
 import { useBackendSessionStore } from "@/stores/backendSessions";
 import { useChatStore } from "@/stores/chat";
 
@@ -58,10 +58,9 @@ export function useChatStream(sessionId: string): UseChatStream {
       setIsStreaming(true);
 
       try {
-        if (env.EXPO_PUBLIC_ENABLE_MOCKS) {
-          // Mock: trocea la respuesta canned por modo en palabras y las emite con
-          // delays. El cancel() ya marcó "canceled", así que al ver aborted solo
-          // cortamos (no re-tocamos el store).
+        if (shouldEnableMocks) {
+          // Mock (solo dev): carga diferida de las respuestas canned por modo.
+          const { cannedActions, cannedReply } = await import("@ynara/core/features/chat");
           const full = cannedReply(req.mode, req.text);
           const tokens = full.match(/\S+\s*/g) ?? [full];
           for (const token of tokens) {
