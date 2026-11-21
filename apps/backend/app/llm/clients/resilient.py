@@ -60,10 +60,11 @@ from app.llm.clients._resilience import (
     BREAKER_ERRORS,
     DEFAULT_MAX_WAIT_WITH_FALLBACK_S,
     DEFAULT_REQUEST_MARGIN_S,
-    PROVIDER_ERRORS,
     REQUEST_ERRORS,
     BreakerTally,
+    ChainOutcome,
     RetryPolicy,
+    client_label,
 )
 from app.llm.clients.base import LLMClient
 from app.llm.clients.circuit import CircuitBreaker
@@ -99,31 +100,6 @@ _DEFAULT_DEGRADED_TEXT = "Estoy con un problema tecnico, proba en un ratito."
 # backoff + el request al respaldo); si no, el presupuesto corta antes y la
 # respuesta degrada. ``check_resilience_budget`` lo verifica al armar el cliente.
 _DEFAULT_TOTAL_BUDGET_S: float = 90.0
-
-
-class _ChainOutcome:
-    """Como termino cada candidato de un ``complete()`` que se quedo sin resultado.
-
-    Lo usa el modo sin degradar para elegir el error. Si TODOS los candidatos del modelo
-    se probaron y cada uno termino en un rechazo del proveedor (``PROVIDER_ERRORS``: la
-    credencial o un 4xx propio), reintentar mas tarde da lo mismo: el error es
-    permanente. Si alguno se salteo por su breaker o termino en otra cosa (timeout,
-    caida, 429, respuesta invalida), mas tarde puede andar: es transitorio. Vive por
-    llamada, como el ``BreakerTally``.
-    """
-
-    def __init__(self) -> None:
-        self.skipped = False
-        self.errors: list[LlmError] = []
-
-    def error(self, model: str) -> LlmError:
-        """El error a levantar cuando la cadena se agota sin resultado."""
-        if not self.errors and not self.skipped:
-            # Ningun cliente del pool sirve el modelo: es de configuracion, no transitorio.
-            return ModelNotServedError(model)
-        if not self.skipped and all(isinstance(exc, PROVIDER_ERRORS) for exc in self.errors):
-            return self.errors[-1]
-        return LlmTransientError("candidatos agotados")
 
 
 class ResilientClient:
@@ -249,7 +225,7 @@ class ResilientClient:
         (caidas, 429, breaker abierto, presupuesto vencido: mas tarde puede andar).
         """
         tally = BreakerTally()
-        outcome = _ChainOutcome()
+        outcome = ChainOutcome()
         deadline = self._clock() + self._total_budget_s
         try:
             async with asyncio.timeout(self._total_budget_s):
@@ -284,7 +260,7 @@ class ResilientClient:
     async def _run_candidates(
         self,
         tally: BreakerTally,
-        outcome: _ChainOutcome,
+        outcome: ChainOutcome,
         deadline: float,
         *,
         model: str,
@@ -331,7 +307,7 @@ class ResilientClient:
         client: LLMClient,
         breaker: CircuitBreaker,
         tally: BreakerTally,
-        outcome: _ChainOutcome,
+        outcome: ChainOutcome,
         deadline: float,
         fallbacks: Sequence[LLMClient],
         *,
@@ -393,7 +369,7 @@ class ResilientClient:
             outcome.errors.append(last_error)
         logger.warning(
             "llm: candidato %s descartado (%s)",
-            _client_label(client),
+            client_label(client),
             type(last_error).__name__,
         )
         return None
@@ -495,7 +471,7 @@ class ResilientClient:
                 last_error = exc
                 logger.warning(
                     "llm: candidato %s descartado (%s)",
-                    _client_label(client),
+                    client_label(client),
                     type(exc).__name__,
                 )
             except Exception:
@@ -522,9 +498,3 @@ class ResilientClient:
                 yield client
         if not allowed_any:
             yield candidates[0]
-
-
-def _client_label(client: LLMClient) -> str:
-    """Nombre para los logs: el del proveedor si lo tiene, si no la clase del cliente."""
-    name = getattr(client, "name", None)
-    return name if isinstance(name, str) and name else type(client).__name__
