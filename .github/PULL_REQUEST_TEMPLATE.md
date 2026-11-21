@@ -54,7 +54,7 @@ marcar o eliminar la línea. No marcar a la ligera.
 - [ ] No toca tablas sagradas (regla #3) — o tiene 1 aprobación humana explícita confirmada en el PR (review formal, además del operador autor)
 - [ ] Sin contenido ni PII en logs, y la IA solo desde `apps/backend/app/llm/clients/providers/` (regla #4)
 - [ ] Sin `@supabase/supabase-js` en frontend (regla #5)
-- [ ] Conventional Commits en español, imperativo (regla #9)
+- [ ] Conventional Commits en español, imperativo (regla #6)
 - [ ] Si agregó / cambió deps: OK humano antes del install (regla #1)
 
 ## Conocido fuera de scope
