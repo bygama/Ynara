@@ -245,7 +245,7 @@ antes de fusionar duplicados (por ejemplo, "borrar cuenta" apareció en cuatro).
 
 ### 1.8 Seguridad web
 
-- [ ] **M-50 · Endurecer la seguridad de web, admin y landing.** **S**
+- [x] **M-50 · Endurecer la seguridad de web, admin y landing.** **S**
       Detalle reservado: se gestiona por el canal privado de `SECURITY.md`.
 - [ ] **M-51 · Hallazgo de seguridad web reservado.** **S**
       Detalle reservado: se gestiona por el canal privado de `SECURITY.md`.

@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { buildSecurityHeaders } from "./src/lib/securityHeaders";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -15,8 +16,16 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: [],
   },
-  // TODO: configurar headers de seguridad (CSP, HSTS, etc.) en una
-  // pasada de hardening previa al launch.
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: buildSecurityHeaders({
+          apiUrl: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080",
+        }),
+      },
+    ];
+  },
   experimental: {
     // TODO: revisar flags experimentales de Next 16 que nos sirvan.
   },
