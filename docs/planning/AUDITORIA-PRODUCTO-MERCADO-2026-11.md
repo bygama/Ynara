@@ -172,7 +172,7 @@ antes de fusionar duplicados (por ejemplo, "borrar cuenta" apareció en cuatro).
       el del runbook no cumple lo que promete `SECURITY.md`. **M** [V] (REL-15, SEC-27, INF-03)
 - [ ] **M-30 · Falta la rotación y la custodia de la clave de cifrado.**
       **M** [V] (SEC-26, REL-18, OPS-04)
-- [ ] **M-31 · Hallazgo de infraestructura reservado.** **S**
+- [x] **M-31 · Hallazgo de infraestructura reservado.** **S**
       Detalle reservado: se gestiona por el canal privado de `SECURITY.md`.
 - [x] **M-32 · Producción acepta embeddings falsos.** `EMBEDDING_BACKEND` es
       `fake` por defecto y el fail-fast de producción no lo valida: se escribirían
