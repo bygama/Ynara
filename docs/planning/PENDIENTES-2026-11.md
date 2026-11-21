@@ -783,7 +783,7 @@ embeddings falsos sin avisar, y no existe borrado de cuenta. Además, tres
 ítems inferidos del documento (PROM-12, PROM-13, TES-16) ya se pueden cerrar o
 corregir leyendo el código.
 
-- [ ] **AUD-BE-01 · Hallazgo de backend.** (alta)
+- [x] **AUD-BE-01 · Hallazgo de backend.** (alta)
       Detalle reservado: se gestiona por el canal privado de `SECURITY.md`.
 - [x] **AUD-BE-02 · Producción puede arrancar con embeddings y reranker falsos sin
       ningún aviso.** (alta) Agregar un fail-fast en Settings para production si

@@ -19,10 +19,11 @@ Reglas no negociables (ADR-010 + critica adversarial M8):
    entre event loops distintos da 'Future attached to a different loop').
 5. Parseo defensivo heredado de ``AgentMemoryEngine`` (``_parse_ops``): JSON
    invalido / ops malformadas -> [] sin crashear el worker.
-6. Ningun dato de usuario a logs (regla #4): el payload (turno del usuario)
-   queda en Redis y el worker; al proveedor de IA va solo lo que pide la
-   llamada (reglas #4a y #4b). Solo se loguea el conteo de ops aplicadas
-   y errores tecnicos SIN contenido.
+6. Ningun dato de usuario a logs ni a la cola (regla #4): la task recibe solo
+   identificadores (``user_id``, ``session_id``, ``turn_seq``) y lee el par de
+   turnos cifrados desde ``conversation_turns`` en el worker; al proveedor de IA
+   va solo lo que pide la llamada (reglas #4a y #4b). Solo se loguea el conteo
+   de ops aplicadas y errores tecnicos SIN contenido.
 7. Idempotencia sin tocar ``app/memory/`` ni el schema sagrado: cada intento es
    todo-o-nada (la marca del turno, las ops y su auditoria van en un SAVEPOINT) y,
    con ``turn_seq``, el turno del usuario queda marcado como consolidado en la
@@ -79,7 +80,7 @@ from app.workflows._consolidation_helpers import (
     _retry_or_give_up,
 )
 from app.workflows._engine import worker_session
-from app.workflows._turn_marker import TurnClaim, claim_turn
+from app.workflows._turn_marker import TurnClaim, claim_turn, load_turn_pair
 from app.workflows._wipe_guard import was_wiped_after
 
 logger = logging.getLogger(__name__)
@@ -126,10 +127,8 @@ async def _consolidate_turn_in_db(
     *,
     session: AsyncSession,
     user_id: UUID,
-    source_session_id: UUID | None,
-    turn_seq: int | None,
-    user_msg: str,
-    model_response: str,
+    source_session_id: UUID,
+    turn_seq: int,
     mode: str,
     origin_mode: Mode | None,
     llm_client: LLMClient,
@@ -139,8 +138,9 @@ async def _consolidate_turn_in_db(
 ) -> int:
     """Consolida UN turno sobre una ``session`` ya abierta (atomico en SAVEPOINT).
 
-    Retorna la cantidad de ops aplicadas (0 si ya consolidado o si hubo wipe total
-    posterior a ``enqueued_at``). NO commitea: el commit lo da el caller.
+    Lee y descifra el par ``(turn_seq, turn_seq + 1)`` desde ``conversation_turns``.
+    Retorna la cantidad de ops aplicadas (0 si el turno no existe, ya estaba
+    consolidado o hubo wipe total posterior a ``enqueued_at``). NO commitea.
     """
     if enqueued_at is not None and await was_wiped_after(
         session, user_id=user_id, since=enqueued_at
@@ -150,6 +150,17 @@ async def _consolidate_turn_in_db(
             source_session_id,
         )
         return 0
+    pair = await load_turn_pair(
+        session, user_id=user_id, session_id=source_session_id, seq=turn_seq
+    )
+    if pair is None:
+        logger.info(
+            "consolidate_turn: turno no encontrado session=%s seq=%d, no-op",
+            source_session_id,
+            turn_seq,
+        )
+        return 0
+    user_msg, model_response = pair
     mem_engine = AgentMemoryEngine(
         llm_client, model=MODEL_ALIAS_AGENT, reraise=_WORKER_CONTROL_ERRORS
     )
@@ -169,23 +180,22 @@ async def _consolidate_turn_in_db(
                 source_session_id,
             )
             return 0
-        if source_session_id is not None and turn_seq is not None:
-            claim = await claim_turn(
-                session, user_id=user_id, session_id=source_session_id, seq=turn_seq
+        claim = await claim_turn(
+            session, user_id=user_id, session_id=source_session_id, seq=turn_seq
+        )
+        if claim is TurnClaim.ALREADY_CONSOLIDATED:
+            logger.info(
+                "consolidate_turn: turno ya consolidado session=%s seq=%d, no-op",
+                source_session_id,
+                turn_seq,
             )
-            if claim is TurnClaim.ALREADY_CONSOLIDATED:
-                logger.info(
-                    "consolidate_turn: turno ya consolidado session=%s seq=%d, no-op",
-                    source_session_id,
-                    turn_seq,
-                )
-                return 0
-            if claim is TurnClaim.MISSING:
-                logger.info(
-                    "consolidate_turn: turno sin fila session=%s seq=%d, se consolida sin marca",
-                    source_session_id,
-                    turn_seq,
-                )
+            return 0
+        if claim is TurnClaim.MISSING:
+            logger.info(
+                "consolidate_turn: turno sin fila session=%s seq=%d, se consolida sin marca",
+                source_session_id,
+                turn_seq,
+            )
         return await apply_ops(
             extraction.ops,
             session=session,
@@ -204,11 +214,8 @@ async def _async_consolidate(
     *,
     user_id: str,
     session_id: str,  # str(ChatSession.id): se parsea a UUID y se usa como FK
-    user_msg: str,
-    model_response: str,
+    turn_seq: int,
     mode: str,
-    # seq del turno del usuario en conversation_turns (marca de idempotencia)
-    turn_seq: int | None = None,
     # timestamp ISO-8601 UTC del enqueue (guarda contra wipe durante reintento)
     enqueued_at: str | None = None,
     # Inyectables para tests (None => construir desde get_settings())
@@ -227,23 +234,16 @@ async def _async_consolidate(
     construye el engine con ``NullPool`` (decision #4 M8), se abre la sesion,
     se commitea y se dispone el engine.
 
-    ``session_id`` es ``str(ChatSession.id)``: el id real de la sesion (FK a
-    ``sessions.id``). Se parsea a ``UUID`` de forma DEFENSIVA y se propaga como
-    ``source_session_id`` (provenance) a ``apply_ops`` en AMBOS branches (M10
-    Ola 1). El enqueue post-commit (M10 Ola 0) garantiza que la ``ChatSession``
-    ya este persistida cuando el worker corre, asi que la FK no tiene race. Si
-    el parse falla (payload corrupto en la cola), ``source_session_id`` queda
-    ``None`` y el hecho se persiste igual (el worker no se cae).
-
-    ``turn_seq`` es el ``seq`` del turno del usuario en ``conversation_turns`` (lo
-    manda ``ChatService`` al encolar): con el, el turno se marca como consolidado y
-    una re-entrega no duplica (ver ``_consolidate_turn_in_db``).
+    ``session_id`` y ``turn_seq`` identifican el par de turnos cifrados en
+    ``conversation_turns``. Si ``session_id`` no es un UUID valido, retorna 0
+    sin construir clientes ni consultar la DB (igual que ``_async_consolidate_session``).
     """
     cfg = settings or get_settings()
 
     uid = UUID(user_id)
-    # Parse defensivo del session_id: UUID valido -> FK; basura -> None (sin crash).
     source_session_id = _parse_source_session_id(session_id)
+    if source_session_id is None:
+        return 0
     # Parse defensivo del mode -> origin_mode de audit_log (nullable, best-effort).
     origin_mode = _parse_origin_mode(mode)
     parsed_enqueued_at = _parse_enqueued_at(enqueued_at)
@@ -262,8 +262,6 @@ async def _async_consolidate(
                 user_id=uid,
                 source_session_id=source_session_id,
                 turn_seq=turn_seq,
-                user_msg=user_msg,
-                model_response=model_response,
                 mode=mode,
                 origin_mode=origin_mode,
                 llm_client=effective_llm,
@@ -294,45 +292,25 @@ def consolidate_turn(
     *,
     user_id: str,
     session_id: str,
-    user_msg: str,
-    model_response: str,
+    turn_seq: int,
     mode: str,
-    turn_seq: int | None = None,
     enqueued_at: str | None = None,
 ) -> None:
     """Task Celery: consolida el turno del usuario en memoria semantica + procedural.
 
-    Firma 100% strings/primitivos (``task_serializer='json'``). NUNCA cruza
-    el wire un ``AsyncSession``, un ``LLMClient``, un ``UUID`` ni un store.
-
-    El cuerpo async se corre con ``asyncio.run`` (worker prefork de Celery). Una
-    falla transitoria del proveedor, o un intento que vence el soft limit, se
-    re-levanta para que Celery reintente (ver ``_CONSOLIDATION_TASK_OPTIONS``);
-    cualquier otro fallo, o la falla transitoria con los reintentos agotados, se
-    loguea SIN el contenido del usuario (regla #4) y NO tumba el worker.
-
-    Args:
-        user_id: UUID del usuario como string (JSON-safe).
-        session_id: ``str(ChatSession.id)`` (id real de la sesion, FK a
-            ``sessions.id``). El cuerpo async lo parsea a ``UUID`` de forma
-            defensiva y lo propaga como ``source_session_id`` (provenance) en el
-            ADD semantic (M10 Ola 1). Si fuera basura no-UUID, degrada a ``None``.
-        user_msg: Mensaje del usuario (NO se loguea).
-        model_response: Respuesta del modelo (NO se loguea).
-        mode: Modo activo de la sesion (p.ej. 'vida', 'estudio').
-        turn_seq: ``seq`` del turno del usuario en ``conversation_turns``, para marcarlo
-            como consolidado (idempotencia). ``None`` si el turno no se persistio o el
-            mensaje se encolo antes de que existiera el campo: se consolida sin marca.
+    Recibe solo identificadores (``user_id``, ``session_id``, ``turn_seq``) y lee
+    el contenido cifrado desde ``conversation_turns`` en el worker. Firma 100%
+    primitivos JSON. Una falla transitoria del proveedor o un intento que vence el
+    soft limit se re-levanta para que Celery reintente; cualquier otro fallo se
+    loguea sin contenido de usuario (regla #4) y no tumba el worker.
     """
     try:
         applied = asyncio.run(
             _async_consolidate(
                 user_id=user_id,
                 session_id=session_id,
-                user_msg=user_msg,
-                model_response=model_response,
-                mode=mode,
                 turn_seq=turn_seq,
+                mode=mode,
                 enqueued_at=enqueued_at,
             )
         )

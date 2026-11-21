@@ -26,16 +26,19 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.enums import Mode
+from app.enums import Mode, TurnRole
 from app.llm.clients.embedding import FakeEmbeddingClient
 from app.llm.clients.fakes import FakeLlmClient
 from app.llm.clients.reranker import FakeReranker
 from app.llm.schemas import CompletionResult
+from app.memory.conversation_turns import ConversationTurnStore
 from app.memory.procedural import ProceduralMemoryStore
 from app.memory.semantic import SemanticMemoryStore
 from app.models.memory import SemanticMemory
 from app.models.session import ChatSession
 from app.models.user import User
+from app.schemas.conversation_turn import ConversationTurnCreate
+from app.workflows._turn_marker import TurnClaim
 from app.workflows.consolidation import _async_consolidate, consolidate_turn
 
 # ---------------------------------------------------------------------------
@@ -68,6 +71,29 @@ async def _seed_session(session: AsyncSession, user_id: str, mode: Mode = Mode.V
     await session.flush()
     await session.refresh(chat_session)
     return str(chat_session.id)
+
+
+async def _seed_turn_pair(
+    session: AsyncSession,
+    user_id: str,
+    session_id: str,
+    user_msg: str,
+    model_response: str,
+    *,
+    seq: int = 0,
+) -> int:
+    """Inserta el par cifrado (user en ``seq``, model en ``seq + 1``) en ``conversation_turns``."""
+    store = ConversationTurnStore(session, UUID(user_id))
+    sid = UUID(session_id)
+    await store.add(
+        ConversationTurnCreate(session_id=sid, role=TurnRole.USER, content=user_msg, seq=seq)
+    )
+    await store.add(
+        ConversationTurnCreate(
+            session_id=sid, role=TurnRole.MODEL, content=model_response, seq=seq + 1
+        )
+    )
+    return seq
 
 
 async def _fetch_only_semantic_row(session: AsyncSession, user_id: str) -> SemanticMemory:
@@ -117,7 +143,7 @@ class TestConsolidateTurnWrapper:
     """Tests del wrapper Celery ``consolidate_turn``."""
 
     def test_calls_async_consolidate_with_correct_args(self) -> None:
-        """El wrapper llama a ``_async_consolidate`` con los args correctos."""
+        """El wrapper llama a ``_async_consolidate`` con los args de referencia."""
         with patch(
             "app.workflows.consolidation._async_consolidate", new_callable=AsyncMock
         ) as mock_async:
@@ -126,23 +152,20 @@ class TestConsolidateTurnWrapper:
             consolidate_turn(
                 user_id=USER_ID,
                 session_id=SESSION_ID,
-                user_msg="hola",
-                model_response="chau",
+                turn_seq=0,
                 mode=MODE,
             )
 
             mock_async.assert_called_once_with(
                 user_id=USER_ID,
                 session_id=SESSION_ID,
-                user_msg="hola",
-                model_response="chau",
+                turn_seq=0,
                 mode=MODE,
-                turn_seq=None,
                 enqueued_at=None,
             )
 
     def test_passes_turn_seq_through(self) -> None:
-        """El ``turn_seq`` del payload llega al cuerpo async (marca de idempotencia)."""
+        """El ``turn_seq`` del payload llega al cuerpo async."""
         with patch(
             "app.workflows.consolidation._async_consolidate", new_callable=AsyncMock
         ) as mock_async:
@@ -151,10 +174,8 @@ class TestConsolidateTurnWrapper:
             consolidate_turn(
                 user_id=USER_ID,
                 session_id=SESSION_ID,
-                user_msg="hola",
-                model_response="chau",
-                mode=MODE,
                 turn_seq=4,
+                mode=MODE,
             )
 
         assert mock_async.await_args.kwargs["turn_seq"] == 4
@@ -170,8 +191,7 @@ class TestConsolidateTurnWrapper:
             consolidate_turn(
                 user_id=USER_ID,
                 session_id=SESSION_ID,
-                user_msg="algo",
-                model_response="respuesta",
+                turn_seq=0,
                 mode=MODE,
             )
 
@@ -184,14 +204,22 @@ class TestConsolidateTurnWrapper:
             consolidate_turn(
                 user_id=USER_ID,
                 session_id=SESSION_ID,
-                user_msg="x",
-                model_response="y",
+                turn_seq=0,
                 mode=MODE,
             )
 
     def test_task_name_is_correct(self) -> None:
         """La task esta registrada con el nombre correcto."""
         assert consolidate_turn.name == "workflows.consolidate_turn"
+
+    def test_signature_accepts_only_references_without_chat_text(self) -> None:
+        """La firma de la task no acepta texto del turno en el payload."""
+        import inspect
+
+        params = set(inspect.signature(consolidate_turn.run).parameters)
+        assert "user_msg" not in params
+        assert "model_response" not in params
+        assert {"user_id", "session_id", "turn_seq", "mode"}.issubset(params)
 
     def test_returns_none_on_success(self) -> None:
         """El wrapper devuelve None (la task Celery no necesita resultado)."""
@@ -202,8 +230,7 @@ class TestConsolidateTurnWrapper:
             result = consolidate_turn(
                 user_id=USER_ID,
                 session_id=SESSION_ID,
-                user_msg="msg",
-                model_response="resp",
+                turn_seq=0,
                 mode=MODE,
             )
         assert result is None
@@ -218,8 +245,16 @@ class TestAsyncConsolidateUnit:
         client = _make_llm_with_ops(ops_json)
         session = MagicMock(spec=AsyncSession)
 
-        # Mockear stores para evitar llamadas a DB
+        # Mockear stores y lectura de turno para evitar llamadas a DB
         with (
+            patch(
+                "app.workflows.consolidation.load_turn_pair",
+                AsyncMock(return_value=("sin info relevante", "ok")),
+            ),
+            patch(
+                "app.workflows.consolidation.claim_turn",
+                AsyncMock(return_value=TurnClaim.CLAIMED),
+            ),
             patch("app.workflows.consolidation.SemanticMemoryStore") as mock_sem,
             patch("app.workflows.consolidation.ProceduralMemoryStore") as mock_proc,
         ):
@@ -229,8 +264,7 @@ class TestAsyncConsolidateUnit:
             result = await _async_consolidate(
                 user_id=USER_ID,
                 session_id=SESSION_ID,
-                user_msg="sin info relevante",
-                model_response="ok",
+                turn_seq=0,
                 mode=MODE,
                 llm_client=client,
                 embedder=FakeEmbeddingClient(),
@@ -255,14 +289,21 @@ class TestAsyncConsolidateUnit:
         session = MagicMock(spec=AsyncSession)
 
         with (
+            patch(
+                "app.workflows.consolidation.load_turn_pair",
+                AsyncMock(return_value=("no como carne", "anotado")),
+            ),
+            patch(
+                "app.workflows.consolidation.claim_turn",
+                AsyncMock(return_value=TurnClaim.CLAIMED),
+            ),
             patch("app.workflows.consolidation.SemanticMemoryStore", return_value=mock_sem),
             patch("app.workflows.consolidation.ProceduralMemoryStore", return_value=mock_proc),
         ):
             result = await _async_consolidate(
                 user_id=USER_ID,
                 session_id=SESSION_ID,
-                user_msg="no como carne",
-                model_response="anotado",
+                turn_seq=0,
                 mode=MODE,
                 llm_client=client,
                 embedder=FakeEmbeddingClient(),
@@ -291,14 +332,21 @@ class TestAsyncConsolidateUnit:
         session = MagicMock(spec=AsyncSession)
 
         with (
+            patch(
+                "app.workflows.consolidation.load_turn_pair",
+                AsyncMock(return_value=("vivo en BA", "ok")),
+            ),
+            patch(
+                "app.workflows.consolidation.claim_turn",
+                AsyncMock(return_value=TurnClaim.CLAIMED),
+            ),
             patch("app.workflows.consolidation.SemanticMemoryStore", return_value=mock_sem),
             patch("app.workflows.consolidation.ProceduralMemoryStore", return_value=AsyncMock()),
         ):
             await _async_consolidate(
                 user_id=USER_ID,
                 session_id=SESSION_ID,
-                user_msg="vivo en BA",
-                model_response="ok",
+                turn_seq=0,
                 mode=MODE,
                 llm_client=client,
                 embedder=FakeEmbeddingClient(),
@@ -310,43 +358,27 @@ class TestAsyncConsolidateUnit:
         # source_session_id == el UUID del session_id real (provenance, M10 Ola 1).
         assert captured_payloads[0].source_session_id == UUID(SESSION_ID)
 
-    async def test_garbage_session_id_passes_none_without_crash(self) -> None:
-        """Un session_id no-UUID degrada a None sin crashear (parse defensivo)."""
+    async def test_garbage_session_id_returns_zero_without_crash(self) -> None:
+        """Un session_id no-UUID retorna 0 sin crashear ni llamar al LLM."""
         ops_json = json.dumps(
             [{"op": "ADD", "layer": "semantic", "content": "El usuario juega al tenis."}]
         )
         client = _make_llm_with_ops(ops_json)
-
-        captured_payloads: list = []
-
-        async def capture_add(payload):
-            captured_payloads.append(payload)
-            return MagicMock(id=uuid.uuid4())
-
-        mock_sem = AsyncMock()
-        mock_sem.add = capture_add
         session = MagicMock(spec=AsyncSession)
 
-        with (
-            patch("app.workflows.consolidation.SemanticMemoryStore", return_value=mock_sem),
-            patch("app.workflows.consolidation.ProceduralMemoryStore", return_value=AsyncMock()),
-        ):
-            result = await _async_consolidate(
-                user_id=USER_ID,
-                session_id="no-soy-un-uuid",
-                user_msg="juego tenis",
-                model_response="ok",
-                mode=MODE,
-                llm_client=client,
-                embedder=FakeEmbeddingClient(),
-                reranker=FakeReranker(),
-                session=session,
-            )
+        result = await _async_consolidate(
+            user_id=USER_ID,
+            session_id="no-soy-un-uuid",
+            turn_seq=0,
+            mode=MODE,
+            llm_client=client,
+            embedder=FakeEmbeddingClient(),
+            reranker=FakeReranker(),
+            session=session,
+        )
 
-        # La op igual se aplica; el parse fallido NO tumba la consolidacion.
-        assert result == 1
-        assert len(captured_payloads) == 1
-        assert captured_payloads[0].source_session_id is None
+        assert result == 0
+        assert client.complete_calls == []
 
     async def test_invalid_json_from_llm_returns_zero(self) -> None:
         """JSON invalido del modelo -> parseo defensivo -> 0 ops aplicadas, sin crash."""
@@ -364,14 +396,21 @@ class TestAsyncConsolidateUnit:
         session = MagicMock(spec=AsyncSession)
 
         with (
+            patch(
+                "app.workflows.consolidation.load_turn_pair",
+                AsyncMock(return_value=("hola", "chau")),
+            ),
+            patch(
+                "app.workflows.consolidation.claim_turn",
+                AsyncMock(return_value=TurnClaim.CLAIMED),
+            ),
             patch("app.workflows.consolidation.SemanticMemoryStore", return_value=AsyncMock()),
             patch("app.workflows.consolidation.ProceduralMemoryStore", return_value=AsyncMock()),
         ):
             result = await _async_consolidate(
                 user_id=USER_ID,
                 session_id=SESSION_ID,
-                user_msg="hola",
-                model_response="chau",
+                turn_seq=0,
                 mode=MODE,
                 llm_client=client,
                 embedder=FakeEmbeddingClient(),
@@ -400,14 +439,21 @@ class TestAsyncConsolidateUnit:
         session = MagicMock(spec=AsyncSession)
 
         with (
+            patch(
+                "app.workflows.consolidation.load_turn_pair",
+                AsyncMock(return_value=("soy vegano", "ok")),
+            ),
+            patch(
+                "app.workflows.consolidation.claim_turn",
+                AsyncMock(return_value=TurnClaim.CLAIMED),
+            ),
             patch("app.workflows.consolidation.SemanticMemoryStore", return_value=AsyncMock()),
             patch("app.workflows.consolidation.ProceduralMemoryStore", return_value=mock_proc),
         ):
             result = await _async_consolidate(
                 user_id=USER_ID,
                 session_id=SESSION_ID,
-                user_msg="soy vegano",
-                model_response="ok",
+                turn_seq=0,
                 mode=MODE,
                 llm_client=client,
                 embedder=FakeEmbeddingClient(),
@@ -440,14 +486,21 @@ class TestAsyncConsolidateUnit:
         session = MagicMock(spec=AsyncSession)
 
         with (
+            patch(
+                "app.workflows.consolidation.load_turn_pair",
+                AsyncMock(return_value=("tengo 30 y hablo castellano", "ok")),
+            ),
+            patch(
+                "app.workflows.consolidation.claim_turn",
+                AsyncMock(return_value=TurnClaim.CLAIMED),
+            ),
             patch("app.workflows.consolidation.SemanticMemoryStore", return_value=mock_sem),
             patch("app.workflows.consolidation.ProceduralMemoryStore", return_value=mock_proc),
         ):
             result = await _async_consolidate(
                 user_id=USER_ID,
                 session_id=SESSION_ID,
-                user_msg="tengo 30 y hablo castellano",
-                model_response="ok",
+                turn_seq=0,
                 mode=MODE,
                 llm_client=client,
                 embedder=FakeEmbeddingClient(),
@@ -467,6 +520,14 @@ class TestAsyncConsolidateUnit:
         session = MagicMock(spec=AsyncSession)
 
         with (
+            patch(
+                "app.workflows.consolidation.load_turn_pair",
+                AsyncMock(return_value=("algo", "resp")),
+            ),
+            patch(
+                "app.workflows.consolidation.claim_turn",
+                AsyncMock(return_value=TurnClaim.CLAIMED),
+            ),
             patch("app.workflows.consolidation.SemanticMemoryStore", return_value=mock_sem),
             patch("app.workflows.consolidation.ProceduralMemoryStore", return_value=AsyncMock()),
         ):
@@ -474,8 +535,7 @@ class TestAsyncConsolidateUnit:
             result = await _async_consolidate(
                 user_id=USER_ID,
                 session_id=SESSION_ID,
-                user_msg="algo",
-                model_response="resp",
+                turn_seq=0,
                 mode=MODE,
                 llm_client=client,
                 embedder=FakeEmbeddingClient(),
@@ -503,6 +563,9 @@ class TestAsyncConsolidateIntegration:
         """Un ADD semantic se persiste y se puede buscar con ``search``."""
         user_id = await _seed_user(db_session)
         session_id = await _seed_session(db_session, user_id)
+        seq = await _seed_turn_pair(
+            db_session, user_id, session_id, "no como carne", "anotado que sos vegetariano"
+        )
         ops_json = json.dumps(
             [{"op": "ADD", "layer": "semantic", "content": "El usuario es vegetariano."}]
         )
@@ -513,8 +576,7 @@ class TestAsyncConsolidateIntegration:
         applied = await _async_consolidate(
             user_id=user_id,
             session_id=session_id,
-            user_msg="no como carne",
-            model_response="anotado que sos vegetariano",
+            turn_seq=seq,
             mode=MODE,
             llm_client=client,
             embedder=embedder,
@@ -534,6 +596,8 @@ class TestAsyncConsolidateIntegration:
     async def test_procedural_add_persisted_and_retrievable(self, db_session: AsyncSession) -> None:
         """Un ADD procedural se persiste y se puede recuperar con ``get``."""
         user_id = await _seed_user(db_session)
+        session_id = await _seed_session(db_session, user_id)
+        seq = await _seed_turn_pair(db_session, user_id, session_id, "soy vegano", "ok, anotado")
         ops_json = json.dumps(
             [
                 {
@@ -548,9 +612,8 @@ class TestAsyncConsolidateIntegration:
 
         applied = await _async_consolidate(
             user_id=user_id,
-            session_id=SESSION_ID,
-            user_msg="soy vegano",
-            model_response="ok, anotado",
+            session_id=session_id,
+            turn_seq=seq,
             mode=MODE,
             llm_client=client,
             embedder=FakeEmbeddingClient(),
@@ -571,6 +634,9 @@ class TestAsyncConsolidateIntegration:
         """ADD semantic + ADD procedural en el mismo turno: ambos se persisten."""
         user_id = await _seed_user(db_session)
         session_id = await _seed_session(db_session, user_id)
+        seq = await _seed_turn_pair(
+            db_session, user_id, session_id, "trabajo como disenador UX", "ok"
+        )
         ops_json = json.dumps(
             [
                 {"op": "ADD", "layer": "semantic", "content": "El usuario trabaja como disenador."},
@@ -589,8 +655,7 @@ class TestAsyncConsolidateIntegration:
         applied = await _async_consolidate(
             user_id=user_id,
             session_id=session_id,
-            user_msg="trabajo como disenador UX",
-            model_response="ok",
+            turn_seq=seq,
             mode=MODE,
             llm_client=client,
             embedder=embedder,
@@ -614,14 +679,15 @@ class TestAsyncConsolidateIntegration:
     async def test_noop_applies_zero_ops(self, db_session: AsyncSession) -> None:
         """NOOP no escribe nada en la DB."""
         user_id = await _seed_user(db_session)
+        session_id = await _seed_session(db_session, user_id)
+        seq = await _seed_turn_pair(db_session, user_id, session_id, "que hora es", "son las 3pm")
         ops_json = json.dumps([{"op": "NOOP", "layer": "semantic"}])
         client = _make_llm_with_ops(ops_json)
 
         applied = await _async_consolidate(
             user_id=user_id,
-            session_id=SESSION_ID,
-            user_msg="que hora es",
-            model_response="son las 3pm",
+            session_id=session_id,
+            turn_seq=seq,
             mode=MODE,
             llm_client=client,
             embedder=FakeEmbeddingClient(),
@@ -635,6 +701,9 @@ class TestAsyncConsolidateIntegration:
         """El ADD semantic persiste source_session_id == ChatSession.id (M10 Ola 1, FK)."""
         user_id = await _seed_user(db_session)
         session_id = await _seed_session(db_session, user_id)
+        seq = await _seed_turn_pair(
+            db_session, user_id, session_id, "mi perro se llama Luna", "que nombre lindo"
+        )
         ops_json = json.dumps(
             [
                 {
@@ -651,8 +720,7 @@ class TestAsyncConsolidateIntegration:
         applied = await _async_consolidate(
             user_id=user_id,
             session_id=session_id,
-            user_msg="mi perro se llama Luna",
-            model_response="que nombre lindo",
+            turn_seq=seq,
             mode=MODE,
             llm_client=client,
             embedder=embedder,
@@ -677,6 +745,7 @@ class TestAsyncConsolidateIntegration:
         """Borrar la ChatSession deja source_session_id NULL (ondelete=SET NULL)."""
         user_id = await _seed_user(db_session)
         session_id = await _seed_session(db_session, user_id)
+        seq = await _seed_turn_pair(db_session, user_id, session_id, "naci en Cordoba", "que lindo")
         ops_json = json.dumps(
             [{"op": "ADD", "layer": "semantic", "content": "El usuario nacio en Cordoba."}]
         )
@@ -687,8 +756,7 @@ class TestAsyncConsolidateIntegration:
         applied = await _async_consolidate(
             user_id=user_id,
             session_id=session_id,
-            user_msg="naci en Cordoba",
-            model_response="que lindo",
+            turn_seq=seq,
             mode=MODE,
             llm_client=client,
             embedder=embedder,
@@ -713,10 +781,10 @@ class TestAsyncConsolidateIntegration:
         # El hecho sigue existiendo (no se borro en cascada).
         assert row_after.id == row.id
 
-    async def test_garbage_session_id_persists_with_null_provenance(
+    async def test_garbage_session_id_returns_zero_without_writes(
         self, db_session: AsyncSession
     ) -> None:
-        """Un session_id no-UUID persiste el hecho con source_session_id NULL, sin crash."""
+        """Un session_id no-UUID retorna 0 sin crashear ni escribir en DB."""
         user_id = await _seed_user(db_session)
         ops_json = json.dumps(
             [{"op": "ADD", "layer": "semantic", "content": "El usuario toca la guitarra."}]
@@ -725,12 +793,10 @@ class TestAsyncConsolidateIntegration:
         embedder = FakeEmbeddingClient()
         reranker = FakeReranker()
 
-        # session_id basura: el parse defensivo degrada a None y NO crashea.
         applied = await _async_consolidate(
             user_id=user_id,
             session_id="esto-no-es-un-uuid-valido",
-            user_msg="toco la guitarra",
-            model_response="genial",
+            turn_seq=0,
             mode=MODE,
             llm_client=client,
             embedder=embedder,
@@ -738,13 +804,14 @@ class TestAsyncConsolidateIntegration:
             session=db_session,
         )
 
-        assert applied == 1
-        row = await _fetch_only_semantic_row(db_session, user_id)
-        assert row.source_session_id is None
+        assert applied == 0
+        assert client.complete_calls == []
 
     async def test_invalid_json_no_db_writes(self, db_session: AsyncSession) -> None:
         """JSON invalido del LLM no escribe nada en la DB (parseo defensivo)."""
         user_id = await _seed_user(db_session)
+        session_id = await _seed_session(db_session, user_id)
+        seq = await _seed_turn_pair(db_session, user_id, session_id, "algo", "resp")
         client = FakeLlmClient(models=frozenset({"agente"}))
         client.queue_result(
             CompletionResult(
@@ -761,9 +828,8 @@ class TestAsyncConsolidateIntegration:
 
         applied = await _async_consolidate(
             user_id=user_id,
-            session_id=SESSION_ID,
-            user_msg="algo",
-            model_response="resp",
+            session_id=session_id,
+            turn_seq=seq,
             mode=MODE,
             llm_client=client,
             embedder=embedder,
@@ -783,6 +849,9 @@ class TestAsyncConsolidateIntegration:
         user_a = await _seed_user(db_session)
         user_b = await _seed_user(db_session)
         session_a = await _seed_session(db_session, user_a)
+        session_b = await _seed_session(db_session, user_b)
+        seq_a = await _seed_turn_pair(db_session, user_a, session_a, "tengo 25", "ok")
+        seq_b = await _seed_turn_pair(db_session, user_b, session_b, "hola", "hola")
         embedder = FakeEmbeddingClient()
         reranker = FakeReranker()
 
@@ -794,8 +863,7 @@ class TestAsyncConsolidateIntegration:
         await _async_consolidate(
             user_id=user_a,
             session_id=session_a,
-            user_msg="tengo 25",
-            model_response="ok",
+            turn_seq=seq_a,
             mode=MODE,
             llm_client=client_a,
             embedder=embedder,
@@ -807,9 +875,8 @@ class TestAsyncConsolidateIntegration:
         client_b = _make_llm_with_ops(json.dumps([{"op": "NOOP", "layer": "semantic"}]))
         await _async_consolidate(
             user_id=user_b,
-            session_id=SESSION_ID,
-            user_msg="hola",
-            model_response="hola",
+            session_id=session_b,
+            turn_seq=seq_b,
             mode=MODE,
             llm_client=client_b,
             embedder=embedder,

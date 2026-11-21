@@ -101,7 +101,7 @@ antes de fusionar duplicados (por ejemplo, "borrar cuenta" apareció en cuatro).
       3 capas de memoria; quedan turnos, sesiones, eventos, tareas y recordatorios.
       La UI dice "Borrar para siempre". `apps/backend/app/services/memory.py:530-533`.
       **M** [V+] (PRIV-03)
-- [ ] **M-13 · Endurecer el manejo de los datos del chat en el backend.** **S**
+- [x] **M-13 · Endurecer el manejo de los datos del chat en el backend.** **S**
       Detalle reservado: se gestiona por el canal privado de `SECURITY.md`.
 - [ ] **M-14 · El export no cumple el derecho de acceso.** Solo trae memoria;
       faltan perfil, conversaciones, eventos, tareas y recordatorios. En mobile se

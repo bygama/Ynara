@@ -93,8 +93,6 @@ async def test_consolidate_turn_aborts_before_llm_when_wiped_after_enqueue() -> 
             user_id=uuid.uuid4(),
             source_session_id=uuid.uuid4(),
             turn_seq=1,
-            user_msg="me gusta el mate amargo",
-            model_response="anotado",
             mode=Mode.PRODUCTIVIDAD.value,
             origin_mode=Mode.PRODUCTIVIDAD,
             llm_client=llm,
@@ -117,6 +115,10 @@ async def test_consolidate_turn_aborts_before_apply_when_wiped_during_extraction
             "app.workflows.consolidation.was_wiped_after",
             AsyncMock(side_effect=[False, True]),
         ),
+        patch(
+            "app.workflows.consolidation.load_turn_pair",
+            AsyncMock(return_value=("me gusta el mate amargo", "anotado")),
+        ),
         patch("app.workflows.consolidation.apply_ops", AsyncMock(return_value=1)) as mock_apply,
     ):
         applied = await _consolidate_turn_in_db(
@@ -124,8 +126,6 @@ async def test_consolidate_turn_aborts_before_apply_when_wiped_during_extraction
             user_id=uuid.uuid4(),
             source_session_id=uuid.uuid4(),
             turn_seq=1,
-            user_msg="me gusta el mate amargo",
-            model_response="anotado",
             mode=Mode.PRODUCTIVIDAD.value,
             origin_mode=Mode.PRODUCTIVIDAD,
             llm_client=llm,

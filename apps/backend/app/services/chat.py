@@ -363,14 +363,18 @@ class ChatService:
         writes_memory = load_llm_config().model_for_mode(body.mode.value).writes_memory
         if not (writes_memory and resp.finish_reason != "degraded"):
             return
+        if turn_seq is None:
+            logger.warning(
+                "consolidate_turn skipped: turno no persistido session=%s",
+                chat_session.id,
+            )
+            return
         try:
             consolidate_turn.delay(
                 user_id=str(self._user_id),
                 session_id=str(chat_session.id),
-                user_msg=body.text,
-                model_response=resp.text,
-                mode=body.mode.value,
                 turn_seq=turn_seq,
+                mode=body.mode.value,
                 enqueued_at=datetime.now(UTC).isoformat(),
             )
         except Exception as exc:  # best-effort: el broker caído NO rompe el turno.

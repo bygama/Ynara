@@ -456,6 +456,27 @@ async def test_consolidate_end_to_end_writes_n_audit_rows(db_session: AsyncSessi
     user_id = str(user.id)
     # Sesión real: el ADD semantic persiste source_session_id (FK a sessions.id).
     session_id = await _seed_session(db_session, user.id)
+    from app.enums import TurnRole
+    from app.memory.conversation_turns import ConversationTurnStore
+    from app.schemas.conversation_turn import ConversationTurnCreate
+
+    turns_store = ConversationTurnStore(db_session, user.id)
+    await turns_store.add(
+        ConversationTurnCreate(
+            session_id=session_id,
+            role=TurnRole.USER,
+            content="no como carne y hablo castellano",
+            seq=0,
+        )
+    )
+    await turns_store.add(
+        ConversationTurnCreate(
+            session_id=session_id,
+            role=TurnRole.MODEL,
+            content="anotado",
+            seq=1,
+        )
+    )
 
     ops_json = json.dumps(
         [
@@ -469,8 +490,7 @@ async def test_consolidate_end_to_end_writes_n_audit_rows(db_session: AsyncSessi
     applied = await _async_consolidate(
         user_id=user_id,
         session_id=str(session_id),
-        user_msg="no como carne y hablo castellano",
-        model_response="anotado",
+        turn_seq=0,
         mode="vida",
         llm_client=client,
         embedder=FakeEmbeddingClient(),

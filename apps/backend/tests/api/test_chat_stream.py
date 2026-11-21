@@ -318,11 +318,11 @@ async def test_stream_enqueues_consolidate_post_commit(db_session: AsyncSession)
         # turno del usuario (0: primer turno de la sesion), para la idempotencia.
         call_kwargs = mock_task.delay.call_args.kwargs
         assert isinstance(call_kwargs.get("enqueued_at"), str)
+        assert "user_msg" not in call_kwargs
+        assert "model_response" not in call_kwargs
         assert {k: v for k, v in call_kwargs.items() if k != "enqueued_at"} == {
             "user_id": str(user.id),
             "session_id": session_id,
-            "user_msg": "recorda esto",
-            "model_response": "Hecho",
             "mode": "productividad",
             "turn_seq": 0,
         }
