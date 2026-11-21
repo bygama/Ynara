@@ -31,7 +31,6 @@ from httpx import ASGITransport
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
-from app.core.constants import DEFAULT_EMBEDDING_MODEL
 from app.core.deps import get_db, get_llm_client
 from app.core.security import create_access_token
 from app.llm.clients.factory import PROVIDER_REQUEST_TIMEOUT_S
@@ -168,7 +167,7 @@ async def test_serving_real_backend_inventory(db_session: AsyncSession) -> None:
         assert body["serving_healthy"] is True
         assert body["low_perf_available"] is True
         assert body["request_timeout_s"] == PROVIDER_REQUEST_TIMEOUT_S
-        assert body["embedder"] == DEFAULT_EMBEDDING_MODEL
+        assert body["embedder"] == "fake"
         assert body["reranker"] == RERANKER_PASSTHROUGH
 
         by_alias = {m["alias"]: m for m in body["models"]}
