@@ -6,6 +6,8 @@ reranker leídos desde ``app.state`` (singletons construidos en el lifespan).
 
 from __future__ import annotations
 
+import ipaddress
+import time
 from collections.abc import AsyncIterator
 from functools import lru_cache
 from typing import Annotated, Any
@@ -197,30 +199,65 @@ async def get_current_user(
 CurrentUser = Annotated[UUID, Depends(get_current_user)]
 
 
+def _admin_ip_allowed(request: Request, *, allowed_cidrs: list[str]) -> bool:
+    """Verifica si la IP real del cliente pertenece a ``allowed_cidrs``."""
+    if not allowed_cidrs:
+        return True
+    peer = request.client.host if request.client else ""
+    settings = get_settings()
+    client_ip = peer
+    try:
+        peer_addr = ipaddress.ip_address(peer)
+    except ValueError:
+        peer_addr = None
+    if peer_addr is not None and any(
+        peer_addr in ipaddress.ip_network(net, strict=False) for net in settings.trusted_proxy_ips
+    ):
+        header_val = request.headers.get(settings.real_ip_header)
+        if header_val:
+            candidate = header_val.split(",")[0].strip()
+            try:
+                ipaddress.ip_address(candidate)
+                client_ip = candidate
+            except ValueError:
+                pass
+    try:
+        addr = ipaddress.ip_address(client_ip)
+    except ValueError:
+        return False
+    return any(addr in ipaddress.ip_network(cidr, strict=False) for cidr in allowed_cidrs)
+
+
 async def get_current_admin(
+    claims: CurrentClaims,
     user_id: Annotated[UUID, Depends(get_current_user)],
     session: DbSession,
+    request: Request,
 ) -> UUID:
     """Gate de admin del panel interno (/v1/admin/*). Devuelve el ``user_id`` admin.
 
-    Se apoya en ``get_current_user`` (firma/exp/type/blocklist ya validados) y carga el
-    ``User`` para chequear la flag. Resuelve el huevo-y-la-gallina del bootstrap: es admin
-    si ``user.is_admin`` (fuente de verdad persistente) O ``str(user_id)`` está en
-    ``settings.admin_bootstrap_ids`` (bootstrap antes de poblar la columna). Si el user no
-    existe (identidad caduca) o no es admin -> **mismo 401 estático** que credenciales
-    inválidas (``UNAUTHORIZED_DETAIL``): sin oráculo de "existe pero no es admin"
-    (anti-enumeración, regla #4). El ``detail`` NUNCA se arma con el ``user_id`` crudo.
+    Valida identidad admin (``user.is_admin`` o ``admin_bootstrap_ids``), vigencia
+    acotada de sesión admin (``admin_session_max_minutes`` sobre ``iat``) y, si está
+    configurada, la allowlist ``admin_allowed_ips``. Cualquier rechazo devuelve el mismo
+    401 estático (``UNAUTHORIZED_DETAIL``) sin oráculo (regla #4).
     """
-    user = await session.get(User, user_id)
-    is_admin = user is not None and (
-        user.is_admin or str(user_id) in get_settings().admin_bootstrap_ids
+    unauthorized = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=UNAUTHORIZED_DETAIL,
+        headers={"WWW-Authenticate": "Bearer"},
     )
+    settings = get_settings()
+    iat = claims.get("iat")
+    if not isinstance(iat, (int, float)) or (time.time() - float(iat)) > (
+        settings.admin_session_max_minutes * 60
+    ):
+        raise unauthorized
+    if not _admin_ip_allowed(request, allowed_cidrs=settings.admin_allowed_ips):
+        raise unauthorized
+    user = await session.get(User, user_id)
+    is_admin = user is not None and (user.is_admin or str(user_id) in settings.admin_bootstrap_ids)
     if not is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=UNAUTHORIZED_DETAIL,
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise unauthorized
     return user_id
 
 

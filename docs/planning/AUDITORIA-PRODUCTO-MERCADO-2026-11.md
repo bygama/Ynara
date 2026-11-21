@@ -294,7 +294,7 @@ Además de M-01, M-02, M-07, M-21, M-41 y M-57, que también bloquean la revisi�
       solo lectura: no se puede responder "no puedo entrar". **M** [V] (ADM-01)
 - [ ] **M-65 · No hay acciones de soporte sobre cuentas** ni circuito para
       pedidos de derechos. **M–L** [V] (ADM-02, ADM-03)
-- [ ] **M-66 · Endurecer el acceso al admin.** **M**
+- [x] **M-66 · Endurecer el acceso al admin.** **M**
       Detalle reservado: se gestiona por el canal privado de `SECURITY.md`.
 - [ ] **M-67 · Sin vista de suscripciones ni pagos.** Depende de M-23. **L** [V] (ADM-04)
 
