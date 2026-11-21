@@ -458,3 +458,17 @@ async def test_aclose_closes_http_client() -> None:
     client = _client(lambda request: _ok([]), http_client=http)
     await client.aclose()
     assert http.is_closed
+
+
+async def test_constructor_strips_api_key_and_model() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["auth"] = request.headers["Authorization"]
+        captured["model"] = json.loads(request.content)["model"]
+        return _ok([_vector(0.5)])
+
+    client = _client(handler, api_key=SecretStr("  sk-trimmed  "), model="  BAAI/bge-m3  ")
+    assert client.model == "BAAI/bge-m3"
+    await client.embed(["hola"])
+    assert captured == {"auth": "Bearer sk-trimmed", "model": "BAAI/bge-m3"}
