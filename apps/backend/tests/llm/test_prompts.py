@@ -63,7 +63,7 @@ _MODE_ONLY_PROMPTS = {
 _ON_PREM_PROMISE = re.compile(
     r"per[ií]metro|on[- ]?prem|no\s+sal(?:e|en)\s+de|en\s+tu\s+servidor"
     r"|servidor(?:es)?\s+propios?|infraestructura\s+propia|modelos?\s+propios?"
-    r"|localmente|wrapper",
+    r"|localmente|wrapper|no\s+los\s+compart[ií]s|fuera\s+de\s+esta\s+conversaci[oó]n",
     re.IGNORECASE,
 )
 
@@ -142,6 +142,7 @@ def test_system_prompts_make_no_on_prem_promises(system: str) -> None:
         "Todo corre en tu servidor.",
         "No sos un wrapper de otro modelo.",
         "Es modelo propio sobre infraestructura propia.",
+        "no los compartís ni los exponés fuera de esta conversación",
     ],
 )
 def test_on_prem_promise_pattern_catches_old_wording(promise: str) -> None:
