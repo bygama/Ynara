@@ -30,7 +30,7 @@ JSON-only (sin OAuth2 form / `python-multipart`). Contrato + decisiones de
 seguridad en el docstring de [`../app/api/v1/auth.py`](../app/api/v1/auth.py).
 
 - **POST** `/v1/auth/register` — crea un usuario con email + password.
-  - Request: `RegisterRequest = { email: EmailStr, password: string (8..128), display_name?: string (<=40) }`.
+  - Request: `RegisterRequest = { email: EmailStr, password: string (10..128, al menos 1 letra y 1 número, no común ni igual al email), display_name?: string (<=40) }`.
     `extra: forbid` (campos como `is_ephemeral` / `retention_sensitive_days` NO
     son seteables desde el wire: no se reusa `UserCreate`, se evita el mass-assignment).
   - Response 201: `UserOut` (incluye `id` / `created_at` / `updated_at`; **nunca**
