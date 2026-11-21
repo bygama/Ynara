@@ -1,9 +1,9 @@
-"""Tests unitarios de la guarda de borrado total en consolidación (#56).
+"""Tests unitarios de la guarda de borrado total en consolidación.
 
 Verifican que si el usuario borra toda su memoria mientras una task de consolidación
-está en cola o reintentando, el worker descarta el turno en vez de volver a guardar
-recuerdos anteriores al borrado — tanto antes de llamar al LLM como si el wipe ocurre
-durante la extracción.
+está en cola o reintentando, el worker descarta el turno o la sesión en vez de volver
+a guardar recuerdos anteriores al borrado — tanto antes de llamar al LLM como si el
+wipe ocurre durante la extracción o el resumen.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import json
 import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -21,6 +22,9 @@ from app.llm.clients.embedding import FakeEmbeddingClient
 from app.llm.clients.fakes import FakeLlmClient
 from app.llm.clients.reranker import FakeReranker
 from app.llm.schemas import CompletionResult
+from app.memory.config import RetentionConfig
+from app.workflows import _consolidation_helpers
+from app.workflows._consolidation_helpers import _consolidate_session_in_db
 from app.workflows._wipe_guard import was_wiped_after
 from app.workflows.consolidation import _consolidate_turn_in_db
 
@@ -132,3 +136,78 @@ async def test_consolidate_turn_aborts_before_apply_when_wiped_during_extraction
     assert applied == 0
     assert len(llm.complete_calls) == 1
     mock_apply.assert_not_awaited()
+
+
+def _llm_with_summary() -> FakeLlmClient:
+    llm = FakeLlmClient(models=frozenset({"agente"}))
+    llm.queue_result(
+        CompletionResult(
+            text=json.dumps({"summary": "Charlamos sobre el trabajo.", "topics": {}}),
+            finish_reason="stop",
+            prompt_tokens=10,
+            completion_tokens=10,
+            model_name="org/agent",
+            latency_ms=1.0,
+        )
+    )
+    return llm
+
+
+@pytest.mark.asyncio
+async def test_consolidate_session_aborts_before_llm_when_wiped_after_enqueue() -> None:
+    session = _mock_session()
+    llm = _llm_with_summary()
+    episodic = AsyncMock()
+    with (
+        patch.object(_consolidation_helpers, "was_wiped_after", AsyncMock(return_value=True)),
+        patch.object(_consolidation_helpers, "EpisodicMemoryStore", return_value=episodic),
+    ):
+        created = await _consolidate_session_in_db(
+            session=session,
+            user_id=uuid.uuid4(),
+            source_session_id=uuid.uuid4(),
+            mode=Mode.PRODUCTIVIDAD.value,
+            origin_mode=Mode.PRODUCTIVIDAD,
+            llm_client=llm,
+            embedder=FakeEmbeddingClient(),
+            reranker=FakeReranker(),
+            retention_config=RetentionConfig(),
+            enqueued_at=datetime.now(UTC),
+        )
+    assert created == 0
+    assert llm.complete_calls == []
+    episodic.add.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_consolidate_session_aborts_before_persist_when_wiped_during_summary() -> None:
+    session = _mock_session()
+    llm = _llm_with_summary()
+    turns = AsyncMock()
+    turns.list_for_session = AsyncMock(
+        return_value=[SimpleNamespace(role="user", content="charlamos sobre el trabajo")]
+    )
+    episodic = AsyncMock()
+    with (
+        patch.object(
+            _consolidation_helpers, "was_wiped_after", AsyncMock(side_effect=[False, True])
+        ),
+        patch.object(_consolidation_helpers, "_episode_exists", AsyncMock(return_value=False)),
+        patch.object(_consolidation_helpers, "ConversationTurnStore", return_value=turns),
+        patch.object(_consolidation_helpers, "EpisodicMemoryStore", return_value=episodic),
+    ):
+        created = await _consolidate_session_in_db(
+            session=session,
+            user_id=uuid.uuid4(),
+            source_session_id=uuid.uuid4(),
+            mode=Mode.PRODUCTIVIDAD.value,
+            origin_mode=Mode.PRODUCTIVIDAD,
+            llm_client=llm,
+            embedder=FakeEmbeddingClient(),
+            reranker=FakeReranker(),
+            retention_config=RetentionConfig(),
+            enqueued_at=datetime.now(UTC),
+        )
+    assert created == 0
+    assert len(llm.complete_calls) == 1
+    episodic.add.assert_not_awaited()

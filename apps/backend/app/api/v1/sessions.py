@@ -205,6 +205,7 @@ async def close_session(
         enqueue_user_id = str(cs.user_id)
         enqueue_session_id = str(cs.id)
         enqueue_mode = cs.mode.value
+        enqueue_at = cs.ended_at.isoformat()
         await session.commit()
         await session.refresh(cs)
 
@@ -216,6 +217,7 @@ async def close_session(
                 user_id=enqueue_user_id,
                 session_id=enqueue_session_id,
                 mode=enqueue_mode,
+                enqueued_at=enqueue_at,
             )
         except Exception as exc:  # best-effort: el broker caido NO rompe el close.
             logger.warning("consolidate_session enqueue failed: %s", type(exc).__name__)
