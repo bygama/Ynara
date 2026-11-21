@@ -278,7 +278,7 @@ Además de M-01, M-02, M-07, M-21, M-41 y M-57, que también bloquean la revisi�
 - [ ] **M-59 · Botones "Continuar con Google / Apple" que responden
       "próximamente".** Las tiendas suelen rechazar funciones placeholder.
       `apps/mobile/src/features/auth/WelcomeScreen.tsx:93-99`. **S** ocultar [V] (STORE-04)
-- [ ] **M-60 · Hallazgo de sesión en móvil reservado.** **S**
+- [x] **M-60 · Hallazgo de sesión en móvil reservado.** **S**
       Detalle reservado: se gestiona por el canal privado de `SECURITY.md`.
 - [ ] **M-61 · Sin inventario de datos para las etiquetas de privacidad** de App
       Store y Data Safety de Play. **S** [V] (STORE-07)

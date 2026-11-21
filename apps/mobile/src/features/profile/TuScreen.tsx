@@ -14,6 +14,7 @@ import { LivingField } from "@/components/ui/LivingField";
 import { Text } from "@/components/ui/Text";
 import { TextField } from "@/components/ui/TextField";
 import { Toggle } from "@/components/ui/Toggle";
+import { clearMobileSession } from "@/lib/session";
 import { useA11yStore } from "@/stores/a11y";
 import { useUserStore } from "@/stores/user";
 import { LogoutSheet } from "./components/LogoutSheet";
@@ -55,7 +56,6 @@ export function TuScreen() {
   // ----- User store -----
   const displayNameStored = useUserStore((s) => s.displayName);
   const setDisplayName = useUserStore((s) => s.setDisplayName);
-  const reset = useUserStore((s) => s.reset);
   const token = useUserStore((s) => s.token);
 
   // Perfil real del backend (G3): trae la retención persistida. Solo con sesión
@@ -165,7 +165,7 @@ export function TuScreen() {
   // ----- Logout -----
   const [logoutOpen, setLogoutOpen] = useState(false);
   function handleLogout() {
-    reset();
+    clearMobileSession(queryClient);
     router.replace("/welcome");
   }
 

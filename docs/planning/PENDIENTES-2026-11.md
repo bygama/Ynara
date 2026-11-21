@@ -699,7 +699,7 @@ se aplican. En lo compartido hay lógica de streaming triplicada, un store de
 chat que persiste por cada token y chips de acciones de la web que no
 reconocen los nombres reales de las tools del backend.
 
-- [ ] **AUD-FE-01 · Hallazgo de mobile.** (alta)
+- [x] **AUD-FE-01 · Hallazgo de mobile.** (alta)
       Detalle reservado: se gestiona por el canal privado de `SECURITY.md`.
 - [ ] **AUD-FE-02 · Mobile: preparar la configuración para el primer build de
       release.** (media)

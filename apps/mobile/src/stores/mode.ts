@@ -16,6 +16,7 @@ import { asyncStorage } from "@/lib/asyncStorage";
 type ActiveModeState = { mode: Mode | null };
 type ActiveModeActions = {
   setMode: (mode: Mode) => void;
+  reset: () => void;
 };
 
 export const useActiveModeStore = create<ActiveModeState & ActiveModeActions>()(
@@ -23,6 +24,7 @@ export const useActiveModeStore = create<ActiveModeState & ActiveModeActions>()(
     (set) => ({
       mode: null,
       setMode: (mode) => set({ mode }),
+      reset: () => set({ mode: null }),
     }),
     { name: "ynara.active-mode", storage: createJSONStorage(() => asyncStorage) },
   ),
