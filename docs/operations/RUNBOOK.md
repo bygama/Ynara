@@ -147,7 +147,7 @@ otro proveedor.
    `EMBEDDING_API_KEY`. Nunca en el repo, en un ticket ni en un chat
    (regla #2).
 3. Recrear los contenedores que leen ese archivo:
-   `docker compose up -d --force-recreate api worker beat`. Un `restart`
+   `docker compose -f infra/docker/docker-compose.yml up -d --force-recreate api worker beat`. Un `restart`
    no alcanza: sigue con el entorno viejo.
 4. Verificar en System Health que el proveedor quede en `ok` y que los
    logs no muestren `descartado (LlmAuthError)`.
@@ -170,7 +170,7 @@ o cuando el proveedor cambió el modelo que está detrás de un alias.
    lista es el principal. Para sacar un proveedor, borrar su entrada.
 2. Cada proveedor que quede en la lista necesita su `LLM_API_KEY_<NAME>`:
    si falta una, el backend no arranca (ADR-028 D7).
-3. `docker compose up -d --force-recreate api worker beat`.
+3. `docker compose -f infra/docker/docker-compose.yml up -d --force-recreate api worker beat`.
 4. Verificar en System Health el orden nuevo (el primero es el principal)
    y el estado de cada proveedor.
 
@@ -290,7 +290,7 @@ Un `.env` de antes de ADR-028 tampoco arranca: `LLM_BACKEND=vllm` y
 `EMBEDDING_BACKEND=vllm` ya no son valores válidos (`LLM_SERVING` y las
 `RERANKER_*` se ignoran). Corregir `apps/backend/.env` con
 `apps/backend/.env.example` como guía y recrear los contenedores
-(`docker compose up -d --force-recreate api worker beat`).
+(`docker compose -f infra/docker/docker-compose.yml up -d --force-recreate api worker beat`).
 
 ### DB Supabase lenta o caída
 

@@ -104,7 +104,7 @@ corto:
 Las credenciales son secretos (regla #2): viven solo en el entorno de la
 VPS, nunca en el repo, en `ynara.config.json` ni en el `environment:` del
 compose. Un cambio en `apps/backend/.env` se aplica recreando los
-contenedores: `docker compose up -d --force-recreate api worker beat`. Un
+contenedores: `docker compose -f infra/docker/docker-compose.yml up -d --force-recreate api worker beat`. Un
 `docker compose restart` sigue con el entorno viejo.
 
 **Datos reales.** Hasta cerrar las cinco compuertas de ADR-028 (legal,
