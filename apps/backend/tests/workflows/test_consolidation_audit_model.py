@@ -27,7 +27,7 @@ from app.core.config import Settings
 from app.enums import AuditOperation, MemoryLayer, Mode
 from app.llm.clients.embedding import FakeEmbeddingClient
 from app.memory.audit import AuditStore
-from app.workflows import consolidation
+from app.workflows import _consolidation_helpers, consolidation
 from app.workflows._turn_marker import TurnClaim
 from app.workflows.consolidation import consolidate_session, consolidate_turn
 
@@ -103,6 +103,7 @@ def audit() -> Iterator[MagicMock]:
         patch.object(consolidation, "SemanticMemoryStore", return_value=semantic),
         patch.object(consolidation, "ProceduralMemoryStore", return_value=AsyncMock()),
         patch.object(consolidation, "AuditStore", return_value=audit_store),
+        patch.object(_consolidation_helpers, "AuditStore", return_value=audit_store),
         patch.object(consolidation, "_build_embedder", return_value=FakeEmbeddingClient()),
     ):
         yield audit_store
@@ -180,9 +181,9 @@ def test_the_episode_audits_the_model_that_summarized(
     episodic.add = AsyncMock(return_value=MagicMock(id=uuid4()))
 
     with (
-        patch.object(consolidation, "_episode_exists", AsyncMock(return_value=False)),
-        patch.object(consolidation, "ConversationTurnStore", return_value=turns),
-        patch.object(consolidation, "EpisodicMemoryStore", return_value=episodic),
+        patch.object(_consolidation_helpers, "_episode_exists", AsyncMock(return_value=False)),
+        patch.object(_consolidation_helpers, "ConversationTurnStore", return_value=turns),
+        patch.object(_consolidation_helpers, "EpisodicMemoryStore", return_value=episodic),
     ):
         result = consolidate_session.apply(
             kwargs={"user_id": USER_ID, "session_id": SESSION_ID, "mode": "productividad"}
