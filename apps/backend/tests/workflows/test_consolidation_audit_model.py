@@ -38,8 +38,6 @@ _SUMMARY = json.dumps({"summary": "El usuario organizó su semana.", "topics": {
 _TURN = {
     "user_id": USER_ID,
     "session_id": SESSION_ID,
-    "user_msg": "vivo en Salta",
-    "model_response": "anotado",
     "mode": "productividad",
     "turn_seq": 0,
 }
@@ -99,6 +97,11 @@ def audit() -> Iterator[MagicMock]:
     semantic.add = AsyncMock(return_value=MagicMock(id=uuid4()))
     with (
         patch.object(consolidation, "worker_session", _mock_worker_session),
+        patch.object(
+            consolidation,
+            "load_turn_pair",
+            AsyncMock(return_value=("vivo en Salta", "anotado")),
+        ),
         patch.object(consolidation, "claim_turn", AsyncMock(return_value=TurnClaim.CLAIMED)),
         patch.object(consolidation, "SemanticMemoryStore", return_value=semantic),
         patch.object(consolidation, "ProceduralMemoryStore", return_value=AsyncMock()),

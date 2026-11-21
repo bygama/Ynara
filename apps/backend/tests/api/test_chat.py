@@ -249,11 +249,11 @@ async def test_happy_path_agente_productividad_with_actions(db_session: AsyncSes
         # existe cuando se encola).
         call_kwargs = mock_task.delay.call_args.kwargs
         assert isinstance(call_kwargs.get("enqueued_at"), str)
+        assert "user_msg" not in call_kwargs
+        assert "model_response" not in call_kwargs
         assert {k: v for k, v in call_kwargs.items() if k != "enqueued_at"} == {
             "user_id": str(user.id),
             "session_id": body["session_id"],
-            "user_msg": "agenda una reunion",
-            "model_response": "Listo, lo agende.",
             "mode": "productividad",
             "turn_seq": 0,
         }

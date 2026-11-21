@@ -94,6 +94,11 @@ def built() -> Iterator[_Clients]:
         patch.object(consolidation, "_build_embedder", return_value=clients.embedder),
         patch.object(consolidation, "_build_reranker", return_value=clients.reranker),
         patch.object(consolidation, "worker_session", _mock_worker_session),
+        patch.object(
+            consolidation,
+            "load_turn_pair",
+            AsyncMock(return_value=("vivo en Rosario", "anotado")),
+        ),
         patch.object(consolidation, "claim_turn", AsyncMock(return_value=TurnClaim.CLAIMED)),
         patch.object(consolidation, "SemanticMemoryStore", return_value=semantic),
         patch.object(consolidation, "ProceduralMemoryStore", return_value=AsyncMock()),
@@ -106,8 +111,6 @@ async def _consolidate_turn(**overrides: object) -> int:
     kwargs: dict[str, object] = {
         "user_id": USER_ID,
         "session_id": SESSION_ID,
-        "user_msg": "vivo en Rosario",
-        "model_response": "anotado",
         "mode": "vida",
         "turn_seq": 0,
     }

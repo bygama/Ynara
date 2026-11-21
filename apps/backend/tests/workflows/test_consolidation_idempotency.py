@@ -36,7 +36,7 @@ from app.models.memory import SemanticMemory
 from app.models.session import ChatSession
 from app.models.user import User
 from app.schemas.conversation_turn import ConversationTurnCreate
-from app.workflows._turn_marker import TurnClaim, claim_turn
+from app.workflows._turn_marker import TurnClaim, claim_turn, load_turn_pair
 from app.workflows.consolidation import _async_consolidate
 
 USER_ID = str(uuid.uuid4())
@@ -70,12 +70,18 @@ class TestTurnClaimUnit:
     """Que hace la consolidacion con cada resultado de ``claim_turn``."""
 
     async def _consolidate(
-        self, claim: TurnClaim | None, *, session_id: str = SESSION_ID, turn_seq: int | None = 0
+        self,
+        claim: TurnClaim | None,
+        *,
+        session_id: str = SESSION_ID,
+        turn_seq: int = 0,
+        pair: tuple[str, str] | None = ("vivo en Rosario", "anotado"),
     ) -> tuple[int, AsyncMock, AsyncMock]:
         semantic = AsyncMock()
         semantic.add = AsyncMock(return_value=MagicMock(id=uuid.uuid4()))
         claim_mock = AsyncMock(return_value=claim)
         with (
+            patch("app.workflows.consolidation.load_turn_pair", AsyncMock(return_value=pair)),
             patch("app.workflows.consolidation.claim_turn", claim_mock),
             patch("app.workflows.consolidation.SemanticMemoryStore", return_value=semantic),
             patch("app.workflows.consolidation.ProceduralMemoryStore", return_value=AsyncMock()),
@@ -84,8 +90,6 @@ class TestTurnClaimUnit:
             applied = await _async_consolidate(
                 user_id=USER_ID,
                 session_id=session_id,
-                user_msg="vivo en Rosario",
-                model_response="anotado",
                 mode=MODE,
                 turn_seq=turn_seq,
                 llm_client=_llm_with_ops("El usuario vive en Rosario."),
@@ -114,24 +118,26 @@ class TestTurnClaimUnit:
         assert applied == 0
         add.assert_not_awaited()
 
-    async def test_missing_turn_is_consolidated_anyway(self) -> None:
-        """Sin fila (turnos purgados al cerrar la sesion): saltearlo perderia el turno."""
+    async def test_missing_turn_at_claim_is_consolidated_anyway(self) -> None:
+        """Si la fila se purgo durante la extraccion, las ops ya extraidas se aplican igual."""
         applied, add, _ = await self._consolidate(TurnClaim.MISSING)
 
         assert applied == 1
         add.assert_awaited_once()
 
-    async def test_without_turn_seq_there_is_no_claim(self) -> None:
-        """Un mensaje encolado sin ``turn_seq`` (payload viejo) consolida como antes."""
-        applied, _, claim_mock = await self._consolidate(None, turn_seq=None)
+    async def test_missing_turn_pair_is_noop(self) -> None:
+        """Si el par de turnos no existe en conversation_turns, no llama al LLM ni escribe."""
+        applied, add, claim_mock = await self._consolidate(None, pair=None)
 
-        assert applied == 1
+        assert applied == 0
+        add.assert_not_awaited()
         claim_mock.assert_not_awaited()
 
-    async def test_garbage_session_id_has_no_turn_to_claim(self) -> None:
-        applied, _, claim_mock = await self._consolidate(None, session_id="no-es-un-uuid")
+    async def test_garbage_session_id_is_noop(self) -> None:
+        applied, add, claim_mock = await self._consolidate(None, session_id="no-es-un-uuid")
 
-        assert applied == 1
+        assert applied == 0
+        add.assert_not_awaited()
         claim_mock.assert_not_awaited()
 
 
@@ -143,6 +149,10 @@ async def test_a_transient_failure_leaves_through_the_attempt_savepoint() -> Non
     )
     session = MagicMock(spec=AsyncSession)
     with (
+        patch(
+            "app.workflows.consolidation.load_turn_pair",
+            AsyncMock(return_value=("dos datos", "anotados")),
+        ),
         patch("app.workflows.consolidation.claim_turn", AsyncMock(return_value=TurnClaim.CLAIMED)),
         patch("app.workflows.consolidation.SemanticMemoryStore", return_value=semantic),
         patch("app.workflows.consolidation.ProceduralMemoryStore", return_value=AsyncMock()),
@@ -152,8 +162,6 @@ async def test_a_transient_failure_leaves_through_the_attempt_savepoint() -> Non
         await _async_consolidate(
             user_id=USER_ID,
             session_id=SESSION_ID,
-            user_msg="dos datos",
-            model_response="anotados",
             mode=MODE,
             turn_seq=0,
             llm_client=_llm_with_ops("dato uno", "dato dos"),
@@ -233,14 +241,12 @@ async def _consolidate_in(
     session_id: UUID,
     llm: FakeLlmClient,
     *,
-    turn_seq: int | None = 0,
+    turn_seq: int = 0,
     embedder: FakeEmbeddingClient | None = None,
 ) -> int:
     return await _async_consolidate(
         user_id=str(user_id),
         session_id=str(session_id),
-        user_msg="vivo en Rosario",
-        model_response="anotado",
         mode=MODE,
         turn_seq=turn_seq,
         llm_client=llm,
@@ -298,17 +304,29 @@ class TestConsolidationIdempotencyIntegration:
         assert await _count(db_session, AuditLog, user_id) == 2
         assert await _user_turn_is_marked(db_session, session_id)
 
-    async def test_missing_turn_is_consolidated_without_a_marker(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_missing_turn_is_noop(self, db_session: AsyncSession) -> None:
         user_id, session_id = await _seed_turn(db_session)
 
         applied = await _consolidate_in(
             db_session, user_id, session_id, _llm_with_ops("dato"), turn_seq=8
         )
 
-        assert applied == 1
+        assert applied == 0
         assert not await _user_turn_is_marked(db_session, session_id)
+
+    async def test_load_turn_pair_decrypts_and_enforces_owner(
+        self, db_session: AsyncSession
+    ) -> None:
+        user_id, session_id = await _seed_turn(db_session)
+        other_user, _ = await _seed_turn(db_session)
+
+        pair = await load_turn_pair(db_session, user_id=user_id, session_id=session_id, seq=0)
+        foreign = await load_turn_pair(db_session, user_id=other_user, session_id=session_id, seq=0)
+        missing = await load_turn_pair(db_session, user_id=user_id, session_id=session_id, seq=8)
+
+        assert pair == ("vivo en Rosario", "anotado")
+        assert foreign is None
+        assert missing is None
 
     async def test_claim_turn_claims_once(self, db_session: AsyncSession) -> None:
         user_id, session_id = await _seed_turn(db_session)

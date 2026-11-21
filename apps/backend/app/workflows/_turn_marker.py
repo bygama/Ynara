@@ -31,10 +31,11 @@ from uuid import UUID
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.crypto import decrypt_for_user
 from app.enums import TurnRole
 from app.models.conversation_turn import ConversationTurn
 
-__all__ = ["TurnClaim", "claim_turn"]
+__all__ = ["TurnClaim", "claim_turn", "load_turn_pair"]
 
 
 class TurnClaim(enum.Enum):
@@ -88,3 +89,41 @@ async def claim_turn(
         .execution_options(synchronize_session=False)
     )
     return TurnClaim.CLAIMED
+
+
+async def load_turn_pair(
+    session: AsyncSession, *, user_id: UUID, session_id: UUID, seq: int
+) -> tuple[str, str] | None:
+    """Lee y descifra el par ``(user_msg, model_response)`` de ``conversation_turns``.
+
+    ``ChatService._persist_turns`` guarda el turno del usuario en ``seq`` y la respuesta
+    del modelo en ``seq + 1``, cifrados con la clave derivada de ``user_id``. Filtra por
+    ``user_id`` y ``session_id`` (aislamiento por usuario) y verifica ambos roles. Si falta
+    alguna fila (sesion purgada, borrada o ``seq`` inexistente), retorna ``None``.
+    """
+    rows = (
+        await session.execute(
+            select(
+                ConversationTurn.seq,
+                ConversationTurn.role,
+                ConversationTurn.content,
+            ).where(
+                ConversationTurn.user_id == user_id,
+                ConversationTurn.session_id == session_id,
+                ConversationTurn.seq.in_((seq, seq + 1)),
+            )
+        )
+    ).all()
+    user_blob: bytes | None = None
+    model_blob: bytes | None = None
+    for row_seq, row_role, row_content in rows:
+        if row_seq == seq and row_role == TurnRole.USER:
+            user_blob = row_content
+        elif row_seq == seq + 1 and row_role == TurnRole.MODEL:
+            model_blob = row_content
+    if user_blob is None or model_blob is None:
+        return None
+    return (
+        decrypt_for_user(user_id, user_blob),
+        decrypt_for_user(user_id, model_blob),
+    )
