@@ -33,7 +33,7 @@ src/
 - TanStack Query v5 (data del cliente)
 - Zustand v5 (estado global mínimo)
 - React Hook Form + Zod (formularios + validación)
-- Auth.js v5 (sesión)
+- Sesión JWT contra FastAPI (Zustand en `sessionStorage`)
 
 ## Scripts
 

@@ -5,15 +5,17 @@ import { useUserStore } from "@/stores/user";
 import { useActiveMode } from "./useActiveMode";
 
 describe("useActiveMode", () => {
-  // El store de user persiste en localStorage (jsdom lo provee real):
+  // El store de user persiste en sessionStorage (jsdom lo provee real):
   // limpiar entre casos para no dejar residuo a otros archivos de test.
   beforeEach(() => {
     useUserStore.getState().reset();
+    sessionStorage.clear();
     localStorage.clear();
   });
 
   afterEach(() => {
     useUserStore.getState().reset();
+    sessionStorage.clear();
     localStorage.clear();
   });
 
