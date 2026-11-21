@@ -248,7 +248,8 @@ async def test_happy_path_agente_productividad_with_actions(db_session: AsyncSes
         # ya devuelta/persistida -> el enqueue ocurrio DESPUES del commit (la fila
         # existe cuando se encola).
         call_kwargs = mock_task.delay.call_args.kwargs
-        assert call_kwargs == {
+        assert isinstance(call_kwargs.get("enqueued_at"), str)
+        assert {k: v for k, v in call_kwargs.items() if k != "enqueued_at"} == {
             "user_id": str(user.id),
             "session_id": body["session_id"],
             "user_msg": "agenda una reunion",
