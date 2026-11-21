@@ -239,7 +239,7 @@ _VALID_OPS: frozenset[str] = frozenset({"ADD", "UPDATE", "DELETE", "NOOP"})
 _VALID_LAYERS: frozenset[str] = frozenset({"semantic", "procedural"})
 
 # El alias ``agente`` puede caer en un modelo *thinking*. consolidate/summarize
-# fuerzan thinking=False (output JSON limpio, ADR-012 D4), pero si el proveedor
+# fuerzan thinking=False (output JSON limpio, ADR-028 D3), pero si el proveedor
 # igual antepone un bloque <think>...</think> (sin canal de reasoning) o envuelve
 # el JSON en un fence markdown, se limpia ANTES de json.loads para no degradar la
 # extraccion a [] / summary vacio en silencio (#235). El regex vive ahora en
@@ -356,7 +356,7 @@ class AgentMemoryEngine:
 
     Llama al modelo con un prompt de extraccion y parsea la respuesta JSON
     de forma defensiva (decision #6 M8): nunca propaga errores de parseo.
-    Fuerza ``thinking=False`` en ambas llamadas (ADR-012 D4): la extraccion y el
+    Fuerza ``thinking=False`` en ambas llamadas (ADR-028 D3): la extraccion y el
     resumen necesitan JSON puro, y el razonamiento de un modelo thinking
     contaminaria ``result.text`` y degradaria el parseo en silencio (#235).
     """
@@ -393,7 +393,7 @@ class AgentMemoryEngine:
                 model=self._model,
                 messages=messages,
                 temperature=0.1,  # baja temperatura para extraccion estructurada
-                # thinking OFF (ADR-012 D4): la extraccion quiere JSON puro. Si el alias
+                # thinking OFF (ADR-028 D3): la extraccion quiere JSON puro. Si el alias
                 # cae en un modelo thinking, su razonamiento contaminaria result.text y
                 # romperia el parseo (-> [] mudo). El default del proveedor no es
                 # confiable aca.
@@ -436,7 +436,7 @@ class AgentMemoryEngine:
                 model=self._model,
                 messages=messages,
                 temperature=0.2,  # baja temperatura para un resumen estable
-                # thinking OFF (ADR-012 D4): el resumen quiere JSON puro; un <think>
+                # thinking OFF (ADR-028 D3): el resumen quiere JSON puro; un <think>
                 # del modelo romperia el parseo (-> summary vacio mudo).
                 thinking=False,
                 max_tokens=512,
