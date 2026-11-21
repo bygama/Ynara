@@ -1,0 +1,43 @@
+import type { QueryClient } from "@tanstack/react-query";
+import { clearSession } from "@ynara/core/features/auth";
+import { useBackendSessionStore } from "../stores/backendSessions";
+import { useChatStore } from "../stores/chat";
+import { useChatSessionStore } from "../stores/chatSession";
+import { useActiveModeStore } from "../stores/mode";
+import { useOnboardingStore } from "../stores/onboarding";
+import { useOnboardingStepStore } from "../stores/onboardingStep";
+import { useUserStore } from "../stores/user";
+
+export type ClearMobileSessionOptions = {
+  /** Si es `true` (default), revoca la sesión en el servidor best-effort. */
+  revokeRemote?: boolean;
+};
+
+/**
+ * Limpieza centralizada de sesión en mobile.
+ *
+ * Revoca el token en el servidor (best-effort) y borra todos los stores con
+ * datos del usuario más la caché de TanStack Query. Mantiene `useA11yStore`
+ * porque guarda preferencias del dispositivo, no datos de cuenta.
+ */
+export function clearMobileSession(
+  queryClient?: Pick<QueryClient, "clear">,
+  options?: ClearMobileSessionOptions,
+): void {
+  clearSession({
+    getToken: () => useUserStore.getState().token,
+    revokeRemote: options?.revokeRemote ?? true,
+    resetStores: () => {
+      useUserStore.getState().reset();
+      useChatStore.getState().reset();
+      useBackendSessionStore.getState().reset();
+      useChatSessionStore.getState().reset();
+      useActiveModeStore.getState().reset();
+      useOnboardingStore.getState().reset();
+      useOnboardingStepStore.getState().reset();
+    },
+    clearQueryCache: () => {
+      queryClient?.clear();
+    },
+  });
+}
