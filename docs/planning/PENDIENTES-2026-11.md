@@ -785,7 +785,7 @@ corregir leyendo el código.
 
 - [ ] **AUD-BE-01 · Hallazgo de backend.** (alta)
       Detalle reservado: se gestiona por el canal privado de `SECURITY.md`.
-- [ ] **AUD-BE-02 · Producción puede arrancar con embeddings y reranker falsos sin
+- [x] **AUD-BE-02 · Producción puede arrancar con embeddings y reranker falsos sin
       ningún aviso.** (alta) Agregar un fail-fast en Settings para production si
       embedding_backend es "fake" y decidir explícitamente el reranker (con
       Ollama no existe). [V]

@@ -174,7 +174,7 @@ antes de fusionar duplicados (por ejemplo, "borrar cuenta" apareció en cuatro).
       **M** [V] (SEC-26, REL-18, OPS-04)
 - [ ] **M-31 · Hallazgo de infraestructura reservado.** **S**
       Detalle reservado: se gestiona por el canal privado de `SECURITY.md`.
-- [ ] **M-32 · Producción acepta embeddings falsos.** `EMBEDDING_BACKEND` es
+- [x] **M-32 · Producción acepta embeddings falsos.** `EMBEDDING_BACKEND` es
       `fake` por defecto y el fail-fast de producción no lo valida: se escribirían
       vectores `sha256` en tablas sagradas, irrecuperables sin re-embeddear todo.
       `apps/backend/app/core/config.py:132`. **S** [V+] (OPS-19, MEMQ-03)
