@@ -1,5 +1,5 @@
 import type { StateStorage } from "zustand/middleware";
-import type { ChatSession, ChatUiMessage } from "./store";
+import type { ChatSessionMeta, ChatUiMessage } from "./store";
 
 /** Tope de sesiones recientes retenidas en disco por dispositivo. */
 export const MAX_PERSISTED_SESSIONS = 30;
@@ -24,16 +24,16 @@ export function stripReasoning(message: ChatUiMessage): ChatUiMessage {
  * descartando `reasoning` y listas huérfanas.
  */
 export function pruneChatHistory(
-  sessions: Record<string, ChatSession>,
+  sessions: Record<string, ChatSessionMeta>,
   messages: Record<string, ChatUiMessage[]>,
   maxSessions: number = MAX_PERSISTED_SESSIONS,
   maxMessages: number = MAX_PERSISTED_MESSAGES_PER_SESSION,
-): { sessions: Record<string, ChatSession>; messages: Record<string, ChatUiMessage[]> } {
+): { sessions: Record<string, ChatSessionMeta>; messages: Record<string, ChatUiMessage[]> } {
   const keptEntries = Object.entries(sessions)
     .sort(([, a], [, b]) => b.updatedAt - a.updatedAt)
     .slice(0, maxSessions);
 
-  const nextSessions: Record<string, ChatSession> = {};
+  const nextSessions: Record<string, ChatSessionMeta> = {};
   const nextMessages: Record<string, ChatUiMessage[]> = {};
 
   for (const [sid, session] of keptEntries) {
