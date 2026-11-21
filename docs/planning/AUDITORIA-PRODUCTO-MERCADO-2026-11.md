@@ -247,7 +247,7 @@ antes de fusionar duplicados (por ejemplo, "borrar cuenta" apareció en cuatro).
 
 - [x] **M-50 · Endurecer la seguridad de web, admin y landing.** **S**
       Detalle reservado: se gestiona por el canal privado de `SECURITY.md`.
-- [ ] **M-51 · Hallazgo de seguridad web reservado.** **S**
+- [x] **M-51 · Hallazgo de seguridad web reservado.** **S**
       Detalle reservado: se gestiona por el canal privado de `SECURITY.md`.
 - [ ] **M-52 · Sentry puede enviar contenido del usuario.** El scrubbing es
       incompleto. Bloquea solo si se activa el DSN. **S** [V+] (PRIV-13)
