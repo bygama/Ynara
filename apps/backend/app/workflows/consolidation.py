@@ -67,6 +67,7 @@ from app.memory.semantic import SemanticMemoryStore
 from app.workers.celery_app import celery_app
 from app.workflows._consolidation_helpers import (
     _CONSOLIDATION_TASK_OPTIONS,
+    _WORKER_CONTROL_ERRORS,
     _aclose_quietly,  # noqa: F401 -- re-export para tests
     _build_transcript,  # noqa: F401 -- re-export para tests
     _consolidate_session_in_db,
@@ -82,14 +83,6 @@ from app.workflows._turn_marker import TurnClaim, claim_turn
 from app.workflows._wipe_guard import was_wiped_after
 
 logger = logging.getLogger(__name__)
-
-# Excepciones de control del worker que el motor de memoria NO debe tragar. El soft
-# limit de Celery es una senal para la task, no un fallo del modelo ni del embedder: el
-# ``except Exception`` del motor lo descartaba como un error permanente (un turno sin
-# ops, una op salteada o un resumen vacio) y el intento seguia hasta terminar sin
-# reintentarse. Con ``reraise`` se propaga y la task lo reintenta (decision #8).
-# ``app.llm`` no importa Celery: la tupla viaja desde aca.
-_WORKER_CONTROL_ERRORS: tuple[type[BaseException], ...] = (SoftTimeLimitExceeded,)
 
 
 # ---------------------------------------------------------------------------
@@ -113,15 +106,7 @@ def _build_reranker() -> Reranker:
 
 
 def _load_retention_config_safe() -> RetentionConfig:
-    """Carga la retention de ``ynara.config.json[memory]``, default-safe ante fallo.
-
-    Capa de defensa adicional sobre la regla del modulo: un fallo de config NO
-    debe tumbar la consolidacion. Si ``load_retention_config()`` levanta
-    ``MemoryConfigError`` (JSON ilegible, valor invalido, key extra), se degrada al
-    ``RetentionConfig`` por defaults (=los valores historicos: default=365,
-    sensible=180) y se loguea un mensaje tecnico SIN datos de usuario (regla #4: la
-    config no es PII, pero igual no se vuelca el detalle del error a logs).
-    """
+    """Carga la retention de ``ynara.config.json[memory]``, default-safe ante fallo."""
     try:
         return load_retention_config()
     except MemoryConfigError:
@@ -152,27 +137,10 @@ async def _consolidate_turn_in_db(
     reranker: Reranker,
     enqueued_at: datetime | None = None,
 ) -> int:
-    """Nucleo de la consolidacion de UN turno sobre una ``session`` ya abierta.
+    """Consolida UN turno sobre una ``session`` ya abierta (atomico en SAVEPOINT).
 
-    Retorna la cantidad de ops aplicadas (0 si el turno ya estaba consolidado o si el
-    usuario borro toda su memoria despues de encolar el turno). NO commitea: el commit
-    lo da el caller (``worker_session`` en prod, o el fixture en tests).
-
-    INTENTO ATOMICO: la marca del turno, las ops y su auditoria van en un
-    SAVEPOINT. Si algo levanta en el medio (p.ej. una falla transitoria del embedder
-    en la segunda op), se revierte entero, tambien con la sesion inyectada de los
-    tests: el reintento arranca de cero, sin hechos ni auditoria a medias.
-
-    IDEMPOTENCIA: con ``turn_seq`` el turno del usuario queda marcado como consolidado
-    en esta misma transaccion (``claim_turn``); si otra entrega ya lo consolido, no se
-    escribe nada. Sin ``turn_seq`` (payload viejo, turno que no se pudo persistir) o
-    sin fila (los turnos ya se purgaron al cerrar la sesion) se consolida igual:
-    saltearlo perderia el turno. La extraccion con el LLM corre ANTES de tomar la fila,
-    asi el lock dura lo que tarda ``apply_ops`` y no la llamada al modelo.
-
-    GUARDA DE WIPE (#56): si ``enqueued_at`` viene y el usuario ejecuto un wipe total
-    en ese momento o despues, se descarta antes de llamar al LLM y se re-chequea antes
-    de aplicar las ops (cubre un wipe ocurrido durante la llamada al modelo).
+    Retorna la cantidad de ops aplicadas (0 si ya consolidado o si hubo wipe total
+    posterior a ``enqueued_at``). NO commitea: el commit lo da el caller.
     """
     if enqueued_at is not None and await was_wiped_after(
         session, user_id=user_id, since=enqueued_at
@@ -241,7 +209,7 @@ async def _async_consolidate(
     mode: str,
     # seq del turno del usuario en conversation_turns (marca de idempotencia)
     turn_seq: int | None = None,
-    # timestamp ISO-8601 UTC del enqueue (guarda contra wipe durante reintento, #56)
+    # timestamp ISO-8601 UTC del enqueue (guarda contra wipe durante reintento)
     enqueued_at: str | None = None,
     # Inyectables para tests (None => construir desde get_settings())
     settings: Settings | None = None,

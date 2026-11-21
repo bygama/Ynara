@@ -1,4 +1,4 @@
-"""Guarda de borrado total de memoria para reintentos de consolidacion (#56).
+"""Guarda de borrado total de memoria para reintentos de consolidacion.
 
 Si un usuario ejecuta ``POST /v1/memory/wipe`` mientras una task de consolidacion
 (``consolidate_turn`` o ``consolidate_session``) esta reintentando (ventana de hasta

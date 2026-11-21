@@ -40,7 +40,7 @@ from app.llm.clients.fakes import FakeLlmClient
 from app.llm.config import load_llm_config
 from app.llm.errors import LlmRateLimitError, LlmTransientError, degraded_response
 from app.llm.schemas import ChatMessage, CompletionResult
-from app.workflows import consolidation
+from app.workflows import _consolidation_helpers, consolidation
 from app.workflows._turn_marker import TurnClaim
 from app.workflows.consolidation import consolidate_session, consolidate_turn
 
@@ -371,10 +371,10 @@ def test_the_soft_limit_during_the_summary_is_retried(caplog: pytest.LogCaptureF
 
     with (
         patch.object(consolidation, "worker_session", _mock_worker_session),
-        patch.object(consolidation, "_episode_exists", AsyncMock(return_value=False)),
-        patch.object(consolidation, "ConversationTurnStore", return_value=turns),
-        patch.object(consolidation, "EpisodicMemoryStore", return_value=episodic),
-        patch.object(consolidation, "AuditStore", return_value=AsyncMock()),
+        patch.object(_consolidation_helpers, "_episode_exists", AsyncMock(return_value=False)),
+        patch.object(_consolidation_helpers, "ConversationTurnStore", return_value=turns),
+        patch.object(_consolidation_helpers, "EpisodicMemoryStore", return_value=episodic),
+        patch.object(_consolidation_helpers, "AuditStore", return_value=AsyncMock()),
         patch.object(consolidation, "_build_embedder", return_value=FakeEmbeddingClient()),
         patch.object(consolidation, "_build_consolidation_llm", return_value=fake),
         caplog.at_level(logging.INFO),
