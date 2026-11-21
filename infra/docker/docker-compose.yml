@@ -110,9 +110,12 @@ services:
     # DEBEN incluir la pass: redis://:${REDIS_PASSWORD}@redis:6379/0 (ver infra/prod/README).
     environment:
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD requerido para el broker (SEC-001)}
+    # `noeviction`: Redis almacena colas de Celery y estado de auth (blocklist y
+    # rate-limit con TTL propio), por lo que no debe descartar claves bajo presion
+    # de memoria.
     command: >
       sh -c 'exec redis-server --save 60 1 --loglevel warning --maxmemory 512mb
-      --maxmemory-policy allkeys-lru --requirepass "$$REDIS_PASSWORD"'
+      --maxmemory-policy noeviction --requirepass "$$REDIS_PASSWORD"'
     volumes:
       - redis-data:/data
     networks:
