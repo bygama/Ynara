@@ -82,16 +82,18 @@ class ApiEmbeddingClient:
         El ``http_client`` queda a cargo de este cliente: ``aclose()`` lo cierra.
         """
         base_url = validated_base_url(base_url)
-        if not api_key.get_secret_value().strip():
+        cleaned_key = api_key.get_secret_value().strip()
+        if not cleaned_key:
             raise ValueError("el proveedor de embeddings necesita una credencial")
-        if not model.strip():
+        cleaned_model = model.strip()
+        if not cleaned_model:
             raise ValueError("el proveedor de embeddings necesita un modelo")
         if batch_size < 1:
             raise ValueError("el lote de embeddings necesita al menos un texto")
         self._base_url = base_url
-        self._auth = BearerAuth(api_key)
+        self._auth = BearerAuth(SecretStr(cleaned_key))
         self._http = http_client
-        self._model = model
+        self._model = cleaned_model
         self._batch_size = batch_size
         self._default_timeout_s = default_timeout_s
         self._health_timeout_s = health_timeout_s
