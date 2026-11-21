@@ -14,7 +14,9 @@ con cada error de un candidato:
 
 from __future__ import annotations
 
+import asyncio
 import random
+from collections.abc import Sequence
 
 from app.llm.clients.base import LLMClient
 from app.llm.clients.circuit import CircuitBreaker
@@ -232,3 +234,23 @@ async def probe_health(client: LLMClient) -> ModelHealth:
     except Exception:
         return ModelHealth(model_name=label, healthy=False)
     return ModelHealth(model_name=label, healthy=health.healthy)
+
+
+async def aggregate_health(clients: Sequence[LLMClient]) -> ModelHealth:
+    """Salud agregada del pool: sano si al menos un cliente responde."""
+    first_name = ""
+    for client in clients:
+        try:
+            health = await client.health()
+        except Exception:  # noqa: S112 -- health() roto = no-sano; probamos el siguiente
+            continue
+        if not first_name:
+            first_name = health.model_name
+        if health.healthy:
+            return ModelHealth(model_name=health.model_name, healthy=True)
+    return ModelHealth(model_name=first_name, healthy=False)
+
+
+async def probe_all_health(clients: Sequence[LLMClient]) -> list[ModelHealth]:
+    """Salud individual de cada cliente del pool, sondeados en paralelo."""
+    return list(await asyncio.gather(*(probe_health(c) for c in clients)))
