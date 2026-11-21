@@ -317,8 +317,8 @@ Ya está hecho; queda como línea de base.
       `UserCreate` sin instanciar (`schemas/user.py:40`), `UserBase` en `__all__`. [V]
 - [ ] **BE-04 · IDs sin descripción.** CORE-001/002/003, AR-05, ADMIN-001 y SVC-06
       figuran en la auditoría sin detalle; no se pudieron verificar. [sin verificar]
-- [ ] **BE-05 · Idempotencia para `acks_late=True`** (STORES-01), necesaria si se
-      reactiva la pasada async del agente. [V]
+- [x] **BE-05 · Idempotencia para `acks_late=True`** (STORES-01), necesaria si se
+      reactiva la pasada async del agente. [V] *(Resuelto en migración ADR-028: consolidación idempotente con `acks_late=True` y SAVEPOINT por turno.)*
 
 ---
 
@@ -1045,8 +1045,7 @@ transaccionales en el repo, así que no hay nada que auditar ahí.
       la exclamación. [V]
       Evidencia: apps/admin/src/components/shell/nav-items.ts:33, 48, 49, 51;
       apps/admin/src/app/(panel)/sistema/page.tsx:4;
-      apps/admin/src/app/(panel)/audit/page.tsx:4;
-      apps/admin/src/features/sharing/components/ShareTargetCard.tsx:47.
+      apps/admin/src/app/(panel)/audit/page.tsx:4.
 
 No se revisó en esta área:
 
