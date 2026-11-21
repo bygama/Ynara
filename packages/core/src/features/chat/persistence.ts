@@ -61,10 +61,7 @@ function swallowPromise(result: unknown): void {
  * - Envuelve lecturas, escrituras y borrados en `try/catch` (y atrapa rechazos
  *   async) para que un disco/cuota llena nunca rompa la conversación.
  */
-export function createChatStorage(
-  base: StateStorage,
-  isStreaming: () => boolean,
-): StateStorage {
+export function createChatStorage(base: StateStorage, isStreaming: () => boolean): StateStorage {
   return {
     getItem: (name) => {
       try {
