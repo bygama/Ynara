@@ -82,7 +82,7 @@ Notas:
 
 - Backend con tests **integration** contra Postgres+pgvector dedicado
   (`TEST_DATABASE_URL=127.0.0.1`, marker `-m integration`) + **unit** con
-  `LLM_BACKEND=fake EMBEDDING_BACKEND=fake RERANKER_BACKEND=fake`.
+  `LLM_BACKEND=fake EMBEDDING_BACKEND=fake`.
 - Migraciones: `alembic upgrade head` + roundtrip downgrade/upgrade contra la DB de test.
 - `ruff check` + `ruff format` + `scripts/check_doc_catalogs.py`.
 - Pasada separada de `code-reviewer` (y `security-reviewer` en la capa de tools).

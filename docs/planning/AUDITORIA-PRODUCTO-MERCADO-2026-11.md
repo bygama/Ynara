@@ -194,10 +194,11 @@ antes de fusionar duplicados (por ejemplo, "borrar cuenta" apareció en cuatro).
       Detalle reservado: se gestiona por el canal privado de `SECURITY.md`.
 - [ ] **M-38 · Manejo de recursos de la base durante el chat.** **M**
       Detalle reservado: se gestiona por el canal privado de `SECURITY.md`.
-- [ ] **M-39 · Si cae el servicio de embeddings, el chat responde 500.**
+- [x] **M-39 · Si cae el servicio de embeddings, el chat responde 500.**
       `render_context_block` corre fuera del `try` que degrada; el modo "IA
       pausada" de ADR-027 no funciona como se describe.
       `apps/backend/app/llm/router.py:225`. **S** [V+] (REL-01, AI-46)
+      *(Resuelto en migración ADR-028: el turno degrada sin llamar al modelo y `/v1/memory/search` + `PATCH /v1/memory/semantic/{ref}` devuelven 503 con `Retry-After`.)*
 - [ ] **M-40 · La ventana de contexto presupuestada no coincide con la servida.**
       El config no coincide con lo medido en ADR-012 y el contexto puede
       truncarse. Tampoco se versiona la configuración del servidor de modelos.
@@ -343,8 +344,9 @@ Además de M-01, M-02, M-07, M-21, M-41 y M-57, que también bloquean la revisi�
 - [ ] Sin endpoint de turnos por sesión para recuperar un stream cortado. **M** (REL-05)
 - [ ] La consolidación compite con el chat por la GPU sin prioridad; los reintentos
       amplifican la carga. **M** (SCALE-04, SCALE-05)
-- [ ] Consolidación at-most-once y con límite igual al presupuesto del modelo: se
+- [x] Consolidación at-most-once y con límite igual al presupuesto del modelo: se
       pierde sin rastro. **M** (REL-09, MEMQ-11, BE-05)
+      *(Resuelto en migración ADR-028: `acks_late=True`, idempotencia por turno/episodio, reintentos ante fallas transitorias y `SoftTimeLimitExceeded` propagado.)*
 - [ ] Dispatch de recordatorios sin `SKIP LOCKED`: posibles envíos duplicados. **S** (REL-14)
 - [ ] `/health/ready` no chequea modelo, embedder ni workers. **S** (OPS-15)
 - [ ] Mejorar los logs del backend. **S** (OPS-13)
