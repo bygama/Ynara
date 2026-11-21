@@ -48,9 +48,11 @@ con un PR.
   el principal y los siguientes, el respaldo. El `ResilientClient` pasa
   al siguiente cuando uno falla (timeout, caída, 429 largo o credencial
   rechazada).
-- **Respuesta degradada** — mensaje fijo que recibe el chat cuando se
-  agota la cadena de proveedores, en vez de un error
-  (`finish_reason: "degraded"`). Un turno degradado no se consolida.
+- **Respuesta degradada** — mensaje fijo que recibe el chat en vez de un
+  error (`finish_reason: "degraded"`). Ocurre cuando se agota la cadena de
+  proveedores, cuando falla el proveedor de embeddings al recuperar la
+  memoria (en modos que leen semántica o episódica) o con `LLM_BACKEND=fake`
+  sin respuestas encoladas. Un turno degradado no se consolida.
 - **Compuertas** — las cinco condiciones de ADR-028 (legal, crisis,
   costo, respaldo probado y latencia) que se cierran antes de mandarle
   datos reales a un proveedor.
