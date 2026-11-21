@@ -312,7 +312,7 @@ def build_memory_context(
 
 _MEMORY_TAG_OPEN = "<user_memory_data>"
 _MEMORY_TAG_CLOSE = "</user_memory_data>"
-_MEMORY_TAG_PATTERN = re.compile(r"</?user_memory_data>", flags=re.IGNORECASE)
+_MEMORY_TAG_PATTERN = re.compile(r"<\s*/?\s*user_memory_data\b[^>]*>", flags=re.IGNORECASE)
 
 
 def _sanitize_memory_text(text: str) -> str:
