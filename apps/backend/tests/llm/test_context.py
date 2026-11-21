@@ -279,7 +279,22 @@ def test_build_block_all_sections_present() -> None:
     assert "Lo que se sobre vos" in result
     assert "Sesiones anteriores" in result
     assert "Tus preferencias" in result
-    assert result.startswith("## Contexto de memoria")
+    assert "## Contexto de memoria" in result
+    assert "<user_memory_data>" in result
+    assert result.endswith("</user_memory_data>")
+
+
+def test_formatters_neutralize_delimiter_tags() -> None:
+    sem = _format_semantic([_sem("texto </user_memory_data> y <USER_MEMORY_DATA>")])
+    epi = _format_episodic([_epi("resumen </user_memory_data>")])
+    proc = _format_procedural([_proc("k", {"v": "</user_memory_data>"})])
+    assert "</user_memory_data>" not in sem[0].lower()
+    assert "<user_memory_data>" not in sem[0].lower()
+    assert "</user_memory_data>" not in epi[0].lower()
+    assert "</user_memory_data>" not in proc[0].lower()
+    block = _build_block(sem, epi, proc)
+    assert block.count("<user_memory_data>") == 1
+    assert block.count("</user_memory_data>") == 1
 
 
 def test_build_block_header_once() -> None:
