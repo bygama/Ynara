@@ -10,7 +10,7 @@ import type { StateStorage } from "zustand/middleware";
  * voluminoso (chat) usa otro storage.
  */
 export const secureStorage: StateStorage = {
-  getItem: (name) => SecureStore.getItemAsync(name),
+  getItem: (name) => SecureStore.getItemAsync(name).catch(() => null),
   setItem: (name, value) => SecureStore.setItemAsync(name, value),
   removeItem: (name) => SecureStore.deleteItemAsync(name),
 };

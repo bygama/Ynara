@@ -704,7 +704,7 @@ reconocen los nombres reales de las tools del backend.
 - [x] **AUD-FE-02 · Mobile: preparar la configuración para el primer build de
       release.** (media)
       Detalle reservado: se gestiona por el canal privado de `SECURITY.md`.
-- [ ] **AUD-FE-03 · Mobile: no se espera la hidratación del store seguro antes de
+- [x] **AUD-FE-03 · Mobile: no se espera la hidratación del store seguro antes de
       decidir a dónde ir.** (media) Esperar en el layout raíz de mobile a que el
       store termine de hidratarse (mismo patrón que la web) antes de ocultar el
       splash y montar la navegación. [V, falta verlo en ejecución]
