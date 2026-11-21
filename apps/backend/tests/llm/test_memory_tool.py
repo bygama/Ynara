@@ -294,10 +294,24 @@ class TestMemoryUpdate:
         store = FakeSemanticStore(update_result=_make_out("actualizado", memory_id=mem_id))
         tool = MemoryUpdateTool(store)
 
-        result = await tool.execute({"id": str(mem_id), "content": "actualizado"})
+        for args in (
+            {"id": str(mem_id), "content": "actualizado"},
+            {"id": str(mem_id), "content": "actualizado", "confirmed": False},
+        ):
+            result = await tool.execute(args)
+            assert result["status"] == "confirmation_required"
+            assert result["action"] == "memory.update"
+        assert store.update_calls == []
 
-        assert result["status"] == "confirmation_required"
-        assert result["action"] == "memory.update"
+    async def test_non_bool_confirmed_returns_invalid_arguments(self) -> None:
+        store = FakeSemanticStore()
+        tool = MemoryUpdateTool(store)
+
+        result = await tool.execute(
+            {"id": str(uuid4()), "content": "actualizado", "confirmed": "true"}
+        )
+
+        assert result["error"]["code"] == "invalid_arguments"  # type: ignore[index]
         assert store.update_calls == []
 
     async def test_valid_id_and_content_calls_store_when_confirmed(self) -> None:
@@ -374,10 +388,22 @@ class TestMemoryDelete:
         store = FakeSemanticStore(delete_result=True)
         tool = MemoryDeleteTool(store)
 
-        result = await tool.execute({"id": str(mem_id)})
+        for args in (
+            {"id": str(mem_id)},
+            {"id": str(mem_id), "confirmed": False},
+        ):
+            result = await tool.execute(args)
+            assert result["status"] == "confirmation_required"
+            assert result["action"] == "memory.delete"
+        assert store.delete_calls == []
 
-        assert result["status"] == "confirmation_required"
-        assert result["action"] == "memory.delete"
+    async def test_non_bool_confirmed_returns_invalid_arguments(self) -> None:
+        store = FakeSemanticStore()
+        tool = MemoryDeleteTool(store)
+
+        result = await tool.execute({"id": str(uuid4()), "confirmed": "true"})
+
+        assert result["error"]["code"] == "invalid_arguments"  # type: ignore[index]
         assert store.delete_calls == []
 
     async def test_valid_id_calls_store_and_returns_deleted_when_confirmed(self) -> None:

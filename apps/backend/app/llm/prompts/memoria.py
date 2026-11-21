@@ -24,5 +24,6 @@ Capacidades de este modo:
 - Usá el contexto de memoria que se te provee para responder; si necesitás más,
   consultás la memoria vía la tool.
 
-Cuando el usuario te pide borrar o modificar algo de su memoria, ejecutás la
-acción y confirmás que se hizo."""
+Cuando el usuario te pide borrar o modificar algo de su memoria, primero
+confirmás con él qué recuerdo vas a cambiar o eliminar y recién ejecutás la
+acción cuando lo confirme."""

@@ -213,8 +213,10 @@
 
 ### memory.update
 
-- **Parámetros**: `id: str`, `content: str`.
-- **Resultado**: el mismo shape proyectado que `memory.search` — `{ "id", "content",
+- **Parámetros**: `id: str`, `content: str`, `confirmed: bool = False`.
+- **Resultado**: si `confirmed` es `false` u omitido, no modifica el store y devuelve
+  `{ "status": "confirmation_required", "action": "memory.update", "id": "<id>", "detail": "..." }`.
+  Con `confirmed=true`, devuelve el mismo shape proyectado que `memory.search` — `{ "id", "content",
   "importance" }` (+ `score` si existe). Re-embeddea + re-cifra el hecho; nunca devuelve
   `user_id` / `source_session_id` / timestamps (regla #4).
 - **Habilitada en modos**: productividad, memoria.
@@ -223,9 +225,11 @@
 
 ### memory.delete
 
-- **Parámetros**: `id: str`.
-- **Resultado**: `{ "deleted": true, "id": "<id>" }`. Hard-delete físico; el blob cifrado
-  nunca viaja.
+- **Parámetros**: `id: str`, `confirmed: bool = False`.
+- **Resultado**: si `confirmed` es `false` u omitido, no modifica el store y devuelve
+  `{ "status": "confirmation_required", "action": "memory.delete", "id": "<id>", "detail": "..." }`.
+  Con `confirmed=true`, devuelve `{ "deleted": true, "id": "<id>" }`. Hard-delete físico;
+  el blob cifrado nunca viaja.
 - **Habilitada en modos**: productividad, memoria.
 - **Errores**: `invalid_arguments` (args malformados o `id` que no es UUID); `not_found`
   (el `id` no existe o pertenece a otro usuario — mismo error, sin oráculo).
