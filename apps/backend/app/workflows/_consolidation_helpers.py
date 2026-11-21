@@ -35,6 +35,7 @@ from app.memory.episodic import EpisodicMemoryStore
 from app.memory.hashing import compute_record_hash
 from app.models.memory import EpisodicMemory
 from app.schemas.memory import EpisodicMemoryCreate
+from app.workflows._wipe_guard import was_wiped_after
 
 logger = logging.getLogger("app.workflows.consolidation")
 
@@ -169,8 +170,17 @@ async def _consolidate_session_in_db(
     embedder: EmbeddingClient,
     reranker: Reranker,
     retention_config: RetentionConfig,
+    enqueued_at: datetime | None = None,
 ) -> int:
     """Nucleo de la consolidacion episodica sobre una ``session`` ya abierta."""
+    if enqueued_at is not None and await was_wiped_after(
+        session, user_id=user_id, since=enqueued_at
+    ):
+        logger.info(
+            "consolidate_session: memoria borrada despues del cierre session=%s, no-op",
+            source_session_id,
+        )
+        return 0
     if await _episode_exists(session, source_session_id):
         logger.info("consolidate_session: episodio ya existe session=%s, no-op", source_session_id)
         return 0
@@ -188,6 +198,14 @@ async def _consolidate_session_in_db(
     summary = await mem_engine.summarize(transcript=transcript, mode=mode)
     if not summary.summary:
         logger.info("consolidate_session: resumen vacio session=%s, no-op", source_session_id)
+        return 0
+    if enqueued_at is not None and await was_wiped_after(
+        session, user_id=user_id, since=enqueued_at
+    ):
+        logger.info(
+            "consolidate_session: memoria borrada durante el resumen session=%s, no-op",
+            source_session_id,
+        )
         return 0
 
     is_sensitive = origin_mode == Mode.BIENESTAR

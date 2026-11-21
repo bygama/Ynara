@@ -368,40 +368,24 @@ async def _async_consolidate_session(
     user_id: str,
     session_id: str,  # str(ChatSession.id): se parsea a UUID (FK episodic.session_id)
     mode: str,
+    enqueued_at: str | None = None,
     # Inyectables para tests (None => construir desde get_settings())
     settings: Settings | None = None,
     llm_client: LLMClient | None = None,
     embedder: EmbeddingClient | None = None,
     reranker: Reranker | None = None,
-    # retention config inyectable para tests (None => cargar de ynara.config.json)
     retention_config: RetentionConfig | None = None,
-    # session inyectable para tests de integracion (evita crear engine nuevo)
     session: AsyncSession | None = None,
 ) -> int:
-    """Nucleo async de la consolidacion episodica; retorna 1 si creo un episodio, 0 si no.
-
-    Si ``session`` se inyecta (tests), se usa directamente y NO se crea engine ni
-    se commitea (el fixture controla el ciclo de vida). Si es ``None`` (worker
-    Celery en prod), se construye el engine con ``NullPool`` (decision #4 M8), se
-    abre la sesion, se commitea y se dispone el engine.
-
-    ``session_id`` es ``str(ChatSession.id)`` (FK a ``sessions.id``). Si el parse a
-    UUID falla (payload corrupto en la cola), se degrada a no-op (0) SIN crashear:
-    el episodio requiere una FK real, no se puede crear con un session_id basura.
-    """
+    """Nucleo async de la consolidacion episodica; retorna 1 si creo un episodio, 0 si no."""
     cfg = settings or get_settings()
 
     uid = UUID(user_id)
     source_session_id = _parse_source_session_id(session_id)
     if source_session_id is None:
-        # session_id no-UUID: el episodio requiere una FK real -> no-op sin crash.
         return 0
     origin_mode = _parse_origin_mode(mode)
-    # Retention config-driven (ADR-007 D2): inyectado en tests, o cargado de
-    # ``ynara.config.json[memory]`` en prod. Fallback defensivo: si el config es
-    # ilegible/invalido NO se tumba el worker (regla del modulo: un fallo de config
-    # nunca mata la consolidacion) -> se usa el RetentionConfig por defaults (=los
-    # valores historicos). El ``try/except`` del task sigue siendo la red final.
+    parsed_enqueued_at = _parse_enqueued_at(enqueued_at)
     effective_retention = retention_config or _load_retention_config_safe()
 
     # Los clientes que arma la task se cierran al salir del bloque, ande o no el
@@ -422,6 +406,7 @@ async def _async_consolidate_session(
                 embedder=effective_embedder,
                 reranker=effective_reranker,
                 retention_config=effective_retention,
+                enqueued_at=parsed_enqueued_at,
             )
 
         if session is not None:
@@ -441,6 +426,7 @@ def consolidate_session(
     user_id: str,
     session_id: str,
     mode: str = Mode.VIDA.value,
+    enqueued_at: str | None = None,
 ) -> None:
     """Task Celery: al cerrar la sesion, resume sus turnos en ``episodic_memory``.
 
@@ -469,6 +455,7 @@ def consolidate_session(
                 user_id=user_id,
                 session_id=session_id,
                 mode=mode,
+                enqueued_at=enqueued_at,
             )
         )
         logger.info(

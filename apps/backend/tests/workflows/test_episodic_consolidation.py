@@ -120,7 +120,7 @@ class TestConsolidateSessionWrapper:
             mock_async.return_value = 1
             consolidate_session(user_id=USER_ID, session_id=SESSION_ID, mode="bienestar")
             mock_async.assert_called_once_with(
-                user_id=USER_ID, session_id=SESSION_ID, mode="bienestar"
+                user_id=USER_ID, session_id=SESSION_ID, mode="bienestar", enqueued_at=None
             )
 
     def test_does_not_propagate_on_error(self) -> None:
