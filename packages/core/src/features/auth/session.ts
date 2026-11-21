@@ -35,7 +35,11 @@ export function clearSession(options: ClearSessionOptions): void {
 
   const token = getToken();
   if (revokeRemote && token) {
-    void Promise.resolve(revokeFn(token)).catch(() => {});
+    try {
+      void Promise.resolve(revokeFn(token)).catch(() => {});
+    } catch {
+      // best-effort: no bloquear la limpieza local
+    }
   }
 
   resetStores();
