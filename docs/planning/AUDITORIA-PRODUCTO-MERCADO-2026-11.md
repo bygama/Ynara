@@ -142,7 +142,7 @@ antes de fusionar duplicados (por ejemplo, "borrar cuenta" apareció en cuatro).
 - [ ] **M-21 · Sin canal para reportar una respuesta de la IA**, ni feedback por
       mensaje. Google lo pide para apps de IA generativa; además es la única señal
       de calidad posible. **M** [V] (AI-30, STORE-08, ADM-12)
-- [ ] **M-22 · Faltan confirmaciones del usuario en acciones del agente sobre su
+- [x] **M-22 · Faltan confirmaciones del usuario en acciones del agente sobre su
       memoria.** **M** [V] (AI-11, SEC-19)
 
 ### 1.4 Cobro
@@ -317,7 +317,7 @@ Además de M-01, M-02, M-07, M-21, M-41 y M-57, que también bloquean la revisi�
 
 ### Seguridad y privacidad
 
-- [ ] Endurecer el armado del contexto del modelo. **M** (SEC-18, AI-16)
+- [x] Endurecer el armado del contexto del modelo. **M** (SEC-18, AI-16)
       Detalle reservado: se gestiona por el canal privado de `SECURITY.md`.
 - [ ] Completar los registros de auditoría. **S** (SEC-10, ADM-05, AI-12)
 - [ ] Ampliar el audit y hacerlo visible para el usuario; la pausa de memoria no

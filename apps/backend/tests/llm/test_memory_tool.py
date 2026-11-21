@@ -289,13 +289,26 @@ class TestMemoryAdd:
 
 
 class TestMemoryUpdate:
-    async def test_valid_id_and_content_calls_store(self) -> None:
+    async def test_requires_confirmation_by_default(self) -> None:
+        mem_id = uuid4()
+        store = FakeSemanticStore(update_result=_make_out("actualizado", memory_id=mem_id))
+        tool = MemoryUpdateTool(store)
+
+        result = await tool.execute({"id": str(mem_id), "content": "actualizado"})
+
+        assert result["status"] == "confirmation_required"
+        assert result["action"] == "memory.update"
+        assert store.update_calls == []
+
+    async def test_valid_id_and_content_calls_store_when_confirmed(self) -> None:
         mem_id = uuid4()
         out = _make_out("actualizado", memory_id=mem_id)
         store = FakeSemanticStore(update_result=out)
         tool = MemoryUpdateTool(store)
 
-        result = await tool.execute({"id": str(mem_id), "content": "actualizado"})
+        result = await tool.execute(
+            {"id": str(mem_id), "content": "actualizado", "confirmed": True}
+        )
 
         assert "error" not in result
         assert result["content"] == "actualizado"  # type: ignore[index]
@@ -313,7 +326,7 @@ class TestMemoryUpdate:
         store = FakeSemanticStore(update_result=None)
         tool = MemoryUpdateTool(store)
 
-        result = await tool.execute({"id": str(uuid4()), "content": "x"})
+        result = await tool.execute({"id": str(uuid4()), "content": "x", "confirmed": True})
 
         assert result["error"]["code"] == "not_found"  # type: ignore[index]
 
@@ -356,12 +369,23 @@ class TestMemoryUpdate:
 
 
 class TestMemoryDelete:
-    async def test_valid_id_calls_store_and_returns_deleted(self) -> None:
+    async def test_requires_confirmation_by_default(self) -> None:
         mem_id = uuid4()
         store = FakeSemanticStore(delete_result=True)
         tool = MemoryDeleteTool(store)
 
         result = await tool.execute({"id": str(mem_id)})
+
+        assert result["status"] == "confirmation_required"
+        assert result["action"] == "memory.delete"
+        assert store.delete_calls == []
+
+    async def test_valid_id_calls_store_and_returns_deleted_when_confirmed(self) -> None:
+        mem_id = uuid4()
+        store = FakeSemanticStore(delete_result=True)
+        tool = MemoryDeleteTool(store)
+
+        result = await tool.execute({"id": str(mem_id), "confirmed": True})
 
         assert "error" not in result
         assert result["deleted"] is True  # type: ignore[index]
@@ -371,7 +395,7 @@ class TestMemoryDelete:
         store = FakeSemanticStore(delete_result=False)
         tool = MemoryDeleteTool(store)
 
-        result = await tool.execute({"id": str(uuid4())})
+        result = await tool.execute({"id": str(uuid4()), "confirmed": True})
 
         assert result["error"]["code"] == "not_found"  # type: ignore[index]
 

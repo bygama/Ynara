@@ -97,6 +97,7 @@ class _UpdateArgs(BaseModel):
 
     id: str
     content: str
+    confirmed: bool = False
 
 
 class _DeleteArgs(BaseModel):
@@ -105,6 +106,7 @@ class _DeleteArgs(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 
     id: str
+    confirmed: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -235,7 +237,10 @@ class MemoryUpdateTool:
 
     name = f"{_NAMESPACE}.update"
     namespace = _NAMESPACE
-    description = "Actualiza el contenido de un recuerdo en la memoria semántica del usuario."
+    description = (
+        "Actualiza el contenido de un recuerdo en la memoria semántica del usuario. "
+        "Requiere confirmed=true solo después de que el usuario haya confirmado el cambio."
+    )
 
     def __init__(self, store: SemanticMemoryStore) -> None:
         self._store = store
@@ -255,6 +260,17 @@ class MemoryUpdateTool:
         except ValueError:
             return tool_error("invalid_arguments", "argumento invalido en 'id': uuid_parsing")
 
+        if not validated.confirmed:
+            return {
+                "status": "confirmation_required",
+                "action": self.name,
+                "id": validated.id,
+                "detail": (
+                    "Confirmá explícitamente con el usuario antes de modificar este recuerdo "
+                    "y volvé a llamar con confirmed=true."
+                ),
+            }
+
         result = await self._store.update(memory_id, validated.content)
         if result is None:
             return tool_error("not_found", f"memoria '{validated.id}' no encontrada")
@@ -273,7 +289,10 @@ class MemoryDeleteTool:
 
     name = f"{_NAMESPACE}.delete"
     namespace = _NAMESPACE
-    description = "Elimina un recuerdo de la memoria semántica del usuario."
+    description = (
+        "Elimina un recuerdo de la memoria semántica del usuario. "
+        "Requiere confirmed=true solo después de que el usuario haya confirmado el borrado."
+    )
 
     def __init__(self, store: SemanticMemoryStore) -> None:
         self._store = store
@@ -292,6 +311,17 @@ class MemoryDeleteTool:
             memory_id = UUID(validated.id)
         except ValueError:
             return tool_error("invalid_arguments", "argumento invalido en 'id': uuid_parsing")
+
+        if not validated.confirmed:
+            return {
+                "status": "confirmation_required",
+                "action": self.name,
+                "id": validated.id,
+                "detail": (
+                    "Confirmá explícitamente con el usuario antes de eliminar este recuerdo "
+                    "y volvé a llamar con confirmed=true."
+                ),
+            }
 
         deleted = await self._store.delete(memory_id)
         if not deleted:
