@@ -187,9 +187,9 @@ Dos endpoints: uno no-streaming (JSON) y uno SSE. Contrato + justificación en
   embeddings al recuperar la memoria (429, timeout, 5xx, credencial o dimensión
   inesperada) en los modos que leen la semántica o la episódica (hoy todos menos
   `vida`): no sigue con el bloque de memoria vacío, porque el modelo contestaría como
-  si no hubiera nada guardado. El 500 real queda reservado a `ModelNotServedError`
-  (misconfig de deploy) y al cliente fake sin respuestas encoladas — casos distintos
-  de "LLM caído".
+  si no hubiera nada guardado. Con `LLM_BACKEND=fake` sin respuestas encoladas el
+  servidor también responde `finish_reason="degraded"`; el 500 real queda reservado a
+  `ModelNotServedError` (misconfig de deploy), caso distinto de "LLM caído".
 - Permisos: usuario autenticado.
 - Rate limit: por `user_id` (del JWT), `CHAT_MAX_REQUESTS` (60) por `CHAT_WINDOW_SECONDS` (60s); 429 con `Retry-After` al cruzar el techo. fail-open si Redis cae. Aplica a `/chat` y `/chat/stream`.
 - Modos: todos.

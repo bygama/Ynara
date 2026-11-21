@@ -32,7 +32,7 @@ Logs de la IA de la última media hora, en `api` y `worker` (sin contenido
 de usuario: solo nombres de proveedor, clases de error e ids, regla #4a):
 
 ```sh
-docker compose logs --since 30m api worker | grep -E 'llm:|route degrado|memory search:|consolidate_|memory_engine:'
+docker compose logs --since 30m api worker | grep -E 'llm:|route degrado|memory (search|update):|consolidate_|memory_engine:'
 ```
 
 ## Escenarios comunes
