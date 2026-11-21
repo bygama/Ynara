@@ -395,8 +395,8 @@ class ResilientClient:
         # Una caida (``BREAKER_ERRORS``) o un error que no es ``LlmError`` lo
         # (re)abre; cualquier otro ``LlmError`` es una respuesta del proveedor y
         # cuenta como exito. Cancelacion / corte del consumidor (``CancelledError``
-        # / ``GeneratorExit``, ambos ``BaseException``) NO son fallo del proveedor:
-        # ``except Exception`` no los atrapa, se propagan sin tocar el breaker.
+        # / ``GeneratorExit``, ambos ``BaseException``) NO marcan exito ni fallo,
+        # pero liberan una prueba ``HALF_OPEN`` con ``cancel_probe()`` antes de propagar.
         for client in self._stream_candidates(candidates):
             breaker = self._breakers[id(client)]
             emitted = False
