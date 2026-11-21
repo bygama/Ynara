@@ -80,7 +80,7 @@ class CircuitBreaker:
         """
         if not self.would_allow():
             return False
-        if self._state is CircuitState.OPEN:
+        if self._state in (CircuitState.OPEN, CircuitState.HALF_OPEN):
             self._state = CircuitState.HALF_OPEN
             self._probe_in_flight = True
         return True
