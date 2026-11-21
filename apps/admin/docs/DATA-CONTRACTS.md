@@ -132,25 +132,28 @@ growth = COUNT por `created_at`/día por capa; procedural = COUNT `stale` +
 histograma de `confidence`; backlog = sesiones cerradas sin episodic
 consolidado; recentEpisodic = LIMIT por `occurred_at`, solo metadata.
 
-## `GET /v1/admin/audit?range=7d&operation=&targetLayer=&originMode=&originModelId=&sensitive=&limit=50&offset=0`
+## `GET /v1/admin/audit?range=7d&operation=&target_layer=&origin_mode=&origin_model_id=&sensitive=&limit=50&offset=0`
+
+Este bloque espeja `features/audit/schemas.ts` tal cual, en `snake_case` como
+viaja por la red (query params y payload).
 
 ```ts
 export const AdminAuditRow = z.object({
   // ⚠️ SIN record_hash, SIN target_id — omitidos en el schema, no solo en render
   id: z.string().uuid(),
-  createdAt: z.string(),
+  created_at: z.string(),
   operation: z.enum(["read","write","update","delete"]),
-  targetLayer: z.enum(["semantic","episodic","procedural"]),
-  originMode: ModeId.nullable(),
-  originModel: z.string().nullable(),   // enum de antes (gemma/qwen): solo filas viejas
-  originModelId: z.string().nullable(), // id que informó el proveedor (ADR-028)
-  originTool: z.string().nullable(),
+  target_layer: z.enum(["semantic","episodic","procedural"]),
+  origin_mode: ModeId.nullable(),
+  origin_model: z.string().nullable(),    // enum de antes (gemma/qwen): solo filas viejas
+  origin_model_id: z.string().nullable(), // id que informó el proveedor (ADR-028)
+  origin_tool: z.string().nullable(),
   sensitive: z.boolean(),
 });
 export const AdminAuditPage = z.object({
   items: z.array(AdminAuditRow),
   total: z.number().int(),
-  sensitivePct: z.number(),
+  sensitive_pct: z.number(),
 });
 ```
 
@@ -158,11 +161,11 @@ Backend: `SELECT` de los campos exponibles de `audit_log` WHERE filtros, ORDER
 BY `created_at` DESC, LIMIT/OFFSET. **El `SELECT` no incluye `record_hash` ni
 `target_id`.** `audit_log` es tabla sagrada (regla #3): el panel es read-only.
 
-Modelo de origen: el filtro `originModelId` compara por igualdad exacta con el
+Modelo de origen: el filtro `origin_model_id` compara por igualdad exacta con el
 id del modelo (hasta 200 caracteres), así que las filas viejas, que traen solo
-`originModel`, no matchean. El panel lo manda recortado y lo omite si queda
+`origin_model`, no matchean. El panel lo manda recortado y lo omite si queda
 vacío (el backend responde 422 a un id vacío). La fila muestra
-`originModelId` y, si no hay, cae a `originModel`.
+`origin_model_id` y, si no hay, cae a `origin_model`.
 
 ## `GET /v1/admin/system`
 
