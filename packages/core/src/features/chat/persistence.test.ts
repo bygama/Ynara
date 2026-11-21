@@ -6,13 +6,12 @@ import {
   MAX_PERSISTED_SESSIONS,
   pruneChatHistory,
 } from "./persistence";
-import { type ChatSession, type ChatUiMessage, createChatStore } from "./store";
+import { type ChatSessionMeta, type ChatUiMessage, createChatStore } from "./store";
 
-function makeSession(id: string, updatedAt: number): ChatSession {
+function makeSession(id: string, updatedAt: number): ChatSessionMeta {
   return {
     id,
     mode: "vida",
-    title: `Sesión ${id}`,
     createdAt: updatedAt - 1000,
     updatedAt,
   };
@@ -30,7 +29,7 @@ function makeMessage(id: string, reasoning?: string): ChatUiMessage {
 
 describe("pruneChatHistory", () => {
   it("retiene solo las sesiones más recientes hasta el tope y descarta huérfanas", () => {
-    const sessions: Record<string, ChatSession> = {};
+    const sessions: Record<string, ChatSessionMeta> = {};
     const messages: Record<string, ChatUiMessage[]> = {
       orphan: [makeMessage("o1")],
     };
@@ -127,7 +126,7 @@ describe("createChatStore — persistencia en streaming", () => {
     };
     const useStore = createChatStore(memory);
     const sid = useStore.getState().createSession("vida");
-    const uid = useStore.getState().addUserMessage(sid, "hola");
+    const uid = useStore.getState().appendUserMessage(sid, "hola");
 
     setItem.mockClear();
 
