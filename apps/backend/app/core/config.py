@@ -234,8 +234,20 @@ class Settings(BaseSettings):
     admin_bootstrap_ids: Annotated[list[str], NoDecode] = Field(
         default_factory=list, alias="ADMIN_BOOTSTRAP_IDS"
     )
+    # Antigüedad máxima (minutos) del JWT para operar en /v1/admin/* (default 4h).
+    admin_session_max_minutes: int = Field(240, gt=0, alias="ADMIN_SESSION_MAX_MINUTES")
+    # Allowlist opcional de IPs/CIDRs habilitados para /v1/admin/*. Vacío = sin filtro IP.
+    admin_allowed_ips: Annotated[list[str], NoDecode] = Field(
+        default_factory=list, alias="ADMIN_ALLOWED_IPS"
+    )
 
-    @field_validator("trusted_proxy_ips", "cors_origins", "admin_bootstrap_ids", mode="before")
+    @field_validator(
+        "trusted_proxy_ips",
+        "cors_origins",
+        "admin_bootstrap_ids",
+        "admin_allowed_ips",
+        mode="before",
+    )
     @classmethod
     def _split_csv_lists(cls, v: object) -> object:
         """Acepta CSV/vacío desde env para los 3 ``list[str]`` marcados con ``NoDecode``.
@@ -417,23 +429,19 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_trusted_proxy_ips(self) -> Settings:
-        """Fail-fast: cada entry de ``trusted_proxy_ips`` debe ser un IP/CIDR válido.
-
-        La allowlist gobierna cuándo se confía el header de IP real (anti-spoof, issue
-        #151): una entry malformada que silenciosamente no matchee dejaría el freno por
-        IP roto sin aviso. Validar al boot (consistente con los demás validators fail-fast
-        del módulo) convierte una mala config en un error de arranque, no en un agujero
-        de seguridad latente. ``strict=False`` acepta tanto IPs sueltas (``127.0.0.1``)
-        como redes CIDR (``10.0.0.0/8``).
-        """
-        for entry in self.trusted_proxy_ips:
-            try:
-                ipaddress.ip_network(entry, strict=False)
-            except ValueError as exc:
-                raise ValueError(
-                    f"TRUSTED_PROXY_IPS contiene una entry inválida ({entry!r}): "
-                    "cada valor debe ser un IP o CIDR parseable (p.ej. 127.0.0.1 o 10.0.0.0/8)"
-                ) from exc
+        """Fail-fast: cada entry de ``trusted_proxy_ips``/``admin_allowed_ips`` es IP/CIDR."""
+        for env_name, entries in (
+            ("TRUSTED_PROXY_IPS", self.trusted_proxy_ips),
+            ("ADMIN_ALLOWED_IPS", self.admin_allowed_ips),
+        ):
+            for entry in entries:
+                try:
+                    ipaddress.ip_network(entry, strict=False)
+                except ValueError as exc:
+                    raise ValueError(
+                        f"{env_name} contiene una entry inválida ({entry!r}): "
+                        "cada valor debe ser un IP o CIDR parseable (p.ej. 127.0.0.1 o 10.0.0.0/8)"
+                    ) from exc
         return self
 
     @model_validator(mode="after")

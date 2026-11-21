@@ -10,7 +10,7 @@ import { useAdminStore } from "@/stores/admin";
  * `/v1/admin/*` → `providers.tsx` resetea el store); este guard solo cubre la
  * ausencia de token (no logueado o sesión reseteada).
  *
- * **SSR-safe**: el token vive en Zustand persist (localStorage), que NO existe
+ * **SSR-safe**: el token vive en Zustand persist (sessionStorage), que NO existe
  * en el server ni en el primer paint pre-hidratación. Por eso el chequeo corre
  * en un `useEffect` (post-mount) y hasta entonces no se renderiza el panel: se
  * evita el flash de contenido protegido y el mismatch de hidratación. El
@@ -19,15 +19,18 @@ import { useAdminStore } from "@/stores/admin";
 export function AuthGuard({ children }: { children: ReactNode }) {
   const router = useRouter();
   const token = useAdminStore((s) => s.token);
+  const expiresAt = useAdminStore((s) => s.expiresAt);
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
-    if (token === null) {
+    const state = useAdminStore.getState();
+    if (token === null || state.isSessionExpired()) {
+      if (token !== null) state.reset();
       router.replace("/login");
       return;
     }
     setChecked(true);
-  }, [token, router]);
+  }, [token, expiresAt, router]);
 
   // Sin token o todavía sin verificar (pre-mount): no pintar el panel.
   if (!checked || token === null) return null;

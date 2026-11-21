@@ -9,7 +9,14 @@ import { env } from "./env";
 // SOLO viaja a nuestra API (perímetro reglas #2/#4, gate en el client de core).
 configureApi({
   baseUrl: env.NEXT_PUBLIC_API_URL,
-  getToken: () => useAdminStore.getState().token,
+  getToken: () => {
+    const state = useAdminStore.getState();
+    if (state.isSessionExpired()) {
+      state.reset();
+      return null;
+    }
+    return state.token;
+  },
 });
 
 export { ApiError, api, applyAuthHeader } from "@ynara/core/api";

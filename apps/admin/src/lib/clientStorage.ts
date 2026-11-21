@@ -20,11 +20,28 @@ export const clientStorage: StateStorage = {
  * al cerrar el tab.
  */
 export const sessionClientStorage: StateStorage = {
-  getItem: (name) => (typeof window === "undefined" ? null : window.sessionStorage.getItem(name)),
+  getItem: (name) => {
+    if (typeof window === "undefined") return null;
+    try {
+      return window.sessionStorage.getItem(name);
+    } catch {
+      return null;
+    }
+  },
   setItem: (name, value) => {
-    if (typeof window !== "undefined") window.sessionStorage.setItem(name, value);
+    if (typeof window === "undefined") return;
+    try {
+      window.sessionStorage.setItem(name, value);
+    } catch {
+      // storage bloqueado o cuota llena
+    }
   },
   removeItem: (name) => {
-    if (typeof window !== "undefined") window.sessionStorage.removeItem(name);
+    if (typeof window === "undefined") return;
+    try {
+      window.sessionStorage.removeItem(name);
+    } catch {
+      // best-effort
+    }
   },
 };
