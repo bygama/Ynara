@@ -6,7 +6,7 @@ reranker leídos desde ``app.state`` (singletons construidos en el lifespan).
 
 from __future__ import annotations
 
-import ipaddress
+import math
 import time
 from collections.abc import AsyncIterator
 from functools import lru_cache
@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import NullPool
 
+from app.core.client_ip import parse_ip_networks, resolve_verified_client_ip
 from app.core.config import get_settings
 from app.core.llm_protocol import (
     EmbeddingClientProtocol,
@@ -200,32 +201,21 @@ CurrentUser = Annotated[UUID, Depends(get_current_user)]
 
 
 def _admin_ip_allowed(request: Request, *, allowed_cidrs: list[str]) -> bool:
-    """Verifica si la IP real del cliente pertenece a ``allowed_cidrs``."""
+    """Verifica si la IP real del cliente pertenece a ``allowed_cidrs`` (fail-closed)."""
     if not allowed_cidrs:
         return True
     peer = request.client.host if request.client else ""
     settings = get_settings()
-    client_ip = peer
-    try:
-        peer_addr = ipaddress.ip_address(peer)
-    except ValueError:
-        peer_addr = None
-    if peer_addr is not None and any(
-        peer_addr in ipaddress.ip_network(net, strict=False) for net in settings.trusted_proxy_ips
-    ):
-        header_val = request.headers.get(settings.real_ip_header)
-        if header_val:
-            candidate = header_val.split(",")[0].strip()
-            try:
-                ipaddress.ip_address(candidate)
-                client_ip = candidate
-            except ValueError:
-                pass
-    try:
-        addr = ipaddress.ip_address(client_ip)
-    except ValueError:
+    trusted = parse_ip_networks(tuple(settings.trusted_proxy_ips))
+    addr = resolve_verified_client_ip(
+        peer,
+        request.headers.get(settings.real_ip_header),
+        trusted_networks=trusted,
+    )
+    if addr is None:
         return False
-    return any(addr in ipaddress.ip_network(cidr, strict=False) for cidr in allowed_cidrs)
+    allowed = parse_ip_networks(tuple(allowed_cidrs))
+    return any(addr in net for net in allowed)
 
 
 async def get_current_admin(
@@ -248,8 +238,11 @@ async def get_current_admin(
     )
     settings = get_settings()
     iat = claims.get("iat")
-    if not isinstance(iat, (int, float)) or (time.time() - float(iat)) > (
-        settings.admin_session_max_minutes * 60
+    if (
+        isinstance(iat, bool)
+        or not isinstance(iat, (int, float))
+        or not math.isfinite(iat)
+        or (time.time() - float(iat)) > (settings.admin_session_max_minutes * 60)
     ):
         raise unauthorized
     if not _admin_ip_allowed(request, allowed_cidrs=settings.admin_allowed_ips):

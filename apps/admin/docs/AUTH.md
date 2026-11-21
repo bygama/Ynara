@@ -51,9 +51,12 @@ lo que pase.
 
 ### Guard de ruta (`components/shell/AuthGuard.tsx`)
 
-Envuelve el route group `(panel)`: si no hay token (chequeo post-mount,
-SSR-safe porque el token vive en localStorage), `router.replace("/login")`. No
-pinta el panel hasta verificar (sin flash de contenido protegido).
+Envuelve el route group `(panel)`: si no hay token o la sesión local venció
+(TTL de 4 horas; chequeo post-mount SSR-safe porque el token vive en
+`sessionStorage`), resetea el store y hace `router.replace("/login")`. Además
+programa el cierre automático si la pestaña queda inactiva al cumplirse el
+vencimiento y no pinta el panel hasta verificar (sin flash de contenido
+protegido).
 
 ### 401 global (`app/providers.tsx`)
 

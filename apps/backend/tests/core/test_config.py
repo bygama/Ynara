@@ -651,3 +651,20 @@ def test_embedding_backend_vllm_is_rejected() -> None:
 def test_embedding_batch_size_is_bounded(batch_size: int) -> None:
     with pytest.raises(ValueError, match="EMBEDDING_BATCH_SIZE"):
         _settings(EMBEDDING_BATCH_SIZE=batch_size)
+
+
+def test_admin_allowed_ips_parses_csv_ipv4_and_ipv6() -> None:
+    s = _settings(ADMIN_ALLOWED_IPS=" 10.0.0.0/8 , 2001:db8::/32 , ")
+    assert s.admin_allowed_ips == ["10.0.0.0/8", "2001:db8::/32"]
+    assert _settings(ADMIN_ALLOWED_IPS="").admin_allowed_ips == []
+
+
+def test_admin_allowed_ips_rejects_invalid_cidr() -> None:
+    with pytest.raises(ValueError, match="ADMIN_ALLOWED_IPS"):
+        _settings(ADMIN_ALLOWED_IPS="10.0.0.0/8,no-es-una-ip")
+
+
+@pytest.mark.parametrize("minutes", [0, -5])
+def test_admin_session_max_minutes_must_be_positive(minutes: int) -> None:
+    with pytest.raises(ValueError, match="ADMIN_SESSION_MAX_MINUTES"):
+        _settings(ADMIN_SESSION_MAX_MINUTES=minutes)

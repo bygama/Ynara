@@ -24,12 +24,18 @@ export function AuthGuard({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const state = useAdminStore.getState();
-    if (token === null || state.isSessionExpired()) {
+    if (token === null || expiresAt === null || Date.now() >= expiresAt) {
       if (token !== null) state.reset();
       router.replace("/login");
       return;
     }
     setChecked(true);
+    const remainingMs = expiresAt - Date.now();
+    const timer = window.setTimeout(() => {
+      useAdminStore.getState().reset();
+      router.replace("/login");
+    }, remainingMs);
+    return () => window.clearTimeout(timer);
   }, [token, expiresAt, router]);
 
   // Sin token o todavía sin verificar (pre-mount): no pintar el panel.
