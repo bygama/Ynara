@@ -250,20 +250,21 @@ class Settings(BaseSettings):
     )
     @classmethod
     def _split_csv_lists(cls, v: object) -> object:
-        """Acepta CSV/vacío desde env para los 3 ``list[str]`` marcados con ``NoDecode``.
+        """Acepta CSV/vacío desde env para los 4 ``list[str]`` marcados con ``NoDecode``.
 
-        ``trusted_proxy_ips`` / ``cors_origins`` / ``admin_bootstrap_ids`` usan
-        ``NoDecode`` (desactiva el JSON-decode que ``EnvSettingsSource`` aplicaría a un
-        ``list[str]``), así que el string crudo del env llega tal cual acá: un CSV
-        human-friendly (``a,b,c``) o vacío (``=``) que, sin esta normalización,
-        crashearía el boot (el parser esperaría un JSON-array). Convierte el string a
-        lista (vacío -> ``[]``); una lista ya parseada (kwargs / JSON) pasa intacta —
-        así los tests que pasan ``cors_origins=[...]`` por kwarg siguen funcionando.
+        ``trusted_proxy_ips`` / ``cors_origins`` / ``admin_bootstrap_ids`` /
+        ``admin_allowed_ips`` usan ``NoDecode`` (desactiva el JSON-decode que
+        ``EnvSettingsSource`` aplicaría a un ``list[str]``), así que el string crudo del
+        env llega tal cual acá: un CSV human-friendly (``a,b,c``) o vacío (``=``) que,
+        sin esta normalización, crashearía el boot (el parser esperaría un JSON-array).
+        Convierte el string a lista (vacío -> ``[]``); una lista ya parseada (kwargs /
+        JSON) pasa intacta — así los tests que pasan ``cors_origins=[...]`` por kwarg
+        siguen funcionando.
 
         La validación de CONTENIDO la hacen los ``model_validator`` de después, por
-        campo: IP/CIDR (``_validate_trusted_proxy_ips``), UUID
-        (``_validate_admin_bootstrap_ids``) y rechazo de host de dev en prod
-        (``_reject_dev_config_in_prod`` para CORS). Antes eran 3 validators idénticos.
+        campo: IP/CIDR (``_validate_trusted_proxy_ips`` / ``_validate_admin_allowed_ips``),
+        UUID (``_validate_admin_bootstrap_ids``) y rechazo de host de dev en prod
+        (``_reject_dev_config_in_prod`` para CORS).
         """
         if isinstance(v, str):
             return [part.strip() for part in v.split(",") if part.strip()]
