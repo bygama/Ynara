@@ -1,7 +1,7 @@
 import type { Action, ChatResponse, Mode } from "@ynara/shared-schemas";
 import { create } from "zustand";
-import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
-import { createChatStorage, pruneChatHistory } from "./persistence";
+import { persist, type StateStorage } from "zustand/middleware";
+import { createChatPersistStorage, pruneChatHistory } from "./persistence";
 
 /**
  * Store de conversación del chat, compartido web + mobile (ADR-012).
@@ -182,7 +182,7 @@ function newId(): string {
  */
 export function createChatStore(storage: StateStorage) {
   let storeRef: { getState: () => ChatState } | null = null;
-  const safeStorage = createChatStorage(
+  const persistStorage = createChatPersistStorage<Pick<ChatState, "sessions" | "messages">>(
     storage,
     () => storeRef?.getState().streamStatus === "streaming",
   );
@@ -440,7 +440,7 @@ export function createChatStore(storage: StateStorage) {
       }),
       {
         name: "ynara.chat",
-        storage: createJSONStorage(() => safeStorage),
+        storage: persistStorage,
         // streamStatus es efímero: se omite de la persistencia. `pruneChatHistory`
         // acota sesiones/mensajes recientes y excluye `reasoning` para no inflar
         // el storage local.

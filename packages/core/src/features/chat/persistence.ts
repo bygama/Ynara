@@ -1,4 +1,4 @@
-import type { StateStorage } from "zustand/middleware";
+import { createJSONStorage, type PersistStorage, type StateStorage } from "zustand/middleware";
 import type { ChatSessionMeta, ChatUiMessage } from "./store";
 
 /** Tope de sesiones recientes retenidas en disco por dispositivo. */
@@ -89,5 +89,26 @@ export function createChatStorage(base: StateStorage, isStreaming: () => boolean
         // best-effort
       }
     },
+  };
+}
+
+/**
+ * Envuelve `createJSONStorage` para saltear también `JSON.stringify` en cada
+ * token mientras `isStreaming()` es `true`.
+ */
+export function createChatPersistStorage<T>(
+  base: StateStorage,
+  isStreaming: () => boolean,
+): PersistStorage<T> | undefined {
+  const safeStorage = createChatStorage(base, isStreaming);
+  const jsonStorage = createJSONStorage<T>(() => safeStorage);
+  if (!jsonStorage) return undefined;
+  return {
+    getItem: (name) => jsonStorage.getItem(name),
+    setItem: (name, value) => {
+      if (isStreaming()) return;
+      return jsonStorage.setItem(name, value);
+    },
+    removeItem: (name) => jsonStorage.removeItem(name),
   };
 }
