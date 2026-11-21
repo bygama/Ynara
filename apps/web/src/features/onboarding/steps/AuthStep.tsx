@@ -52,8 +52,8 @@ function SignupForm({ onSwitch }: { onSwitch: () => void }) {
 
   // 2-step real contra el backend: signUp = register THEN token (core).
   // register devuelve el UserOut (sin token); token() devuelve access_token.
-  // El refresh_token que devuelve token() se ignora por ahora (ver issue de
-  // refresh wiring): AuthSession solo expone { userId, token }.
+  // El refresh_token que devuelve token() se propaga al draft y luego al user
+  // store para renovar el access token ante un 401.
   // La invalidación de cache vive en onSuccess vía `invalidateUserScopedQueries`
   // (helper); react-doctor no la ve a través del wrapper → falso positivo.
   // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation

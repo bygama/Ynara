@@ -72,6 +72,14 @@ export function getBaseUrl(): string {
   return config.baseUrl;
 }
 
+function isApiOrigin(url: string): boolean {
+  try {
+    return new URL(url).origin === new URL(config.baseUrl).origin;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Adjunta `Authorization: Bearer <token>` a `headers` si hay sesión y el
  * `url` apunta a NUESTRA API (perímetro reglas #2/#4: el token nunca viaja a
@@ -82,7 +90,7 @@ export function getBaseUrl(): string {
  */
 export function applyAuthHeader(headers: Headers, url: string): void {
   if (headers.has("Authorization")) return;
-  if (!url.startsWith(config.baseUrl)) return;
+  if (!isApiOrigin(url)) return;
   const token = config.getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
 }
@@ -131,7 +139,7 @@ async function request<T>(
   // Bearer SOLO viaja a nuestra API. `skipAuth` lo omite explícitamente en
   // endpoints públicos (login/register).
   if (!init.skipAuth) {
-    if (overrideToken && url.startsWith(config.baseUrl)) {
+    if (overrideToken && isApiOrigin(url)) {
       headers.set("Authorization", `Bearer ${overrideToken}`);
     } else {
       applyAuthHeader(headers, url);
@@ -144,12 +152,7 @@ async function request<T>(
     body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
   });
 
-  if (
-    response.status === 401 &&
-    !init.skipAuth &&
-    !hadExplicitAuth &&
-    url.startsWith(config.baseUrl)
-  ) {
+  if (response.status === 401 && !init.skipAuth && !hadExplicitAuth && isApiOrigin(url)) {
     if (!retried) {
       const refreshedToken = await tryRefreshSession();
       if (refreshedToken) {

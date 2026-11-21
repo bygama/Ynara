@@ -23,17 +23,17 @@ import { useUserStore } from "@/stores/user";
 export default function OnboardingLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const completed = useUserStore((s) => s.onboardingCompleted);
+  const token = useUserStore((s) => s.token);
+  const hasActiveSession = completed && token !== null;
 
   useEffect(() => {
-    // Completo → directo a la home real; `/hoy` exige onboardingCompleted, así
-    // que no rebota (evita el salto extra por `/`).
-    // Guard client-only: `completed` (zustand/localStorage) no existe en el
-    // server; un redirect SSR no puede evaluar esta condición.
+    // Completo y con sesión activa → directo a `/hoy` (misma condición que
+    // `(app)/layout.tsx`, evitando loops si `token` se limpió).
     // react-doctor-disable-next-line react-doctor/nextjs-no-client-side-redirect
-    if (completed) router.replace("/hoy");
-  }, [completed, router]);
+    if (hasActiveSession) router.replace("/hoy");
+  }, [hasActiveSession, router]);
 
-  if (completed) return null;
+  if (hasActiveSession) return null;
 
   return (
     <div className="relative isolate flex min-h-screen flex-col">

@@ -84,9 +84,8 @@ export async function refreshAuthToken(refreshToken: string): Promise<TokenRespo
  *
  * Con el Bearer del access token el backend revoca la FAMILIA entera (vía el claim
  * `sid`): el access actual y cualquier access/refresh hermano dejan de servir
- * aunque no hayan expirado. NO se manda el refresh token en el body: la
- * family-revocation por `sid` ya lo cubre, así que el cliente no necesita persistir
- * el refresh (menos superficie de XSS).
+ * aunque no hayan expirado. NO hace falta mandar el refresh token en el body: la
+ * family-revocation por `sid` ya lo cubre.
  *
  * Best-effort por diseño: el caller la dispara fire-and-forget y limpia el estado
  * local igual si esto falla (sin revocación, el token expira solo). El token va

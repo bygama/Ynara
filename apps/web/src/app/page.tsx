@@ -18,13 +18,15 @@ import { useUserStore } from "@/stores/user";
 export default function RootPage() {
   const router = useRouter();
   const completed = useUserStore((s) => s.onboardingCompleted);
+  const token = useUserStore((s) => s.token);
+  const hasActiveSession = completed && token !== null;
 
   useEffect(() => {
     // Guard de auth/onboarding: depende de estado client-only (zustand persistido
-    // en localStorage). Un redirect server-side no puede leer ese flag.
+    // en sessionStorage). Mismo criterio que `(app)/layout.tsx` y `onboarding/layout.tsx`.
     // react-doctor-disable-next-line react-doctor/nextjs-no-client-side-redirect
-    router.replace(completed ? "/hoy" : "/onboarding");
-  }, [completed, router]);
+    router.replace(hasActiveSession ? "/hoy" : "/onboarding");
+  }, [hasActiveSession, router]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg-canvas)]">
