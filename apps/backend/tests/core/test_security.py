@@ -66,7 +66,10 @@ def test_token_carries_extra_claims(patched_settings: Settings) -> None:
 
 def test_tampered_token_rejected(patched_settings: Settings) -> None:
     token = create_access_token("user-123")
-    tampered = token[:-2] + ("aa" if not token.endswith("aa") else "bb")
+    header, payload, signature = token.split(".")
+    mid = len(signature) // 2
+    flipped = "A" if signature[mid] != "A" else "B"
+    tampered = f"{header}.{payload}.{signature[:mid]}{flipped}{signature[mid + 1 :]}"
     with pytest.raises(InvalidTokenError):
         verify_access_token(tampered)
 
