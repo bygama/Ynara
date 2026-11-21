@@ -46,7 +46,7 @@ const TEXT_SIZE_OPTIONS: readonly { value: TextSize; label: string }[] = [
  * - **Retención**: días de retención de memoria sensible (ChipGroup 30/90/180/365).
  * - **Memoria**: links a /memoria y /buscar, export JSON, borrar toda la memoria.
  * - **Accesibilidad**: textSize / highContrast / motion (espeja A11yStep).
- * - **Cuenta**: cerrar sesión (→ store.reset() + /onboarding).
+ * - **Cuenta**: cerrar sesión (→ clearMobileSession + /welcome).
  */
 export function TuScreen() {
   const router = useRouter();
