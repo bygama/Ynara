@@ -25,6 +25,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.enums import Mode
 from app.llm.clients.embedding import EmbeddingClient
 from app.llm.clients.reranker import Reranker
 from app.llm.config import ModeConfig
@@ -32,6 +33,7 @@ from app.llm.schemas import ChatMessage, ToolSpec
 from app.llm.tools.agent_registry import build_chat_tool_registry
 from app.llm.tools.memory import memory_registry
 from app.llm.tools.registry import ToolRegistry
+from app.memory.audit import AuditStore
 from app.memory.episodic import EpisodicMemoryStore
 from app.memory.procedural import ProceduralMemoryStore
 from app.memory.semantic import SemanticMemoryStore
@@ -294,7 +296,10 @@ def build_memory_context(
 
     mem_reg: ToolRegistry | None = None
     if semantic_store is not None:
-        mem_reg = memory_registry(semantic_store)
+        origin_mode = Mode(mode_cfg.name) if mode_cfg.name in Mode._value2member_map_ else None
+        mem_reg = memory_registry(
+            semantic_store, audit_store=AuditStore(session, user_id), origin_mode=origin_mode
+        )
 
     return MemoryContext(
         semantic_store=semantic_store,

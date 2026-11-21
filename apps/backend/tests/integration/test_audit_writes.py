@@ -667,3 +667,58 @@ async def test_record_without_origin_model_id_leaves_it_null(db_session: AsyncSe
     assert len(rows) == 1
     assert rows[0].origin_model_id is None
     assert rows[0].origin_model is None
+
+
+@pytest.mark.integration
+async def test_memory_tools_update_and_delete_write_audit_rows(db_session: AsyncSession) -> None:
+    """``memory.update`` y ``memory.delete`` via ``build_memory_context`` auditan en DB."""
+    from app.llm.config import load_llm_config
+    from app.llm.context import build_memory_context
+
+    user = await _seed_user(db_session)
+    embedder = FakeEmbeddingClient()
+    reranker = FakeReranker()
+    mode_cfg = load_llm_config().modes["memoria"]
+    ctx = build_memory_context(
+        session=db_session,
+        user_id=user.id,
+        embedder=embedder,
+        reranker=reranker,
+        mode_cfg=mode_cfg,
+    )
+    assert ctx.semantic_store is not None
+    _, mem_reg = ctx.registries
+    assert mem_reg is not None
+
+    created = await ctx.semantic_store.add(SemanticMemoryCreate(content="dato inicial"))
+
+    upd = await mem_reg.execute(
+        "memory.update",
+        {"id": str(created.id), "content": "dato editado", "confirmed": True},
+    )
+    assert "error" not in upd
+
+    dele = await mem_reg.execute(
+        "memory.delete",
+        {"id": str(created.id), "confirmed": True},
+    )
+    assert dele == {"deleted": True, "id": str(created.id)}
+
+    rows = await _fetch_audit_rows(db_session, user.id)
+    assert len(rows) == 2
+    by_op = {r.operation: r for r in rows}
+    assert set(by_op) == {AuditOperation.UPDATE, AuditOperation.DELETE}
+
+    upd_row = by_op[AuditOperation.UPDATE]
+    assert upd_row.target_layer == MemoryLayer.SEMANTIC
+    assert upd_row.target_id == created.id
+    assert upd_row.origin_tool == "memory.update"
+    assert upd_row.origin_mode == Mode.MEMORIA
+    assert upd_row.record_hash == _sha256("dato editado")
+
+    del_row = by_op[AuditOperation.DELETE]
+    assert del_row.target_layer == MemoryLayer.SEMANTIC
+    assert del_row.target_id == created.id
+    assert del_row.origin_tool == "memory.delete"
+    assert del_row.origin_mode == Mode.MEMORIA
+    assert del_row.record_hash == _sha256(str(created.id))

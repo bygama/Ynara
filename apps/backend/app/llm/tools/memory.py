@@ -27,12 +27,15 @@ from uuid import UUID
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, ValidationError
 
+from app.enums import AuditOperation, MemoryLayer, Mode
 from app.llm.tools.base import (
     first_validation_error,
     tool_error,
     tool_schema,
 )
 from app.llm.tools.registry import ToolRegistry
+from app.memory.audit import AuditStore
+from app.memory.hashing import compute_record_hash
 from app.memory.semantic import SemanticMemoryStore
 from app.schemas.memory import SemanticMemoryOut
 
@@ -242,8 +245,16 @@ class MemoryUpdateTool:
         "Requiere confirmed=true solo después de que el usuario haya confirmado el cambio."
     )
 
-    def __init__(self, store: SemanticMemoryStore) -> None:
+    def __init__(
+        self,
+        store: SemanticMemoryStore,
+        *,
+        audit_store: AuditStore | None = None,
+        origin_mode: Mode | None = None,
+    ) -> None:
         self._store = store
+        self._audit_store = audit_store
+        self._origin_mode = origin_mode
 
     @property
     def parameters(self) -> dict[str, object]:
@@ -274,6 +285,16 @@ class MemoryUpdateTool:
         result = await self._store.update(memory_id, validated.content)
         if result is None:
             return tool_error("not_found", f"memoria '{validated.id}' no encontrada")
+        if self._audit_store is not None:
+            await self._audit_store.record(
+                operation=AuditOperation.UPDATE,
+                target_layer=MemoryLayer.SEMANTIC,
+                target_id=result.id,
+                record_hash=compute_record_hash(validated.content),
+                origin_mode=self._origin_mode,
+                origin_tool=self.name,
+                sensitive=False,
+            )
         # Proyectar (igual que memory.search): el modelo NUNCA ve user_id,
         # source_session_id ni timestamps (regla #4). Antes esto devolvia el
         # model_dump completo y filtraba esa metadata interna al LLM.
@@ -294,8 +315,16 @@ class MemoryDeleteTool:
         "Requiere confirmed=true solo después de que el usuario haya confirmado el borrado."
     )
 
-    def __init__(self, store: SemanticMemoryStore) -> None:
+    def __init__(
+        self,
+        store: SemanticMemoryStore,
+        *,
+        audit_store: AuditStore | None = None,
+        origin_mode: Mode | None = None,
+    ) -> None:
         self._store = store
+        self._audit_store = audit_store
+        self._origin_mode = origin_mode
 
     @property
     def parameters(self) -> dict[str, object]:
@@ -326,6 +355,16 @@ class MemoryDeleteTool:
         deleted = await self._store.delete(memory_id)
         if not deleted:
             return tool_error("not_found", f"memoria '{validated.id}' no encontrada")
+        if self._audit_store is not None:
+            await self._audit_store.record(
+                operation=AuditOperation.DELETE,
+                target_layer=MemoryLayer.SEMANTIC,
+                target_id=memory_id,
+                record_hash=compute_record_hash(str(memory_id)),
+                origin_mode=self._origin_mode,
+                origin_tool=self.name,
+                sensitive=False,
+            )
         return {"deleted": True, "id": validated.id}
 
 
@@ -334,7 +373,12 @@ class MemoryDeleteTool:
 # ---------------------------------------------------------------------------
 
 
-def memory_registry(semantic_store: SemanticMemoryStore) -> ToolRegistry:
+def memory_registry(
+    semantic_store: SemanticMemoryStore,
+    *,
+    audit_store: AuditStore | None = None,
+    origin_mode: Mode | None = None,
+) -> ToolRegistry:
     """Registry con las 4 memory tools ligadas a ``semantic_store``.
 
     NO toca ``default_registry()``: se construye aparte y se combina en el
@@ -344,7 +388,7 @@ def memory_registry(semantic_store: SemanticMemoryStore) -> ToolRegistry:
         [
             MemorySearchTool(semantic_store),
             MemoryAddTool(semantic_store),
-            MemoryUpdateTool(semantic_store),
-            MemoryDeleteTool(semantic_store),
+            MemoryUpdateTool(semantic_store, audit_store=audit_store, origin_mode=origin_mode),
+            MemoryDeleteTool(semantic_store, audit_store=audit_store, origin_mode=origin_mode),
         ]
     )

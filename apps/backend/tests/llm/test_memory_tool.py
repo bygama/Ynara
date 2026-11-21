@@ -16,10 +16,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
 
+from app.enums import AuditOperation, MemoryLayer, Mode
 from app.llm.tools.memory import (
     MemoryAddTool,
     MemoryDeleteTool,
@@ -27,6 +29,7 @@ from app.llm.tools.memory import (
     MemoryUpdateTool,
     memory_registry,
 )
+from app.memory.hashing import compute_record_hash
 from app.schemas.memory import SemanticMemoryOut
 
 # ---------------------------------------------------------------------------
@@ -338,11 +341,44 @@ class TestMemoryUpdate:
 
     async def test_store_returns_none_yields_not_found(self) -> None:
         store = FakeSemanticStore(update_result=None)
-        tool = MemoryUpdateTool(store)
+        audit = AsyncMock()
+        tool = MemoryUpdateTool(store, audit_store=audit)
 
         result = await tool.execute({"id": str(uuid4()), "content": "x", "confirmed": True})
 
         assert result["error"]["code"] == "not_found"  # type: ignore[index]
+        audit.record.assert_not_awaited()
+
+    async def test_update_records_audit_row_when_confirmed(self) -> None:
+        mem_id = uuid4()
+        out = _make_out("dato nuevo", memory_id=mem_id)
+        store = FakeSemanticStore(update_result=out)
+        audit = AsyncMock()
+        tool = MemoryUpdateTool(store, audit_store=audit, origin_mode=Mode.PRODUCTIVIDAD)
+
+        result = await tool.execute({"id": str(mem_id), "content": "dato nuevo", "confirmed": True})
+
+        assert "error" not in result
+        audit.record.assert_awaited_once_with(
+            operation=AuditOperation.UPDATE,
+            target_layer=MemoryLayer.SEMANTIC,
+            target_id=mem_id,
+            record_hash=compute_record_hash("dato nuevo"),
+            origin_mode=Mode.PRODUCTIVIDAD,
+            origin_tool="memory.update",
+            sensitive=False,
+        )
+
+    async def test_update_does_not_audit_when_confirmation_required(self) -> None:
+        mem_id = uuid4()
+        store = FakeSemanticStore(update_result=_make_out("x", memory_id=mem_id))
+        audit = AsyncMock()
+        tool = MemoryUpdateTool(store, audit_store=audit)
+
+        result = await tool.execute({"id": str(mem_id), "content": "x"})
+
+        assert result["status"] == "confirmation_required"
+        audit.record.assert_not_awaited()
 
     async def test_invalid_uuid_returns_invalid_arguments(self) -> None:
         store = FakeSemanticStore()
@@ -419,11 +455,43 @@ class TestMemoryDelete:
 
     async def test_store_returns_false_yields_not_found(self) -> None:
         store = FakeSemanticStore(delete_result=False)
-        tool = MemoryDeleteTool(store)
+        audit = AsyncMock()
+        tool = MemoryDeleteTool(store, audit_store=audit)
 
         result = await tool.execute({"id": str(uuid4()), "confirmed": True})
 
         assert result["error"]["code"] == "not_found"  # type: ignore[index]
+        audit.record.assert_not_awaited()
+
+    async def test_delete_records_audit_row_when_confirmed(self) -> None:
+        mem_id = uuid4()
+        store = FakeSemanticStore(delete_result=True)
+        audit = AsyncMock()
+        tool = MemoryDeleteTool(store, audit_store=audit, origin_mode=Mode.MEMORIA)
+
+        result = await tool.execute({"id": str(mem_id), "confirmed": True})
+
+        assert result == {"deleted": True, "id": str(mem_id)}
+        audit.record.assert_awaited_once_with(
+            operation=AuditOperation.DELETE,
+            target_layer=MemoryLayer.SEMANTIC,
+            target_id=mem_id,
+            record_hash=compute_record_hash(str(mem_id)),
+            origin_mode=Mode.MEMORIA,
+            origin_tool="memory.delete",
+            sensitive=False,
+        )
+
+    async def test_delete_does_not_audit_when_confirmation_required(self) -> None:
+        mem_id = uuid4()
+        store = FakeSemanticStore(delete_result=True)
+        audit = AsyncMock()
+        tool = MemoryDeleteTool(store, audit_store=audit)
+
+        result = await tool.execute({"id": str(mem_id)})
+
+        assert result["status"] == "confirmation_required"
+        audit.record.assert_not_awaited()
 
     async def test_invalid_uuid_returns_invalid_arguments(self) -> None:
         store = FakeSemanticStore()
