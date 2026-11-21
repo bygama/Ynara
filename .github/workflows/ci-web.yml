@@ -49,15 +49,11 @@ jobs:
       # src/lib/env.ts valida NEXT_PUBLIC_API_URL con Zod en import time:
       # sin una URL válida, next build falla fail-fast (hoy el schema trae
       # default, el dummy explícito protege si ese default se quita).
-      # AUTH_SECRET y NEXTAUTH_URL anticipan el cableado de Auth.js v5
-      # (la dep está instalada pero aún sin uso); cuando se configure,
-      # el build los va a necesitar. NEXT_PUBLIC_ENABLE_MOCKS=false deja
-      # los mocks de MSW apagados en builds que no son development (en
-      # production están siempre off, ver apps/web/.env.example).
+      # NEXT_PUBLIC_ENABLE_MOCKS=false deja los mocks de MSW apagados en builds
+      # que no son development (en production están siempre off, ver
+      # apps/web/.env.example).
       NEXT_PUBLIC_API_URL: http://localhost:8080
       NEXT_PUBLIC_ENABLE_MOCKS: 'false'
-      AUTH_SECRET: ci-test-auth-secret-not-for-production-use
-      NEXTAUTH_URL: http://localhost:3000
     steps:
       - uses: actions/checkout@v4
 

@@ -191,7 +191,7 @@ Ya está hecho; queda como línea de base.
 
 ### 2.6 Limpieza
 
-- [ ] **CON-19 · Hallazgo de web.**
+- [x] **CON-19 · Hallazgo de web.**
       Detalle reservado: se gestiona por el canal privado de `SECURITY.md`.
 - [ ] **CON-20 · Mocks muertos en web.** Handlers para `/v1/auth/signup` y
       `/v1/auth/login` (no existen); `POST /v1/onboarding` no tiene mock y sale al

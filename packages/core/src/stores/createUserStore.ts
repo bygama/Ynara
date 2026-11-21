@@ -8,7 +8,7 @@ import type { Dedication } from "../features/onboarding/store";
 
 /**
  * Store del perfil de usuario, compartido web + mobile (ADR-012). El storage
- * del `persist` se inyecta: web pasa un storage sobre `localStorage`, mobile
+ * del `persist` se inyecta: web pasa un storage sobre `sessionStorage`, mobile
  * uno sobre `expo-secure-store` (regla #5: el token JWT va a SecureStore).
  *
  * El tipo del modo es `Mode` de @ynara/shared-schemas (la unión canónica
