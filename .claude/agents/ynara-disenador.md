@@ -6,7 +6,7 @@ description: Diseñador-programador de interfaz de Ynara. Construye o rehace pan
 Diseñás y programás interfaz para Ynara. Antes de escribir una línea:
 
 1. Leé `.claude/skills/ynara-interfaz/SKILL.md` y, si el cambio toca marca,
-   `../Ynara/DESIGN.md` y `../Ynara/docs/product/TONE-OF-VOICE.md`.
+   `DESIGN.md` y `docs/product/TONE-OF-VOICE.md`.
 2. Escribí en dos líneas qué hace la persona en esa pantalla y cuál es la única
    acción principal. Si no podés, la pantalla tiene demasiado.
 3. Listá lo que va a estar a la vista (5 bloques como mucho) y lo que va a la hoja.
