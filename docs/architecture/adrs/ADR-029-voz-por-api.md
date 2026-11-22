@@ -66,11 +66,11 @@ producto consume esos endpoints; la Web Speech API no se usa en el producto.
 El proveedor de voz **todavía no está elegido**. Rigen las compuertas de la
 regla #4b: para datos reales de usuarios, solo proveedores con DPA y cláusulas
 modelo de la AAIP firmadas (Ley 25.326) que no entrenen con los datos; hasta
-cerrar esa elección, pruebas y evaluación solo con datos sintéticos y
-proveedores que no entrenen con los datos. Puede ser el mismo proveedor del LLM
-si cubre audio, o uno dedicado — se decide junto con la elección de proveedor
-de ADR-028. Mientras tanto, la voz de la demo sigue siendo una demostración y
-se presenta como tal.
+cerrar las compuertas de ADR-028, pruebas y evaluación solo con datos
+sintéticos y proveedores que no entrenen con los datos. Puede ser el mismo
+proveedor del LLM si cubre audio, o uno dedicado — se decide junto con la
+elección de proveedor de ADR-028. Mientras tanto, la voz de la demo sigue
+siendo una demostración y se presenta como tal.
 
 ## Consecuencias positivas
 
