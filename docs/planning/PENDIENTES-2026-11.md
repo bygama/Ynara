@@ -425,7 +425,7 @@ des-encajonado, calma con alma").
       el mismo nombre (Button, Card, ChipGroup, Sheet, Toast, LivingField,
       YnaraMark, YnaraOrb, YnaraWordmark, ModeChip, `modes.ts`…). Cambio: moverlos
       a `packages/ui`, que hoy solo tiene íconos y presets de motion. [V]
-- [ ] **EST-03 · `DESIGN.md` desactualizado.** Dice que Agenda y Tú no existen,
+- [x] **EST-03 · `DESIGN.md` desactualizado.** Dice que Agenda y Tú no existen,
       que el tema no sigue al sistema y que faltan tokens de duración; el código
       ya tiene las tres cosas (`stores/theme.ts` soporta `system`,
       `globals.css:176-181`). [V]
@@ -456,7 +456,7 @@ Varios ítems de la sección 8 quedan absorbidos acá; se indica en cada uno.
 
 ### 9.1 Decisiones previas (humano)
 
-- [ ] **TES-01 · Adoptar la dirección de la demo como `DESIGN.md` v5.** Reescribir
+- [x] **TES-01 · Adoptar la dirección de la demo como `DESIGN.md` v5.** Reescribir
       `DESIGN.md` con: tres tamaños de texto, dos pesos, escala de espacios
       4·8·16·24·40·64, una columna de 560 px, estructura de aplicación y reglas
       de movimiento. Reemplaza EST-03. [V]
