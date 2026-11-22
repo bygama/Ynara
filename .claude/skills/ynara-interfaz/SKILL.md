@@ -10,8 +10,8 @@ Su mundo visual es **claro, editorial y sereno**, «calma con alma». Lo contrar
 del cliché tecnológico (negro, neón, tablero lleno).
 
 Fuentes de verdad (leerlas si hay duda, ganan sobre este archivo):
-`../Ynara/DESIGN.md`, `../Ynara/IDENTITY.md`, `../Ynara/docs/product/TONE-OF-VOICE.md`,
-`../Ynara/docs/brand/Ynara-Universo-de-Marca.html`, `../Ynara/apps/web/src/app/globals.css`.
+`DESIGN.md`, `IDENTITY.md`, `docs/product/TONE-OF-VOICE.md`,
+`docs/brand/Ynara-Universo-de-Marca.html`, `apps/web/src/app/globals.css`.
 
 ## 1. Marca: lo que no se negocia
 
