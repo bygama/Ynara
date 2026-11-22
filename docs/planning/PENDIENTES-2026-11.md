@@ -582,7 +582,7 @@ Estado: **no existe en la tesis.** No hay reconocimiento ni síntesis de voz en
 resultados). La auditoría de mercado la lista como idea de roadmap. La demo la
 simula con la Web Speech API del navegador.
 
-- [ ] **VOZ-01 · Decidir la arquitectura (ADR nuevo).** La Web Speech API manda
+- [x] **VOZ-01 · Decidir la arquitectura (ADR nuevo).** La Web Speech API manda
       el audio a los servidores del fabricante del navegador, lo que contradice
       «on-prem» (PROM-02), y no garantiza voces en español. Evaluar
       reconocimiento y síntesis locales en el servidor de inferencia. [I]
