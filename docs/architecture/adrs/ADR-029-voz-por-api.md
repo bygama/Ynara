@@ -64,12 +64,13 @@ producto consume esos endpoints; la Web Speech API no se usa en el producto.
 ### D5 — Mismas compuertas que ADR-028
 
 El proveedor de voz **todavía no está elegido**. Rigen las compuertas de la
-regla #4b: para datos reales, solo proveedores con DPA y cláusulas modelo de la
-AAIP firmadas (Ley 25.326) que no entrenen con los datos; hasta cerrar esa
-elección, pruebas y evaluación solo con datos sintéticos. Puede ser el mismo
-proveedor del LLM si cubre audio, o uno dedicado — se decide junto con la
-elección de proveedor de ADR-028. Mientras tanto, la voz de la demo sigue
-siendo una demostración y se presenta como tal.
+regla #4b: para datos reales de usuarios, solo proveedores con DPA y cláusulas
+modelo de la AAIP firmadas (Ley 25.326) que no entrenen con los datos; hasta
+cerrar esa elección, pruebas y evaluación solo con datos sintéticos y
+proveedores que no entrenen con los datos. Puede ser el mismo proveedor del LLM
+si cubre audio, o uno dedicado — se decide junto con la elección de proveedor
+de ADR-028. Mientras tanto, la voz de la demo sigue siendo una demostración y
+se presenta como tal.
 
 ## Consecuencias positivas
 
@@ -101,3 +102,8 @@ siendo una demostración y se presenta como tal.
 - **Dejar la voz fuera de la tesis.** Era la opción barata, pero la voz es
   parte central de la experiencia que la demo propone; se decidió cumplirla,
   no retirarla.
+
+## Relación con otros ADRs
+
+- **Extiende** [ADR-028](./ADR-028-inferencia-por-api.md): la arquitectura de
+  proveedores por API cubre también el audio.
