@@ -16,6 +16,7 @@ docs/
 ├── operations/        # Instalación, deploy, runbook, migraciones
 ├── conventions/       # Commits, glosario, AI guidelines, code style
 ├── planning/          # Roadmaps, planes operativos y bitácoras de sesión
+├── prototypes/        # Prototipos navegables (demo de la experiencia, sin build)
 └── compliance/        # Cumplimiento: privacidad, protección de datos (README antes del PDF)
 ```
 

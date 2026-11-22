@@ -1,0 +1,719 @@
+/* Ynara — demo. Una columna, tres tamaños de texto, un acento.
+   La firma es el diamante (presencia); el día se dibuja como un hilo de nodos.
+   Reglas: .claude/skills/ynara-interfaz/SKILL.md */
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-padding-top: var(--top-h); }
+body { margin: 0; min-height: 100dvh; background: var(--bg); color: var(--ink); font: 400 var(--fs-body)/1.5 var(--font-body); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+h1, h2, p { margin: 0; }
+h1, h2 { font-family: var(--font-display); font-weight: 600; color: var(--ink-deep); letter-spacing: -0.03em; line-height: 1.08; text-wrap: balance; }
+h1 { font-size: var(--fs-title); }
+h2 { font-size: var(--fs-sub); letter-spacing: -0.02em; line-height: 1.2; }
+h1 em { font-style: normal; color: var(--accent-text); }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit; -webkit-tap-highlight-color: transparent; }
+a { color: inherit; text-decoration: none; }
+:focus { outline: none; }
+:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent-text); border-radius: 6px; }
+::selection { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+[hidden] { display: none !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.skip-link { position: fixed; top: 8px; left: 8px; z-index: 100; padding: 8px 16px; background: var(--accent); color: var(--on-accent); border-radius: var(--r-pill); transform: translateY(-200%); }
+.skip-link:focus { transform: none; }
+.icon { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.muted, .eyebrow, .lede, .note, .row-sub { color: var(--ink-soft); }
+.eyebrow, .note, .row-sub, .small { font-size: var(--fs-small); }
+.tnum, .hilo time, .week b { font-variant-numeric: tabular-nums; }
+
+/* ───────── Fondo: red de memoria ───────── */
+#field { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+#app { position: relative; z-index: 1; }
+
+/* ───────── El diamante: presencia de Ynara ───────── */
+.dia { --d: 12px; position: relative; display: inline-block; flex: none; width: var(--d); height: var(--d); border-radius: 22%; background: var(--mode-vis); transform: rotate(45deg); transition: background-color 400ms var(--ease); }
+.dia::after { content: ""; position: absolute; inset: -90%; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--mode-vis) 34%, transparent), transparent); animation: late 4.2s ease-in-out infinite; }
+@keyframes late { 0%, 100% { opacity: 0.35; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.15); } }
+.orb { --size: 28px; display: grid; place-items: center; width: var(--size); height: var(--size); flex: none; }
+.orb i { display: none; }
+.orb b { width: 38%; height: 38%; border-radius: 22%; background: var(--mode-vis); transform: rotate(45deg); }
+.orb.thinking b { animation: piensa 1.5s ease-in-out infinite; }
+@keyframes piensa { 0%, 100% { transform: rotate(45deg) scale(0.8); opacity: 0.5; } 50% { transform: rotate(45deg) scale(1.15); opacity: 1; } }
+
+/* ───────── Cabecera ───────── */
+.top { position: fixed; inset: 0 0 auto; z-index: 20; height: var(--top-h); display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 var(--s4); background: var(--bg); }
+.brand { display: inline-flex; align-items: center; gap: var(--s2); justify-self: start; font: 600 1rem var(--font-display); letter-spacing: -0.02em; color: var(--ink-deep); }
+.nav { position: relative; display: flex; }
+.nav a { display: grid; place-items: center; height: 44px; padding: 0 12px; color: var(--ink-soft); transition: color var(--t-fast) var(--ease); }
+.nav a[aria-current="page"] { color: var(--ink-deep); }
+.nav-ind { position: absolute; left: 0; bottom: 6px; width: 100px; height: 2px; background: var(--ink-deep); border-radius: 2px; transform-origin: 0 50%; transform: translateX(var(--x, 0px)) scaleX(var(--w, 0)); transition: transform 300ms var(--ease); }
+.top-end { justify-self: end; display: flex; align-items: center; gap: var(--s2); }
+.mode-btn { display: inline-flex; align-items: center; gap: 10px; height: 44px; padding: 0 12px; color: var(--ink-soft); font-size: var(--fs-small); border-radius: var(--r-pill); }
+.avatar { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--soft); color: var(--ink-deep); font: 600 0.875rem var(--font-display); box-shadow: 0 0 0 6px transparent; }
+.avatar[aria-current="page"] { background: var(--ink-deep); color: var(--bg); }
+
+/* ───────── Página ───────── */
+main { padding: calc(var(--top-h) + var(--s5)) 0 calc(var(--dock-h) + var(--s6) + var(--s4)); }
+.col { width: min(var(--col), 100% - 2 * var(--s3)); margin-inline: auto; display: grid; gap: var(--s5); }
+.head { display: grid; gap: var(--s2); }
+.block { display: grid; gap: var(--s2); }
+.block > .eyebrow { margin-bottom: var(--s1); }
+main.enter .col > * { animation: fundido var(--t-screen) var(--ease) both; }
+main.enter .col > :nth-child(2) { animation-delay: 40ms; }
+main.enter .col > :nth-child(3) { animation-delay: 80ms; }
+main.enter .col > :nth-child(4) { animation-delay: 120ms; }
+main.enter .col > :nth-child(n + 5) { animation-delay: 160ms; }
+@keyframes entra { from { opacity: 0; transform: translateY(8px); } }
+
+/* ───────── Botones y campos ───────── */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--s2); min-height: 40px; padding: 0 18px; border-radius: var(--r-pill); font-weight: 600; white-space: nowrap; transition: transform 100ms var(--ease), background-color var(--t-fast) var(--ease); }
+.btn:active, .icon-btn:active, .send:active, .vbtn:active, .talk:active { transform: scale(0.96); }
+.btn-primary { background: var(--accent); color: var(--on-accent); }
+.btn-ghost { box-shadow: inset 0 0 0 1px var(--rule-strong); color: var(--ink-deep); }
+.btn-quiet { padding: 0 var(--s2); color: var(--ink-soft); }
+.btn-danger { color: var(--error); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--error) 40%, transparent); }
+.btn-sm { min-height: 32px; padding: 0 12px; font-size: var(--fs-small); }
+.btn-quiet.btn-sm { padding: 0 var(--s2); }
+.btn:disabled { opacity: 0.4; cursor: default; }
+.link-btn { color: var(--accent-text); font-weight: 600; min-height: 32px; }
+.icon-btn { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; color: var(--ink-soft); flex: none; transition: transform 100ms var(--ease), background-color var(--t-fast) var(--ease); }
+.icon-btn.sm { width: 32px; height: 32px; }
+.icon-btn.sm .icon { width: 16px; height: 16px; }
+.icon-btn[aria-pressed="true"], .icon-btn.done { color: var(--accent-text); }
+.input, .textarea { width: 100%; min-height: 44px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--rule-strong); border-radius: var(--r); transition: border-color var(--t-fast) var(--ease); }
+.input:focus, .textarea:focus { border-color: var(--accent-text); box-shadow: none; }
+select.input { padding-right: 8px; }
+.field { display: grid; gap: 6px; }
+.field label { font-size: var(--fs-small); color: var(--ink-soft); }
+.chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.chip { display: inline-flex; align-items: center; gap: var(--s2); min-height: 36px; padding: 0 14px; border-radius: var(--r-pill); box-shadow: inset 0 0 0 1px var(--rule-strong); font-size: var(--fs-small); }
+.chip[aria-pressed="true"] { background: var(--ink-deep); color: var(--bg); box-shadow: none; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mode-vis); flex: none; }
+.tag { font-size: var(--fs-small); color: var(--ink-soft); }
+.tag + .tag::before { content: "· "; }
+.switch { position: relative; width: 44px; height: 26px; border-radius: var(--r-pill); background: var(--ink-faint); flex: none; transition: background-color var(--t) var(--ease); }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 0.2); transition: transform var(--t) var(--ease); }
+.switch[aria-checked="true"] { background: var(--accent); }
+.switch[aria-checked="true"]::after { transform: translateX(18px); }
+.seg { display: inline-flex; padding: 3px; border-radius: var(--r-pill); background: var(--soft); }
+.seg button { min-height: 32px; padding: 0 12px; border-radius: var(--r-pill); font-size: var(--fs-small); color: var(--ink-soft); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink-deep); box-shadow: 0 1px 2px rgb(36 44 63 / 0.12); }
+input[type="range"] { accent-color: var(--accent); width: 140px; }
+.empty { display: grid; gap: var(--s1); padding: var(--s3) 0; color: var(--ink-soft); }
+.empty b { color: var(--ink-deep); font-weight: 600; }
+
+/* ───────── El hilo: el día como vínculo con nodos ───────── */
+.hilo { position: relative; display: grid; }
+.hilo::before { content: ""; position: absolute; left: 65.5px; top: 24px; bottom: 24px; width: 1px; background: var(--rule-strong); }
+.knot { position: relative; display: grid; grid-template-columns: 48px 20px minmax(0, 1fr); column-gap: var(--s2); align-items: start; width: calc(100% + 16px); margin-inline: -8px; padding: 10px 8px; min-height: 44px; border-radius: 10px; }
+.knot time { color: var(--ink-soft); font-size: var(--fs-small); line-height: 1.5rem; }
+.knot i { justify-self: center; margin-top: 7px; width: 10px; height: 10px; border-radius: 50%; background: var(--bg); border: 1.5px solid var(--c, var(--ink-soft)); transition: transform var(--t) var(--ease), background-color var(--t) var(--ease); }
+.knot .what { display: grid; }
+.knot .what span { color: var(--ink-soft); font-size: var(--fs-small); }
+.knot.past time, .knot.past .what { opacity: 0.5; }
+.knot.past i { background: var(--ink-faint); border-color: transparent; }
+.knot.live i { background: var(--c, var(--accent)); }
+.knot.now { align-items: start; }
+.knot.now .dia { justify-self: center; margin-top: 6px; z-index: 1; box-shadow: 0 0 0 5px var(--bg); }
+.knot.now time { color: var(--mode-vis); font-weight: 600; }
+.knot.now p { color: var(--ink-deep); }
+.knot .acts { display: flex; gap: var(--s3); margin-top: var(--s1); }
+
+/* ───────── Listas ───────── */
+.rows { display: grid; }
+.row, .task, .mem, .set, .prompt { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 10px 0; border-bottom: 1px solid var(--rule); width: 100%; }
+.rows > :last-child, .mems > :last-child, .prompt-grid > :last-child { border-bottom: 0; }
+.row-main { flex: 1; min-width: 0; display: grid; }
+.row-title { color: var(--ink-deep); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arrow { color: var(--ink-muted); display: grid; opacity: 0; transform: translateX(-4px); transition: opacity var(--t-fast) var(--ease), transform var(--t-fast) var(--ease); }
+.check { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--ink-muted); flex: none; transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), transform 100ms var(--ease); }
+.check .icon { width: 12px; height: 12px; color: var(--on-accent); opacity: 0; transform: scale(0.6); transition: opacity var(--t-fast) var(--ease), transform var(--t) var(--ease); }
+.task:active .check { transform: scale(0.96); }
+.task[aria-pressed="true"] .check { background: var(--accent); border-color: var(--accent); }
+.task[aria-pressed="true"] .check .icon { opacity: 1; transform: none; }
+.task .row-title { position: relative; flex: 0 1 auto; transition: color var(--t) var(--ease); }
+.task .row-title::after { content: ""; position: absolute; left: 0; right: 0; top: 52%; height: 1px; background: currentColor; transform: scaleX(0); transform-origin: 0 50%; transition: transform 250ms var(--ease); }
+.task[aria-pressed="true"] .row-title { color: var(--ink-muted); }
+.task[aria-pressed="true"] .row-title::after { transform: scaleX(1); }
+.add { display: flex; align-items: center; gap: 12px; min-height: 48px; color: var(--ink-muted); }
+.add input { flex: 1; min-width: 0; background: none; border: 0; padding: 0; height: 44px; color: var(--ink); }
+.add input::placeholder, .dock input::placeholder, .composer textarea::placeholder, .input::placeholder { color: var(--ink-soft); opacity: 1; }
+.add .icon { width: 20px; height: 20px; }
+
+/* ───────── Semana ───────── */
+.week { display: grid; grid-template-columns: repeat(7, 1fr); }
+.day { display: grid; justify-items: center; gap: var(--s1); padding: var(--s2) 0; color: var(--ink-soft); font-size: var(--fs-small); }
+.day b { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; font: 400 1rem var(--font-body); color: var(--ink-deep); transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), transform 100ms var(--ease); }
+.day:active b { transform: scale(0.96); }
+.day[aria-pressed="true"] b { background: var(--ink-deep); color: var(--bg); }
+.day em { width: 4px; height: 4px; border-radius: 50%; }
+.day.has em { background: var(--ink-muted); }
+
+/* ───────── Memoria ───────── */
+.red { width: 100%; height: auto; display: block; overflow: visible; }
+.red line { stroke: rgb(var(--net) / 0.3); stroke-width: 1; transition: opacity var(--t) var(--ease); }
+.red .n { cursor: pointer; transition: opacity var(--t) var(--ease); }
+.red .n circle.hit { fill: transparent; }
+.red .n .p { fill: var(--c); transform-box: fill-box; transform-origin: center; transition: transform var(--t) var(--ease); }
+.red .n.on .p, .red .n:focus-visible .p { transform: scale(1.7); }
+.red .off { opacity: 0.15; }
+.tabs { display: flex; gap: var(--s1); margin-inline: -12px; }
+.tabs button { min-height: 40px; padding: 0 12px; border-radius: var(--r-pill); color: var(--ink-soft); }
+.tabs button[aria-pressed="true"] { color: var(--ink-deep); background: var(--soft); }
+.mems { display: grid; }
+.mem { align-items: flex-start; }
+.mem-body { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.mem-text { color: var(--ink-deep); }
+.mem .dot { margin-top: 8px; background: var(--c); transition: transform var(--t) var(--ease); }
+.mem.on .dot { transform: scale(1.7); }
+.quote { font: 400 var(--fs-sub)/1.4 var(--font-body); color: var(--ink-deep); }
+.source { display: grid; gap: 2px; }
+.banner { display: flex; align-items: center; gap: var(--s2); color: var(--ink-soft); font-size: var(--fs-small); }
+
+/* ───────── Tú ───────── */
+.set { justify-content: space-between; min-height: 56px; }
+.set > :first-child { min-width: 0; }
+.set .input { width: auto; max-width: 220px; min-height: 40px; }
+
+/* ───────── Campo inferior ───────── */
+.dock { position: fixed; left: 50%; bottom: var(--s4); z-index: 20; translate: -50% 0; display: flex; align-items: center; gap: var(--s1); width: min(var(--col), 100% - 2 * var(--s3)); height: var(--dock-h); padding: 0 6px 0 20px; background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-pill); box-shadow: var(--shadow); transition: border-color var(--t-fast) var(--ease); }
+.dock:focus-within { border-color: var(--rule-strong); }
+.dock input { flex: 1; min-width: 0; height: 100%; background: none; border: 0; padding: 0; }
+.dock .send { opacity: 0; transform: scale(0.9); visibility: hidden; }
+.dock.has-text .send { opacity: 1; transform: none; visibility: visible; }
+.send { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: var(--accent); color: var(--on-accent); flex: none; transition: opacity var(--t-fast) var(--ease), transform var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease); }
+.send:disabled { background: var(--soft); color: var(--ink-muted); cursor: default; }
+.talk { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; flex: none; transition: transform 100ms var(--ease), background-color var(--t-fast) var(--ease); }
+.talk .dia { --d: 13px; transition: transform var(--t) var(--ease), background-color 400ms var(--ease); }
+html.route-chat .dock { visibility: hidden; }
+
+/* ───────── Chat ───────── */
+.chat-wrap { height: 100dvh; margin: calc(-1 * (var(--top-h) + var(--s5))) 0 calc(-1 * (var(--dock-h) + var(--s6) + var(--s4))); padding-top: var(--top-h); display: grid; grid-template-rows: minmax(0, 1fr); }
+.chat { width: min(var(--col), 100% - 2 * var(--s3)); margin-inline: auto; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; }
+.chat-head { display: flex; align-items: center; gap: var(--s1); min-height: 48px; }
+.chat-head h1 { flex: 1; min-width: 0; font: 400 var(--fs-body) var(--font-body); letter-spacing: 0; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mode-chip { display: inline-flex; align-items: center; gap: var(--s2); padding: 0 var(--s2); font-size: var(--fs-small); color: var(--ink-soft); }
+.mode-chip b { font-weight: 400; }
+.thread { overflow-y: auto; padding: var(--s3) 0 var(--s4); display: flex; flex-direction: column; gap: var(--s4); scrollbar-width: thin; scrollbar-color: var(--ink-faint) transparent; }
+.thread:focus-visible { box-shadow: none; }
+.chat-empty { margin-block: auto; display: grid; gap: var(--s5); padding-block: var(--s4); }
+.chat-empty .eyebrow, .chat-empty .lede, .composer-hint, .prompt small, .prompt:nth-child(n + 5) { display: none; }
+.chat-empty .section { display: grid; gap: var(--s1); }
+.chat-empty .section > .eyebrow { display: block; }
+.prompt { justify-content: space-between; color: var(--ink-deep); }
+.msg { display: grid; gap: var(--s1); animation: entra var(--t-screen) var(--ease) both; }
+.msg.user { justify-items: end; }
+.msg.user .bubble { max-width: 85%; padding: 10px 16px; background: var(--soft); border-radius: 18px 18px 4px 18px; color: var(--ink-deep); }
+.msg.ai { grid-template-columns: 28px minmax(0, 1fr); gap: var(--s2); align-items: start; }
+.msg.ai .orb { margin-top: -2px; }
+.via { display: inline-flex; align-items: center; gap: var(--s1); font-size: var(--fs-small); color: var(--ink-muted); }
+.via .icon { width: 14px; height: 14px; }
+.prose { display: grid; gap: var(--s2); max-width: 62ch; }
+.prose p, .prose ul { margin: 0; }
+.prose ul { padding-left: 1.2em; display: grid; gap: var(--s1); }
+.prose strong { font-weight: 600; color: var(--ink-deep); }
+.prose blockquote { margin: 0; padding-left: var(--s3); border-left: 2px solid var(--mode-vis); color: var(--ink-deep); }
+.caret::after { content: ""; display: inline-block; width: 7px; height: 7px; margin-left: 4px; border-radius: 22%; background: var(--mode-vis); transform: rotate(45deg); }
+.mode-note { display: inline-flex; align-items: center; gap: var(--s2); font-size: var(--fs-small); color: var(--ink-soft); }
+.act { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r); }
+.act > div:nth-child(2) { flex: 1; min-width: 0; }
+.act-ico { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--soft); color: var(--accent-text); flex: none; }
+.act-ico .icon { width: 16px; height: 16px; }
+.act-kind, .act-sub { font-size: var(--fs-small); color: var(--ink-soft); }
+.act-title { color: var(--ink-deep); font-weight: 600; }
+.act-btns { display: flex; gap: var(--s1); }
+.act.undone { opacity: 0.55; }
+.act.undone .act-title { text-decoration: line-through; }
+.act-list { display: grid; }
+.tl-item { display: grid; grid-template-columns: 48px 12px minmax(0, 1fr); gap: var(--s2); align-items: baseline; padding: 6px 0; }
+.tl-time, .tl-sub { font-size: var(--fs-small); color: var(--ink-soft); }
+.tl-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--accent)); }
+.help-card { display: grid; gap: var(--s2); padding: var(--s3); background: var(--soft); border-radius: var(--r); }
+.cites { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.cite { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 32px; padding: 0 12px; border-radius: var(--r-pill); box-shadow: inset 0 0 0 1px var(--rule-strong); font-size: var(--fs-small); color: var(--ink-soft); }
+.cite span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cite .icon { width: 14px; height: 14px; }
+.msg-tools { display: flex; margin-left: -8px; opacity: 0.55; transition: opacity var(--t-fast) var(--ease); }
+.composer-wrap { padding: var(--s2) 0 var(--s4); }
+.composer { display: flex; align-items: flex-end; gap: var(--s1); padding: 5px 6px 5px 20px; background: var(--surface); border: 1px solid var(--rule); border-radius: 26px; box-shadow: var(--shadow); }
+.composer textarea { flex: 1; min-width: 0; resize: none; background: none; border: 0; padding: 8px 0; max-height: 180px; line-height: 1.5; }
+
+/* ───────── Hojas, avisos, paleta ───────── */
+dialog { border: 0; padding: 0; background: none; color: inherit; max-width: none; max-height: none; }
+dialog::backdrop { background: var(--overlay); animation: velo var(--t) var(--ease) both; }
+@keyframes velo { from { opacity: 0; } }
+dialog.sheet { margin: 0 0 0 auto; width: min(440px, 100%); height: 100dvh; }
+dialog.sheet .sheet-in { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--bg); animation: hoja 500ms var(--ease-sheet) both; }
+@keyframes hoja { from { transform: translateX(100%); } }
+.sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s3); padding: var(--s4) var(--s4) var(--s2); }
+.sheet-head > div { display: grid; gap: var(--s1); }
+.sheet-body { padding: var(--s3) var(--s4); overflow-y: auto; display: grid; gap: var(--s4); align-content: start; }
+.sheet-foot { display: flex; justify-content: flex-end; gap: var(--s2); padding: var(--s3) var(--s4) var(--s4); }
+dialog.modal { margin: auto; width: min(400px, 100% - 32px); }
+dialog.modal .sheet-in { background: var(--bg); border-radius: 20px; box-shadow: var(--shadow); animation: brota var(--t) var(--ease) both; }
+dialog.modal .sheet-body { gap: var(--s2); }
+@keyframes brota { from { opacity: 0; transform: scale(0.96); } }
+.opts { display: grid; }
+.opt { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 0; border-bottom: 1px solid var(--rule); width: 100%; }
+.opt > span:nth-child(2) { flex: 1; display: grid; }
+.opt b { font-weight: 600; color: var(--ink-deep); }
+.opt > span:nth-child(2) span { font-size: var(--fs-small); color: var(--ink-soft); }
+.opt .dia { --d: 10px; background: var(--c); margin-inline: 5px; }
+.opt .dia::after { content: none; }
+.opt .check { border-color: transparent; }
+.opt[aria-pressed="true"] .check { background: var(--accent); }
+.opt[aria-pressed="true"] .check .icon { opacity: 1; transform: none; }
+#toasts { position: fixed; left: 0; right: 0; bottom: calc(var(--dock-h) + var(--s4) + var(--s3)); z-index: 60; display: grid; justify-items: center; pointer-events: none; }
+.toast { grid-area: 1 / 1; pointer-events: auto; display: flex; align-items: center; gap: var(--s3); min-height: 44px; padding: 0 18px; background: var(--ink-deep); color: var(--bg); border-radius: var(--r-pill); box-shadow: var(--shadow); font-size: var(--fs-small); animation: aviso 300ms var(--ease) both; transition: opacity var(--t) var(--ease), transform var(--t) var(--ease); }
+.toast.out { opacity: 0; transform: translateY(6px); }
+.toast button { font-weight: 600; min-height: 44px; }
+.toast .life { display: none; }
+@keyframes aviso { from { opacity: 0; transform: translateY(10px) scale(0.97); } }
+dialog.palette { margin: 14vh auto auto; width: min(var(--col), 100% - 32px); }
+.palette-in { background: var(--surface); border: 1px solid var(--rule); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
+.palette-input { display: flex; align-items: center; gap: 12px; padding: 0 var(--s3); height: 52px; border-bottom: 1px solid var(--rule); color: var(--ink-muted); }
+.palette-input input { flex: 1; min-width: 0; height: 100%; background: none; border: 0; padding: 0; color: var(--ink-deep); }
+kbd { font: 400 var(--fs-small) var(--font-body); color: var(--ink-muted); padding: 2px 6px; border: 1px solid var(--rule-strong); border-radius: 6px; }
+.palette-list { max-height: min(52vh, 420px); overflow-y: auto; padding: var(--s2); }
+.palette-group { padding: var(--s2) 12px var(--s1); }
+.cmd { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 40px; padding: 0 12px; border-radius: 8px; color: var(--ink); }
+.cmd span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmd small { color: var(--ink-muted); font-size: var(--fs-small); max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmd .icon { width: 16px; height: 16px; color: var(--ink-muted); }
+.cmd[aria-selected="true"] { background: var(--soft); color: var(--ink-deep); }
+
+/* ───────── Voz: solo el diamante y la frase ───────── */
+dialog.voice { width: 100%; height: 100dvh; margin: 0; }
+dialog.voice::backdrop { background: var(--bg); }
+.voice-in { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--bg); animation: velo var(--t-screen) var(--ease) both; }
+.voice-top { display: flex; justify-content: flex-end; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); min-height: var(--top-h); }
+.voice-top .btn:first-child { margin-right: auto; }
+.voice-stage { display: grid; justify-items: center; align-content: center; gap: var(--s4); padding: 0 var(--s3); min-height: 0; overflow: hidden; }
+.voice-orb { --level: 0; position: relative; width: 168px; height: 168px; border-radius: 50%; flex: none; }
+.voice-orb::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--mode-vis) 30%, transparent), transparent); transform: scale(calc(0.6 + var(--level) * 0.9)); opacity: calc(0.5 + var(--level)); }
+.voice-orb::after { content: ""; position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px; border-radius: 22%; background: var(--mode-vis); transform: rotate(45deg) scale(calc(1 + var(--level) * 0.35)); transition: background-color 400ms var(--ease); }
+html[data-orb="idle"] .voice-orb::before { animation: late 4.2s ease-in-out infinite; }
+html[data-orb="thinking"] .voice-orb::after { animation: piensa 1.5s ease-in-out infinite; }
+.voice-copy { display: grid; justify-items: center; gap: var(--s3); width: min(var(--col), 100%); text-align: center; }
+.voice-state { display: inline-flex; align-items: center; gap: var(--s2); font-size: var(--fs-small); color: var(--ink-soft); }
+.captions { display: grid; gap: var(--s2); min-height: 5.5rem; align-content: start; }
+.cap-user { color: var(--ink-soft); }
+.cap-ai { font: 400 var(--fs-sub)/1.4 var(--font-body); color: var(--ink-deep); }
+.cap-ai .w { opacity: 0.3; transition: opacity var(--t) var(--ease); }
+.cap-ai .w.said { opacity: 1; }
+.voice-cards { display: grid; gap: var(--s2); width: 100%; text-align: left; }
+.voice-bottom { display: grid; justify-items: center; gap: var(--s3); padding: var(--s3) var(--s3) var(--s4); }
+.voice-type { display: flex; gap: var(--s2); width: min(var(--col), 100%); }
+.voice-ctrls { display: flex; align-items: center; gap: var(--s4); }
+.vbtn { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; color: var(--ink-soft); box-shadow: inset 0 0 0 1px var(--rule-strong); transition: transform 100ms var(--ease), background-color var(--t-fast) var(--ease); }
+.vbtn.main { width: 64px; height: 64px; background: var(--accent); color: var(--on-accent); box-shadow: none; }
+.vbtn.main[data-on="true"] { background: var(--ink-deep); color: var(--bg); }
+.voice-hint { max-width: 44ch; text-align: center; font-size: var(--fs-small); color: var(--ink-soft); min-height: 1.5em; }
+
+/* ───────── Bienvenida ───────── */
+.onb { min-height: 100dvh; display: grid; place-items: center; padding: var(--s4) var(--s3); }
+.onb-card { width: min(440px, 100%); display: grid; gap: var(--s4); justify-items: start; }
+.onb-card > * { animation: entra var(--t-screen) var(--ease) both; }
+.onb-card > .onb-step { color: var(--ink-soft); font-size: var(--fs-small); }
+.onb-card .opts, .onb-card .input { width: 100%; }
+.onb-actions { display: flex; justify-content: space-between; width: 100%; margin-top: var(--s2); }
+
+/* ───────── Hover: solo con puntero fino ───────── */
+@media (hover: hover) and (pointer: fine) {
+  .nav a:hover, .mode-btn:hover, .tabs button:hover, .seg button:hover { color: var(--ink-deep); }
+  .btn-primary:hover, .send:not(:disabled):hover { background: var(--accent-hover); }
+  .btn-ghost:hover, .icon-btn:hover, .talk:hover, .vbtn:not(.main):hover, .chip:not([aria-pressed="true"]):hover, .cite:hover, .mode-btn:hover { background: var(--soft); }
+  .btn-quiet:hover, .link-btn:hover { color: var(--ink-deep); }
+  button.knot:hover, a.row:hover, .mem:hover, .prompt:hover { background: transparent; }
+  button.knot:hover i { transform: scale(1.35); }
+  button.knot:hover .what > :first-child, a.row:hover .row-title, .prompt:hover { color: var(--accent-text); }
+  a.row:hover .arrow, .prompt:hover .arrow { opacity: 1; transform: none; }
+  .talk:hover .dia { transform: rotate(135deg) scale(1.15); }
+  .day:not([aria-pressed="true"]):hover b { background: var(--soft); }
+  .msg:hover .msg-tools { opacity: 1; }
+  .task:hover .check { border-color: var(--accent-text); }
+}
+
+/* ───────── Angosto ───────── */
+@media (max-width: 640px) {
+  .top { padding: 0 var(--s3); grid-template-columns: auto 1fr auto; }
+  .brand span, .mode-btn span:not(.dia) { display: none; }
+  .nav { justify-self: center; }
+  .nav a { padding: 0 9px; }
+  .mode-btn { padding: 0 var(--s2); }
+  main { padding-top: calc(var(--top-h) + var(--s4)); }
+  .chat-wrap { margin-top: calc(-1 * (var(--top-h) + var(--s4))); }
+  .dock { bottom: var(--s3); }
+  dialog.sheet { margin: auto 0 0; width: 100%; height: auto; max-height: 92dvh; }
+  dialog.sheet .sheet-in { border-radius: 20px 20px 0 0; max-height: 92dvh; animation-name: hoja-sube; }
+  .set { flex-wrap: wrap; }
+  .voice-orb { width: 136px; height: 136px; }
+}
+@keyframes hoja-sube { from { transform: translateY(100%); } }
+
+/* ───────── Menos movimiento ───────── */
+
+/* El modo ya está en la cabecera: no se repite en el chat. */
+.chat-head .mode-chip { display: none; }
+
+/* ───────── Ajustes tras la revisión del crítico ───────── */
+/* El halo late solo donde Ynara está presente: el ahora del hilo y la voz. */
+.mode-btn .dia::after, .talk .dia::after, .opt .dia::after { animation: none; opacity: 0.45; }
+/* El compositor del chat ocupa el lugar exacto del campo inferior. */
+.composer { min-height: var(--dock-h); align-items: center; }
+/* Foco en campos sin borde: el anillo lo lleva el contenedor. */
+.add input:focus-visible, .dock input:focus-visible, .composer textarea:focus-visible, .palette-input input:focus-visible { box-shadow: none; }
+.dock:focus-within, .composer:focus-within { border-color: var(--accent-text); }
+.add:focus-within { box-shadow: 0 1px 0 var(--accent-text); }
+dialog.palette::backdrop { animation: none; }
+/* Voz: el diamante, la frase y una sola salida. */
+.voice-ctrls .vbtn.end { display: none; }
+@media (max-width: 640px) {
+  dialog.sheet .sheet-in { height: auto; }
+  .link-btn, .seg button, .chip, .tabs button { min-height: 44px; }
+  .icon-btn, .talk, .send { width: 44px; height: 44px; }
+  .avatar { box-shadow: 0 0 0 6px var(--bg); }
+  .dock { padding-right: 4px; }
+}
+
+/* ══════════ Capa de interacción ══════════
+   Todo usa los elementos de la marca: el diamante, los nodos y los vínculos.
+   Lo que entra, entra una vez por pantalla; lo cotidiano responde sin demorar. */
+
+/* Titulares: cada palabra sube detrás de una máscara. */
+.w { display: inline-block; overflow: hidden; vertical-align: bottom; padding-bottom: 0.1em; margin-bottom: -0.1em; }
+.w > span { display: inline-block; }
+.w > .em { color: var(--accent-text); }
+main.enter .w > span, .onb-card .w > span { animation: sube 450ms var(--ease) both; animation-delay: calc(var(--wi, 0) * 30ms); }
+@keyframes sube { from { transform: translateY(110%); } }
+
+/* Cabecera: un filete aparece cuando el contenido pasa por debajo. */
+.top::after { content: ""; position: absolute; inset: auto 0 0; height: 1px; background: var(--rule); opacity: 0; }
+@supports (animation-timeline: scroll()) { .top::after { animation: asoma linear both; animation-timeline: scroll(); animation-range: 0 64px; } }
+@keyframes asoma { to { opacity: 1; } }
+
+/* El hilo se teje: cada tramo baja hasta el nodo siguiente, que recién ahí brota.
+   Lo que ya pasó queda en trazo firme; lo que viene, en trazo leve. */
+.hilo::before { content: none; }
+.knot:not(:last-child)::before { content: ""; position: absolute; left: 73.5px; top: 26px; bottom: -18px; width: 1px; background: var(--rule-strong); transform-origin: 50% 0; }
+.knot.past:not(:last-child)::before { background: var(--ink-muted); }
+.knot i, .knot.now .dia { position: relative; z-index: 1; }
+main.enter .knot::before { animation: teje 300ms var(--ease) both; animation-delay: calc(160ms + var(--i, 0) * 70ms); }
+main.enter .knot i { animation: nace 300ms var(--ease) both; animation-delay: calc(100ms + var(--i, 0) * 70ms); }
+main.enter .knot.now .dia:not(.yay) { animation: brota-dia 360ms var(--ease) both; animation-delay: calc(100ms + var(--i, 0) * 70ms); }
+main.enter .knot time, main.enter .knot .what { animation: entra 300ms var(--ease) both; animation-delay: calc(120ms + var(--i, 0) * 70ms); }
+@keyframes teje { from { transform: scaleY(0); } }
+@keyframes nace { from { opacity: 0; transform: scale(0.5); } }
+@keyframes brota-dia { from { opacity: 0; transform: rotate(-45deg) scale(0.5); } }
+.dia.yay { animation: festeja 900ms var(--ease) both; }
+@keyframes festeja { 40% { transform: rotate(225deg) scale(1.7); } to { transform: rotate(405deg) scale(1); } }
+
+/* Tareas: el tilde se dibuja. */
+.check .icon path { stroke-dasharray: 60; stroke-dashoffset: 60; transition: stroke-dashoffset 280ms var(--ease) 60ms; }
+.task[aria-pressed="true"] .check .icon path, .opt[aria-pressed="true"] .check .icon path { stroke-dashoffset: 0; }
+
+/* Agenda: el día entra desde el lado hacia el que te movés. */
+.from-r { animation: de-der 260ms var(--ease) both; }
+.from-l { animation: de-izq 260ms var(--ease) both; }
+@keyframes de-der { from { opacity: 0; transform: translateX(20px); } }
+@keyframes de-izq { from { opacity: 0; transform: translateX(-20px); } }
+
+/* Memoria: la red se teje al entrar; un nodo enciende sus vínculos y dice qué guarda. */
+.red-wrap { display: grid; gap: var(--s2); }
+.red line.on { stroke: var(--accent-text); stroke-width: 1.5; }
+.red-cap { min-height: 3em; color: var(--ink-deep); text-align: center; opacity: 0; transform: translateY(4px); transition: opacity var(--t) var(--ease), transform var(--t) var(--ease); }
+.red-cap.show { opacity: 1; transform: none; }
+main.enter .red line { stroke-dasharray: 1; animation: traza 380ms var(--ease) both; animation-delay: calc(80ms + var(--i, 0) * 18ms); }
+main.enter .red .n .p { animation: nace 300ms var(--ease) both; animation-delay: calc(180ms + var(--i, 0) * 18ms); }
+@keyframes traza { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+
+/* Campo inferior: se levanta al escribir; el diamante sigue al puntero. */
+.dock { transition: border-color var(--t-fast) var(--ease), transform var(--t) var(--ease); }
+.dock:focus-within { transform: translateY(-3px); }
+.talk { transform: translate(var(--mx, 0px), var(--my, 0px)); transition: transform 260ms var(--ease), background-color var(--t-fast) var(--ease); }
+.talk:active { transform: translate(var(--mx, 0px), var(--my, 0px)) scale(0.96); }
+
+/* Cambio de modo: una onda del color nuevo sale del diamante. */
+.ripple { position: fixed; z-index: 90; width: 40px; height: 40px; margin: -20px; border-radius: 50%; background: var(--mode-vis); pointer-events: none; animation: onda 480ms var(--ease) both; }
+@keyframes onda { from { opacity: 0.22; transform: scale(0.2); } to { opacity: 0; transform: scale(8); } }
+
+/* Voz: la pantalla desaparece y queda Ynara sobre la red, que responde a lo que se dice. */
+#app { transition: opacity var(--t-screen) var(--ease); }
+html.voice-open #app { opacity: 0; }
+dialog.voice::backdrop, .voice-in { background: transparent; }
+.voice-orb { animation: llega 450ms var(--ease) both; }
+@keyframes llega { from { opacity: 0; transform: scale(0.85); } }
+.voice-copy, .voice-bottom, .voice-top { animation: entra 300ms var(--ease) 120ms both; }
+.cap-ai .w { display: inline; overflow: visible; padding: 0; margin: 0; }
+
+/* Bienvenida: el isotipo llega primero. */
+.onb-card > svg { animation: llega 800ms var(--ease) both; }
+
+/* ══════════ Memoria: una red que se lee ══════════
+   Cada punto es un recuerdo; un vínculo une los que salieron de la misma
+   conversación o hablan de lo mismo. El elegido se vuelve diamante. */
+.red-wrap { gap: var(--s4); }
+.red line { opacity: 0.55; transition: opacity var(--t) var(--ease), stroke var(--t) var(--ease); }
+.red line.on { opacity: 1; }
+.red .n { outline: none; }
+.red .n .p { rx: 5px; transition: transform 320ms var(--ease), rx 320ms var(--ease); }
+.red .n.on .p { transform: none; }
+.red .n.rel .p { transform: scale(1.3); }
+.red .n.sel .p, .red .n.sel:focus-visible .p { rx: 2px; transform: rotate(45deg) scale(1.7); }
+.red .halo { fill: var(--c); opacity: 0; transform-box: fill-box; transform-origin: center; transform: scale(0.4); transition: opacity 320ms var(--ease), transform 320ms var(--ease); }
+.red .n.sel .halo { opacity: 0.16; transform: none; }
+.red .n:focus-visible .halo { opacity: 0.28; transform: none; }
+.red.has-sel .n:not(.sel):not(.rel) { opacity: 0.45; }
+.red .n.off, .red line.off { opacity: 0.12; }
+.mem-card { display: grid; gap: var(--s3); align-content: start; justify-items: start; min-height: 15rem; }
+.mem-card .rel { display: grid; gap: var(--s2); width: 100%; }
+.mem-card .cite { max-width: 100%; }
+.mem-card.swap > * { animation: entra 260ms var(--ease) both; }
+.mem-card.swap > :nth-child(2) { animation-delay: 30ms; }
+.mem-card.swap > :nth-child(n + 3) { animation-delay: 60ms; }
+main.enter .red .halo { transition-delay: 500ms; }
+@media (hover: hover) and (pointer: fine) { .red .n:not(.sel):hover { opacity: 1; } .red .n:not(.sel):hover .p { transform: scale(1.5); } }
+
+/* ══════════ Segunda revisión del crítico ══════════ */
+/* Tilde: se mueve una sola cosa, el trazo. */
+.check { transition: transform 100ms var(--ease); }
+.check .icon { opacity: 1; transform: none; transition: none; }
+/* Voz: el diamante es el único protagonista; el micrófono queda como control secundario. */
+.vbtn.main { width: 48px; height: 48px; background: transparent; color: var(--ink-soft); box-shadow: inset 0 0 0 1px var(--rule-strong); }
+.vbtn.main[data-on="true"] { background: var(--ink-deep); color: var(--bg); box-shadow: none; }
+/* Memoria */
+.red-wrap, .mem-card, .mem-card .rel { grid-template-columns: minmax(0, 1fr); }
+.red-wrap { gap: var(--s2); }
+.red .isla { font: 400 var(--fs-small) var(--font-body); fill: var(--ink-muted); transition: fill var(--t) var(--ease); }
+.red .isla.on { fill: var(--ink-deep); }
+.red.has-sel .n:not(.sel):not(.rel) { opacity: 0.6; }
+.red .n.off { opacity: 0.14 !important; }
+main.enter .red .isla { animation: entra 300ms var(--ease) 420ms both; }
+.mem-card { min-height: 0; gap: var(--s3); }
+.mem-card .quote { font: 600 var(--fs-body)/1.5 var(--font-body); color: var(--ink-deep); min-height: 3em; }
+.rel { display: grid; border-top: 1px solid var(--rule); }
+.rel-row { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: var(--s3); align-items: baseline; min-height: 44px; padding: 10px 0; border-bottom: 1px solid var(--rule); width: 100%; }
+.rel-row .why { font-size: var(--fs-small); color: var(--ink-soft); }
+.rel-row .rel-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .rel-row:hover .rel-text { color: var(--accent-text); } }
+
+/* ══════════ Pulido fino (skills públicas) e ideas de asistentes actuales ══════════ */
+html { color-scheme: light; scrollbar-color: var(--ink-faint) transparent; caret-color: var(--accent-text); }
+html.theme-dark { color-scheme: dark; }
+body { font-synthesis: none; font-optical-sizing: auto; }
+p { text-wrap: pretty; }
+button, a, input, select, textarea { touch-action: manipulation; }
+.sheet-body, .thread, .palette-list { overscroll-behavior: contain; }
+select.input { background-color: var(--surface); color: var(--ink); }
+/* Elevación declarada una sola vez: sombra en capas, sin borde. */
+.dock, .composer, .palette-in { border: 0; box-shadow: 0 0 0 1px var(--rule), 0 1px 2px -1px rgb(36 44 63 / 0.08), 0 8px 24px rgb(36 44 63 / 0.07); }
+.dock:focus-within, .composer:focus-within { box-shadow: 0 0 0 1px var(--accent-text), 0 1px 2px -1px rgb(36 44 63 / 0.08), 0 8px 24px rgb(36 44 63 / 0.07); }
+html.theme-dark .dock, html.theme-dark .composer, html.theme-dark .palette-in { box-shadow: 0 0 0 1px var(--rule-strong); }
+.act { border: 0; box-shadow: 0 0 0 1px var(--rule); }
+/* Zona de toque de 44 px aunque el control se vea más chico. */
+.icon-btn, .link-btn, .avatar, .tabs button, .seg button { position: relative; }
+.icon-btn::after, .link-btn::after, .avatar::after { content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, 44px); height: max(100%, 44px); translate: -50% -50%; }
+/* El acento en titulares queda para el nombre y el lema. */
+.chat-empty h1 em { color: inherit; }
+
+/* Hoy es finito: una línea de cierre. */
+.fin { display: flex; align-items: center; justify-content: center; gap: 12px; color: var(--ink-soft); font-size: var(--fs-small); padding-top: var(--s3); }
+.fin .dia { --d: 7px; background: var(--ink-muted); }
+.fin .dia::after { content: none; }
+
+/* «Usé un recuerdo»: la memoria se muestra cuando se usa, plegada. */
+.why-wrap { display: grid; justify-items: start; }
+.why-btn { display: inline-flex; align-items: center; gap: 10px; min-height: 32px; color: var(--ink-soft); font-size: var(--fs-small); }
+.why-btn .dia { --d: 8px; transition: transform var(--t) var(--ease); }
+.why-btn .dia::after { content: none; }
+.why-btn[aria-expanded="true"] .dia { transform: rotate(135deg); }
+.why-list { width: 100%; margin-top: var(--s1); border-top: 1px solid var(--rule); animation: entra 200ms var(--ease) both; }
+@media (hover: hover) and (pointer: fine) { .why-btn:hover { color: var(--ink-deep); } }
+
+/* Autoría: lo inferido va hueco y en tinta suave hasta que se confirma. */
+.red .n .p { stroke: var(--c); stroke-width: 1.5; transition: transform 320ms var(--ease), rx 320ms var(--ease), fill 400ms var(--ease); }
+.red .n.inf .p { fill: var(--bg); }
+.mem-card .quote { transition: color 400ms var(--ease); }
+.mem-card .quote.inf { color: var(--ink-soft); font-weight: 400; }
+.mem-card .acts { display: flex; gap: var(--s4); }
+
+/* Guardar por primera vez: el dato viaja hasta Memoria. */
+.fly { position: fixed; z-index: 95; width: 12px; height: 12px; margin: -6px; border-radius: 22%; background: var(--mode-vis); transform: rotate(45deg); transition: transform 700ms var(--ease-sheet), opacity 300ms var(--ease) 420ms; pointer-events: none; }
+.nav a.bump { animation: toca 500ms var(--ease) both; }
+@keyframes toca { 30% { transform: translateY(-3px); color: var(--accent-text); } }
+
+/* Voz: cada estado mueve una sola cosa. La interrupción pliega el diamante en una línea. */
+html[data-orb="listening"] .voice-orb::before { opacity: 0.9; }
+.voice-orb.cut::after { animation: corta 380ms var(--ease) both; }
+@keyframes corta { 30% { transform: scaleY(0.06) rotate(45deg); } }
+
+.rel-row { grid-template-columns: 116px minmax(0, 1fr); }
+.rel-row .why { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 640px) { .rel-row { grid-template-columns: 96px minmax(0, 1fr); gap: var(--s2); } }
+
+/* ══════════ Tercera revisión del crítico ══════════ */
+/* Menos movimiento: sin traslación ni escala; quedan los fundidos de 200 ms. */
+@keyframes fundido { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  html:not(.motion-on) *, html:not(.motion-on) *::before, html:not(.motion-on) *::after { animation-name: fundido !important; animation-duration: 200ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; transition-property: opacity, color, background-color, fill, stroke !important; transition-duration: 200ms !important; }
+}
+html.motion-off *, html.motion-off *::before, html.motion-off *::after { animation-name: fundido !important; animation-duration: 200ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; transition-property: opacity, color, background-color, fill, stroke !important; transition-duration: 200ms !important; }
+
+/* Foco visible en los nodos de la red. */
+.red .n:focus-visible { opacity: 1 !important; }
+.red .n:focus-visible .halo { fill: none; stroke: var(--accent-text); stroke-width: 2; opacity: 1; transform: none; }
+/* Lo inferido se distingue aunque esté atenuado. */
+.red .n.inf .p { stroke-width: 2; }
+.red.has-sel .n.inf:not(.sel):not(.rel) { opacity: 0.85; }
+.red .n .p { transition: transform 320ms var(--ease), rx 320ms var(--ease), fill 150ms var(--ease); }
+.mem-card .quote { transition: color 150ms var(--ease); }
+/* La fecha de un recuerdo nunca se corta. */
+.rel-row { grid-template-columns: max-content minmax(0, 1fr); }
+.rel-row .why { overflow: visible; }
+.mem-card .rel-row { grid-template-columns: 96px minmax(0, 1fr); }
+/* «Usé un recuerdo»: el diamante se llena al abrir. */
+.why-btn .dia { background: transparent; box-shadow: inset 0 0 0 1.5px var(--mode-vis); transition: background-color var(--t-fast) var(--ease); margin-left: 2px; }
+.why-btn[aria-expanded="true"] .dia { background: var(--mode-vis); transform: rotate(45deg); }
+/* Las herramientas del mensaje son chicas y van juntas: sin extensor que las solape. */
+.icon-btn.sm::after { content: none; }
+/* Cita sin borde lateral. */
+.prose blockquote { border-left: 0; padding-left: 0; font-weight: 600; }
+.fin { justify-content: flex-start; padding-top: 0; }
+.chat-head h1:empty { visibility: hidden; }
+@media (max-width: 640px) {
+  .why-btn { min-height: 44px; }
+  dialog.sheet { inset: auto 0 0 0; margin: 0; }
+}
+
+/* ══════════ Estructura de aplicación ══════════
+   Móvil (por defecto): cabecera mínima + barra inferior con el diamante al centro.
+   Escritorio (≥ 900 px): barra lateral + campo de escritura siempre visible.
+   El modo se elige en el campo de escritura, no en la cabecera. */
+:root { --rail: 0px; --bar-h: 64px; --bar-gap: max(12px, env(safe-area-inset-bottom)); --pad-top: calc(var(--top-h) + var(--s4)); --pad-bottom: calc(var(--bar-h) + var(--bar-gap) + var(--s5)); }
+main { padding: var(--pad-top) 0 var(--pad-bottom); }
+.chat-wrap { margin: calc(-1 * var(--pad-top)) 0 calc(-1 * var(--pad-bottom)); padding-top: var(--top-h); }
+
+.rail { display: none; }
+.top { grid-template-columns: 1fr auto; padding: 0 var(--s3); }
+.top .brand span { display: inline; }
+.top .avatar { position: relative; }
+
+/* Barra inferior */
+.bar { position: fixed; left: var(--s3); right: var(--s3); bottom: var(--bar-gap); z-index: 20; height: var(--bar-h); border-radius: 22px; background: var(--surface); box-shadow: 0 0 0 1px var(--rule), 0 1px 2px -1px rgb(36 44 63 / 0.08), 0 10px 28px rgb(36 44 63 / 0.1); }
+html.theme-dark .bar { box-shadow: 0 0 0 1px var(--rule-strong); }
+.tabbar { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(5, 1fr); align-items: stretch; padding: 0 var(--s1); transition: opacity 160ms var(--ease), transform 200ms var(--ease), visibility 0s; }
+.tabbar a { display: grid; justify-items: center; align-content: center; gap: 3px; color: var(--ink-soft); font-size: 0.6875rem; transition: color var(--t-fast) var(--ease), transform 100ms var(--ease); }
+.tabbar a .icon { width: 22px; height: 22px; }
+.tabbar a[aria-current="page"] { color: var(--ink-deep); }
+.tabbar a[aria-current="page"] .icon { color: var(--accent-text); }
+.tabbar a:active { transform: scale(0.96); }
+.ask-btn { justify-self: center; align-self: center; display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--soft); transition: transform 100ms var(--ease); }
+.ask-btn:active { transform: scale(0.96); }
+.ask-btn .dia { --d: 15px; }
+.ask-btn .dia::after { animation: none; opacity: 0.45; }
+.bar .dock { position: absolute; inset: 0; left: 0; bottom: 0; width: auto; height: auto; translate: none; padding: 0 6px 0 8px; background: none; box-shadow: none; border-radius: inherit; opacity: 0; visibility: hidden; transform: scale(0.98); transition: opacity 160ms var(--ease), transform 200ms var(--ease), visibility 0s 160ms; }
+.bar .dock:focus-within { transform: scale(0.98); box-shadow: none; }
+.bar.asking .dock, .bar.asking .dock:focus-within { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+.bar.asking { box-shadow: 0 0 0 1px var(--accent-text), 0 10px 28px rgb(36 44 63 / 0.1); }
+.bar.asking .tabbar { opacity: 0; visibility: hidden; transform: scale(0.98); transition-delay: 0s, 0s, 160ms; }
+html.route-chat .bar .dock { visibility: hidden; }
+#toasts { bottom: calc(var(--bar-h) + var(--bar-gap) + var(--s3)); }
+.composer-wrap { padding-bottom: calc(var(--bar-h) + var(--bar-gap) + var(--s2)); }
+
+/* Selector de modo dentro del campo */
+.mode-pick { display: inline-flex; align-items: center; gap: var(--s2); height: 36px; padding: 0 10px; border-radius: var(--r-pill); color: var(--ink-soft); font-size: var(--fs-small); flex: none; transition: background-color var(--t-fast) var(--ease), transform 100ms var(--ease); }
+.mode-pick .icon { width: 14px; height: 14px; transition: transform var(--t) var(--ease); }
+.mode-pick[aria-expanded="true"] { background: var(--soft); color: var(--ink-deep); }
+.mode-pick[aria-expanded="true"] .icon { transform: rotate(180deg); }
+.mode-pick:active { transform: scale(0.96); }
+.mode-pick .dot { transition: background-color 300ms var(--ease); }
+.mode-pick .mode-name, .mode-pick .icon { display: none; }
+.menu { position: absolute; left: 0; bottom: calc(100% + var(--s2)); z-index: 30; width: 300px; padding: 6px; display: grid; gap: 2px; background: var(--surface); border-radius: 16px; box-shadow: 0 0 0 1px var(--rule), 0 2px 6px -2px rgb(36 44 63 / 0.1), 0 16px 40px rgb(36 44 63 / 0.14); transform-origin: 24px 100%; animation: brota 160ms var(--ease) both; }
+html.theme-dark .menu { box-shadow: 0 0 0 1px var(--rule-strong), 0 16px 40px rgb(0 0 0 / 0.3); }
+.menu button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 10px; border-radius: 10px; }
+.menu button > span:last-child { display: grid; }
+.menu b { font-weight: 600; color: var(--ink-deep); }
+.menu button > span:last-child span { font-size: var(--fs-small); color: var(--ink-soft); }
+.menu button[aria-checked="true"], .menu button:focus-visible { background: var(--soft); box-shadow: none; }
+
+@media (min-width: 900px) {
+  :root { --rail: 232px; --top-h: 0px; --pad-top: var(--s6); --pad-bottom: calc(var(--dock-h) + var(--s6) + var(--s4)); }
+  .top, .tabbar { display: none; }
+  .rail { position: fixed; inset: 0 auto 0 0; z-index: 20; width: var(--rail); display: flex; flex-direction: column; gap: var(--s4); padding: var(--s4) var(--s3); background: var(--bg); border-right: 1px solid var(--rule); }
+  .rail .brand { height: 40px; padding: 0 12px; }
+  .rail-nav { position: relative; display: grid; gap: 2px; }
+  .rail-nav a, .rail-search, .me { position: relative; display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 12px; border-radius: 10px; color: var(--ink-soft); width: 100%; transition: color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease); }
+  .rail-nav a .icon, .rail-search .icon { width: 20px; height: 20px; }
+  .rail-nav a[aria-current="page"] { color: var(--ink-deep); }
+  .rail-nav a[aria-current="page"] .icon { color: var(--accent-text); }
+  .rail-nav a:active, .rail-search:active, .me:active { transform: scale(0.98); }
+  .rail-ind { position: absolute; left: 0; right: 0; top: 0; height: 40px; border-radius: 10px; background: var(--soft); opacity: var(--o, 0); transform: translateY(var(--y, 0px)); transition: transform 300ms var(--ease), opacity var(--t-fast) var(--ease); }
+  .rail-search kbd { margin-left: auto; }
+  .me { margin-top: auto; height: 48px; color: var(--ink); }
+  .me .avatar { width: 28px; height: 28px; font-size: 0.8125rem; box-shadow: none; }
+  .me[aria-current="page"] { background: var(--soft); color: var(--ink-deep); }
+  main { margin-left: var(--rail); }
+  .bar { display: contents; }
+  .bar .dock, .bar .dock:focus-within { position: fixed; inset: auto; left: calc(50% + var(--rail) / 2); bottom: var(--s4); width: min(var(--col), 100% - var(--rail) - 2 * var(--s3)); height: var(--dock-h); translate: -50% 0; padding: 0 6px 0 8px; background: var(--surface); border-radius: var(--r-pill); box-shadow: 0 0 0 1px var(--rule), 0 1px 2px -1px rgb(36 44 63 / 0.08), 0 8px 24px rgb(36 44 63 / 0.07); opacity: 1; visibility: visible; transform: none; transition: transform var(--t) var(--ease); }
+  .bar .dock:focus-within { transform: translateY(-3px); box-shadow: 0 0 0 1px var(--accent-text), 0 8px 24px rgb(36 44 63 / 0.07); }
+  html.theme-dark .bar .dock { box-shadow: 0 0 0 1px var(--rule-strong); }
+  html.route-chat .bar .dock { visibility: hidden; }
+  .mode-pick .mode-name, .mode-pick .icon { display: inline-block; }
+  #toasts { left: var(--rail); bottom: calc(var(--dock-h) + var(--s4) + var(--s3)); }
+  .composer-wrap { padding-bottom: var(--s4); }
+  dialog.sheet .sheet-in { box-shadow: -1px 0 0 var(--rule); }
+}
+@media (hover: hover) and (pointer: fine) {
+  .rail-nav a:hover, .rail-search:hover, .me:hover { color: var(--ink-deep); }
+  .rail-search:hover, .me:hover, .mode-pick:hover, .menu button:hover, .ask-btn:hover { background: var(--soft); }
+  .tabbar a:hover { color: var(--ink-deep); }
+}
+
+/* El chat lleva el mismo selector de modo en su campo. */
+.composer { position: relative; padding-left: 8px; }
+.composer .mode-pick { align-self: center; }
+.composer textarea { padding-left: 4px; }
+
+/* ══════════ Pasada con las skills instaladas ══════════
+   make-interfaces-feel-better (Jakub Krehel) e impeccable (Paul Bakaus). */
+
+/* Sin rótulo sobre el título (prohibición de impeccable): el dato va debajo, como bajada. */
+.head .eyebrow { order: 2; font-size: var(--fs-body); }
+.sheet-head > div > .eyebrow { order: 2; }
+.mem-card > .eyebrow { order: 2; }
+.mem-card > .row-sub { order: 3; }
+.mem-card > .rel { order: 4; }
+.mem-card > .acts { order: 5; }
+
+/* Íconos: trazo de 1.5 px reales junto a texto regular, a cualquier tamaño. */
+.icon { stroke-width: 1.5px; }
+.icon * { vector-effect: non-scaling-stroke; }
+.check .icon { stroke-width: 2px; }
+/* Contorno por defecto, relleno en la sección activa. */
+.rail-nav a .icon, .tabbar a .icon { transition: fill var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.rail-nav a[aria-current="page"] .icon, .tabbar a[aria-current="page"] .icon { fill: color-mix(in srgb, var(--accent-text) 20%, transparent); }
+
+/* Elevación: anillo + levantada + ambiente, con desplazamiento (nunca halo sin desplazar). */
+:root { --lift: 0 0 0 1px rgb(36 44 63 / 0.07), 0 1px 2px -1px rgb(36 44 63 / 0.08), 0 2px 4px rgb(36 44 63 / 0.05), 0 10px 28px rgb(36 44 63 / 0.07); --lift-focus: 0 0 0 1px var(--accent-text), 0 1px 2px -1px rgb(36 44 63 / 0.08), 0 10px 28px rgb(36 44 63 / 0.08); }
+html.theme-dark { --lift: 0 0 0 1px rgb(255 255 255 / 0.1); --lift-focus: 0 0 0 1px var(--accent-text); }
+.bar, .composer, .palette-in, .menu { box-shadow: var(--lift); }
+.bar.asking, .composer:focus-within { box-shadow: var(--lift-focus); }
+html.theme-dark .bar, html.theme-dark .composer, html.theme-dark .palette-in, html.theme-dark .menu { box-shadow: var(--lift); }
+@media (min-width: 900px) {
+  .bar .dock, html.theme-dark .bar .dock { box-shadow: var(--lift); }
+  .bar .dock:focus-within, html.theme-dark .bar .dock:focus-within { box-shadow: var(--lift-focus); }
+}
+
+/* Alineación óptica: del lado del ícono, 2 px menos. */
+.mode-pick { padding: 0 8px 0 10px; }
+/* Zona de toque del selector en móvil, sin pisar el campo. */
+.mode-pick { position: relative; }
+.mode-pick::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 44px; translate: 0 -50%; }
+
+/* Íconos que aparecen: opacidad, escala desde .25 y desenfoque, sin rebote. */
+.dock .send { transform: scale(0.25); filter: blur(4px); transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1), transform 200ms cubic-bezier(0.2, 0, 0, 1), filter 200ms cubic-bezier(0.2, 0, 0, 1), background-color var(--t-fast) var(--ease); }
+.dock.has-text .send { transform: none; filter: none; }
+
+/* Texto secundario que se lee: nunca por debajo de 4.5:1. */
+.red .isla { fill: var(--ink-soft); }
+.cmd small, kbd, .via { color: var(--ink-soft); }
+.task[aria-pressed="true"] .row-title { color: var(--ink-soft); }

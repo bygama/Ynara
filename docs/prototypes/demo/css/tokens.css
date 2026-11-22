@@ -1,0 +1,100 @@
+/* Ynara — tokens. Valores de la guía de marca (DESIGN.md v4 del monorepo).
+   Tema por defecto: marfil. Tema oscuro: Noche (html.theme-dark).
+   Reglas de uso en .claude/skills/ynara-interfaz/SKILL.md. */
+
+:root {
+  /* Marca */
+  --azul: #2f5aa6;
+  --noche: #242c3f;
+  --marfil: #f3f0ea;
+  --m-productividad: #2f5aa6;
+  --m-estudio: #434a82;
+  --m-bienestar: #8165a3;
+  --m-vida: #5c6fb3;
+  --m-memoria: #565f81;
+
+  /* Marfil */
+  --bg: #faf9f5;
+  --surface: #ffffff;
+  --soft: #f3f0ea;
+  --ink-deep: #1b2233;
+  --ink: #242c3f;
+  --ink-soft: rgb(36 44 63 / 0.7);
+  --ink-muted: rgb(36 44 63 / 0.45);
+  --ink-faint: rgb(36 44 63 / 0.18);
+  --rule: rgb(36 44 63 / 0.1);
+  --rule-strong: rgb(36 44 63 / 0.22);
+  --accent: #2f5aa6;
+  --accent-hover: #26498a;
+  --accent-text: #2f5aa6;
+  --on-accent: #ffffff;
+  --error: #c0392b;
+  --overlay: rgb(36 44 63 / 0.4);
+  --shadow: 0 1px 2px rgb(36 44 63 / 0.05), 0 10px 30px rgb(36 44 63 / 0.08);
+  --net: 47 90 166;            /* color de la red de memoria, en r g b */
+  --net-a: 0.16;
+
+  --mode: var(--m-productividad);
+  --mode-vis: var(--mode);
+
+  /* Tipografía: tres tamaños, dos pesos. */
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --fs-title: clamp(2rem, 1.6rem + 2vw, 2.5rem);
+  --fs-sub: 1.25rem;            /* solo títulos de hoja y la frase de la voz */
+  --fs-body: 1rem;
+  --fs-small: 0.875rem;
+  /* Alias que todavía usan algunos módulos. */
+  --fs-sm: var(--fs-small);
+  --fs-xs: var(--fs-small);
+
+  /* Espacios: 4 · 8 · 16 · 24 · 40 · 64 */
+  --s1: 4px; --s2: 8px; --s3: 16px; --s4: 24px; --s5: 40px; --s6: 64px;
+  --col: 560px;
+  --top-h: 56px;
+  --dock-h: 52px;
+  --r: 12px;
+  --r-pill: 999px;
+
+  /* Movimiento */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+  --t-fast: 150ms;
+  --t: 200ms;
+  --t-screen: 300ms;
+}
+
+html.theme-dark {
+  --bg: #242c3f;
+  --surface: #2b3346;
+  --soft: #313a52;
+  --ink-deep: #ffffff;
+  --ink: #f3f0ea;
+  --ink-soft: rgb(243 240 234 / 0.72);
+  --ink-muted: rgb(243 240 234 / 0.46);
+  --ink-faint: rgb(243 240 234 / 0.18);
+  --rule: rgb(243 240 234 / 0.1);
+  --rule-strong: rgb(243 240 234 / 0.2);
+  --accent-text: #a9b9e6;
+  --error: #ff8585;
+  --overlay: rgb(15 19 30 / 0.55);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.2), 0 10px 30px rgb(0 0 0 / 0.25);
+  --net: 139 154 208;
+  --net-a: 0.2;
+  --mode-vis: color-mix(in srgb, var(--mode) 50%, #ffffff);
+  /* Sobre Noche, los colores de modo se aclaran para que se lean. */
+  --m-productividad: #7d9fd6;
+  --m-estudio: #8b9ad0;
+  --m-bienestar: #b29acb;
+  --m-vida: #95a3d6;
+  --m-memoria: #a3abc7;
+}
+
+html[data-mode="estudio"] { --mode: var(--m-estudio); }
+html[data-mode="bienestar"] { --mode: var(--m-bienestar); }
+html[data-mode="vida"] { --mode: var(--m-vida); }
+html[data-mode="memoria"] { --mode: var(--m-memoria); }
+
+html.text-sm { font-size: 15px; }
+html.text-md { font-size: 16px; }
+html.text-lg { font-size: 18px; }
