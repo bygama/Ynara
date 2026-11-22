@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es-AR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#faf9f5" />
+    <meta name="robots" content="noindex" />
+    <title>Ynara — demo</title>
+    <meta name="description" content="Demo navegable de Ynara: asistente personal con memoria y voz." />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Space+Grotesk:wght@500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/app.css" />
+    <script>
+      // Pre-paint: aplica tema y preferencias antes del primer frame (sin parpadeo).
+      (function () {
+        try {
+          var s = JSON.parse(localStorage.getItem("ynara.demo.v2") || "{}").settings || {};
+          var t = s.v5 ? s.theme : "light";
+          var c = document.documentElement.classList;
+          if (t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches)) c.add("theme-dark");
+          c.add("text-" + (s.textSize || "md"));
+          if (s.motion === "off") c.add("motion-off");
+        } catch (e) {}
+      })();
+      // Hora simulada: abrir con ?hora=10:15 hace que la demo crea que es esa hora
+      // de hoy. Sirve para mostrar el día en curso a cualquier hora real.
+      (function () {
+        var m = /[?&]hora=(\d{1,2})(?:(?:[:.]|%3A)(\d{2}))?(?!\d)/i.exec(location.search);
+        if (!m) return;
+        var Real = Date, n = new Real();
+        var off = new Real(n.getFullYear(), n.getMonth(), n.getDate(), Math.min(23, +m[1]), Math.min(59, +(m[2] || 0))) - n;
+        function Fake() { return arguments.length ? new (Function.prototype.bind.apply(Real, [null].concat([].slice.call(arguments))))() : new Real(Real.now() + off); }
+        Fake.prototype = Real.prototype;
+        Fake.now = function () { return Real.now() + off; };
+        Fake.parse = Real.parse; Fake.UTC = Real.UTC;
+        window.Date = Fake;
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Saltar al contenido</a>
+    <canvas id="field" aria-hidden="true"></canvas>
+    <div id="app"></div>
+    <div id="toasts" aria-live="polite"></div>
+    <noscript>Esta demo necesita JavaScript.</noscript>
+    <script type="module" src="js/main.js"></script>
+  </body>
+</html>
