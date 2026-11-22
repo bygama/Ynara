@@ -63,8 +63,8 @@ negro puro. No existen en la marca: ámbar, verde, jade.
 ### 2.1 Tema dual
 
 El tema por defecto es **marfil**. Noche es co-protagonista, y la elección es
-de la persona: claro, Noche o seguir al sistema (`stores/theme.ts` soporta
-`system`). El tema se aplica por clase en `<html>` (`html.theme-dark`).
+de la persona: claro, Noche o seguir al sistema
+(`apps/web/src/stores/theme.ts` soporta `system`). El tema se aplica por clase en `<html>` (`html.theme-dark`).
 
 **Superficies:**
 
@@ -187,6 +187,8 @@ Reglas duras:
 | `--col` | **560 px** — una sola columna de contenido, 45–70 caracteres por línea |
 | `--r` | `12px` (radio único de superficie) |
 | `--r-pill` | `999px` |
+| `--top-h` | `56px` — la cabecera |
+| `--dock-h` | `52px` — la barra inferior (móvil) |
 
 - Spacing no uniforme: más aire entre grupos distintos que entre elementos del
   mismo grupo. El espacio sobre un título es mayor que el que tiene debajo.
@@ -229,7 +231,7 @@ en el primer uso), un mismo dato dos veces en pantalla.
 |---|---|---|
 | `--t-fast` | `150ms` | Hover y color |
 | `--t` | `200ms` | Interacción |
-| `--t-screen` | `250–350ms` | Entrada de pantalla |
+| `--t-screen` | `300ms` | Entrada de pantalla (entre 250 y 350 según complejidad) |
 | (hojas) | `500ms` | Hojas, con `--ease-sheet` |
 | `--ease` | `cubic-bezier(.22, 1, .36, 1)` | Curva de salida, default |
 | `--ease-sheet` | `cubic-bezier(.32, .72, 0, 1)` | Hojas |
@@ -318,7 +320,8 @@ definido como token y usado por navegación, hojas y Agenda (reemplaza los
 
 Un solo elemento firma, usado siempre igual: **el diamante**. Está donde está
 Ynara — marca el «ahora» en el hilo del día, es el botón de voz, late cuando
-piensa y **es lo único que lleva el color del modo**. Todo lo demás calla.
+piensa y, **junto con los nodos, es lo único que lleva el color del modo**.
+Todo lo demás calla.
 
 Segundo plano, casi invisible: la **red de memoria** (nodos y vínculos) como
 fondo que reacciona apenas al cursor. Reglas del fondo vivo: detrás del
