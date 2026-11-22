@@ -464,7 +464,7 @@ Varios ítems de la sección 8 quedan absorbidos acá; se indica en cada uno.
       `ynara-interfaz`, `ynara-disenador` y `ynara-critico` a `.claude/` de este
       repo, y decidir si también entran `impeccable` y
       `make-interfaces-feel-better` (licencias Apache 2.0 y MIT). Por PR. [V]
-- [ ] **TES-03 · Decidir dónde vive la demo.** Hoy no está en git. Opciones:
+- [x] **TES-03 · Decidir dónde vive la demo.** Hoy no está en git. Opciones:
       `docs/prototypes/demo/` en este repo, repo aparte, o dejarla local. [V]
 - [ ] **TES-04 · Agenda: qué vistas sobreviven.** La app tiene día, semana, mes y
       lista; la demo propone solo siete días con el hilo. Decidir antes de tocar
