@@ -460,7 +460,7 @@ Varios ítems de la sección 8 quedan absorbidos acá; se indica en cada uno.
       `DESIGN.md` con: tres tamaños de texto, dos pesos, escala de espacios
       4·8·16·24·40·64, una columna de 560 px, estructura de aplicación y reglas
       de movimiento. Reemplaza EST-03. [V]
-- [ ] **TES-02 · Traer la skill y los agentes al monorepo.** Copiar
+- [x] **TES-02 · Traer la skill y los agentes al monorepo.** Copiar
       `ynara-interfaz`, `ynara-disenador` y `ynara-critico` a `.claude/` de este
       repo, y decidir si también entran `impeccable` y
       `make-interfaces-feel-better` (licencias Apache 2.0 y MIT). Por PR. [V]
