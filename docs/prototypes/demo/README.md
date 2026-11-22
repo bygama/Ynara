@@ -36,18 +36,12 @@ Toda la app es un único lienzo vivo. Nada de lo que tiene nombre es decoración
 
 Navegar no cambia de página: mueve la cámara a otra región del espacio.
 
-## Dos estilos sobre el mismo espacio
+## Un estilo que fusiona dos direcciones
 
-En **Tú → Apariencia → Estilo** se elige entre:
-
-- **Minimal** (por defecto): fondo plano, una cosa importante por pantalla,
-  texto en tamaño de lectura, sin índices ni mayúsculas espaciadas. En el
-  lienzo quedan un anillo, el orbe y los puntos; los títulos de los eventos
-  aparecen al señalarlos. Vive en `css/minimal.css`, como capa sobre `app.css`.
-- **Editorial**: titulares y cifras grandes, filetes, índices numerados,
-  mancheta y folio. Es lo que se describe a continuación.
-
-Las tipografías, los colores, las interacciones y el contenido son los mismos.
+Versiones anteriores de la demo ofrecían dos estilos intercambiables (minimal
+y editorial). Esta versión los fusiona en uno solo: la base minimalista
+(fondo plano, una cosa importante por pantalla, texto en tamaño de lectura)
+con los recursos editoriales que sobrevivieron, descriptos a continuación.
 
 ## Dirección editorial
 
@@ -143,8 +137,8 @@ reconocimiento correría en infraestructura propia.
 index.html        Entrada. Aplica el tema antes del primer frame.
 serve.py          Servidor local sin caché.
 css/tokens.css    Identidad evolucionada: paleta, tipografías, filetes y resortes.
-css/app.css       Componentes y pantallas (dirección editorial).
-css/minimal.css   Capa del estilo minimalista (se activa con la clase «minimal»).
+css/app.css       Componentes y pantallas.
+js/app.js         Puente entre módulos: navegar y abrir la voz sin imports circulares.
 js/main.js        Mancheta, folio, muelle, ruteo, cámara por ruta y bienvenida.
 js/micro.js       Microinteracciones: titulares, cifras, marcador, cursor, imán, sonidos.
 js/state.js       Estado único, guardado en localStorage.
