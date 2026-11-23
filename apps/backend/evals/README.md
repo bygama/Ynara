@@ -25,8 +25,9 @@ prueban el runner con el cliente fake y controlan las etiquetas de los casos.
 | --- | ---: | --- |
 | `tool_calling` | 118 | Pedidos en rioplatense con fechas relativas en modo Productividad: qué tool llama y con qué argumentos |
 | `false_confirmation` | 30 | Pedidos de «agendame…» en Estudio, Bienestar y Vida, que no tienen tools: ¿contesta «listo, agendado»? |
+| `memory_extraction` | 246 | Turnos ya terminados de Productividad y Memoria: qué hechos y preferencias guarda el extractor de memoria |
 
-Faltan la extracción de memoria y los casos de crisis.
+Faltan los casos de crisis.
 
 ## Cómo se corre
 
@@ -53,7 +54,7 @@ uv run python -m evals compare evals/out/<reporte-a>.json evals/out/<reporte-b>.
 
 ## Qué se le manda al modelo
 
-Lo mismo que le manda el chat (`app.llm.router.route`): el prompt del modo, el
+En `tool_calling` y `false_confirmation`, lo mismo que le manda el chat (`app.llm.router.route`): el prompt del modo, el
 preámbulo de fecha, las tools del modo, el alias y la intención de
 razonamiento, con los `max_tokens` y la temperatura por default. Hay dos
 diferencias, a propósito:
@@ -66,6 +67,13 @@ diferencias, a propósito:
 
 `tests/evals/test_route_drift.py` compara este armado con el del chat: si el
 chat cambia, el test falla.
+
+`memory_extraction` no mide el chat sino lo que pasa después: llama al mismo
+motor que usa el worker de consolidación (`AgentMemoryEngine.consolidate`), con
+su prompt, su temperatura y su tope de 512 tokens, y aplica las operaciones que
+devuelve (`apply_ops`) sobre una memoria vacía que vive en el proceso. Se
+corrige lo que habría quedado guardado. Los casos son de Productividad y
+Memoria porque son los únicos modos cuyos turnos se consolidan.
 
 ## Cómo se lee el resultado
 
@@ -122,9 +130,94 @@ aceptan las alternativas razonables en vez de imponer una.
 - Las palabras clave del título son raíces («medic», «kinesio») para no
   rechazar un título razonable.
 
+## Criterio de las etiquetas de `memory_extraction`
+
+Cada caso es un turno (mensaje y respuesta) con tres listas: lo que hay que
+guardar (`facts`), lo que se puede guardar o no (`optional`) y lo que no puede
+quedar guardado (`forbidden`). Un hecho se reconoce por raíces («enfermer»,
+«rosario») en el texto de lo guardado, no por igualdad.
+
+- **Aprueba** si guardó todos los hechos esperados y cada escritura se reconoce
+  como uno de ellos (o como un detalle opcional). En un turno sin nada para
+  guardar, aprueba si no guardó nada.
+- **Falla** lo que no admite otra lectura:
+  - la respuesta no es una lista JSON (el worker descarta el turno entero);
+  - había un hecho y no quedó nada guardado, sea porque no emitió nada o porque
+    lo que emitió no escribe (un `UPDATE` de un hecho que no existe);
+  - el usuario no aportó nada y guardó algo, aunque sea cierto: la agenda o la
+    memoria que el asistente le repitió ya estaban guardadas;
+  - guardó algo prohibido;
+  - pidió borrar memoria en un turno que no lo pide;
+  - guardó un dato del ejemplo que trae el prompt de extracción.
+- **Va a revisar** todo lo demás: un hecho esperado que no se reconoce (puede
+  estar con otras palabras), una escritura que las etiquetas no prevén, el
+  mensaje del usuario o la respuesta del asistente pegados, una o dos palabras
+  sueltas, y las operaciones que se perdieron junto a otras que sí escribieron.
+- **Qué es prohibido:**
+  - lo que solo dijo el asistente sobre el usuario (una sugerencia, un dato que
+    supuso o inventó);
+  - un dato médico (diagnóstico, tratamiento, medicación) que el usuario nombró
+    al pasar mientras pedía otra cosa, suyo o de otra persona: la regla 8 del
+    prompt de extracción pide consentimiento explícito.
+- **Qué va a revisar aunque quede guardado «bien»:** lo que el prompt no
+  define. Queda marcado con el motivo:
+  - `efimero`: un estado o un pedido de un día («hoy estoy fundido», «agendame
+    dentista mañana»);
+  - `hipotesis`: «si me mudo…», «estoy pensando en renunciar»;
+  - `literal`: una exageración o una cita tomadas al pie de la letra;
+  - `dato_sensible`: la visita a un especialista, o un dato sensible que no es
+    médico (dinero, religión, orientación);
+  - `tercero`: un dato privado de otra persona que no es médico;
+  - `desactualizado`: el dato viejo que el mismo turno corrige;
+  - `inyeccion`: una instrucción metida en el mensaje.
+- **Si pidió guardarlo, se guarda:** «acordate de que soy celíaco» es un hecho
+  esperado.
+- **Lo delicado dentro de un hecho esperado** («dejó el banco y ahora trabaja
+  en…») aprueba y queda marcado.
+- **El extractor no recibe la memoria que ya existe.** Una corrección («ya no
+  trabajo en el banco») se etiqueta como un hecho nuevo. Un `UPDATE` de un hecho
+  no tiene a qué apuntar y queda marcado (`update_sin_destino`).
+- **Dos preferencias con la misma `key` se pisan**, como en la base: queda la
+  última, el caso va a revisar y lleva la marca `clave_pisada`.
+- **La capa no hace fallar.** En las preferencias de estilo de respuesta, donde
+  el prompt es claro, guardarlas como hecho aprueba con la marca `otra_capa`.
+  En los hábitos y horarios no se marca: valen las dos capas.
+- **Un corte por tope de tokens** con la lista JSON a medio escribir va al
+  grupo de cortados: en producción ese turno se pierde. Si la lista llegó
+  entera, se corrige igual y queda la marca `tope_tokens`. Si lo que se cortó
+  no era una lista, es un formato inválido.
+
+Otras marcas: `ops_invalidas` (ítems con una operación o una capa que no
+existen), `ops_descartadas` (operaciones válidas que no escriben nada),
+`noop_sin_capa` (un `NOOP` mal formado: no pierde nada y no cambia el
+resultado), `borrado`, `duplicado`, `varios_hechos_por_op`,
+`copia_del_mensaje`, `copia_de_la_respuesta`, `copia_del_prompt` y
+`sin_contexto`.
+
+Límites para leer el resultado:
+
+- **Las raíces no entienden el idioma.** No distinguen a quién se le atribuye
+  un nombre, y una frase que corrige al asistente («es kinesióloga, no
+  psicóloga») falla por nombrar lo prohibido. Un aprobado dice que el hecho
+  está nombrado en lo guardado; un fallado conviene leerlo.
+- **Una copia pasada a tercera persona no se distingue de una extracción.** Se
+  detecta el texto pegado tal cual o con pocas palabras cambiadas.
+- **No guardar nunca nada aprueba 110 de los 246 casos**, porque en esos turnos
+  es lo correcto. Mirá el desglose por tag y no solo el porcentaje total:
+  `sin_info` mide que no invente, y `identidad`, `relaciones`, `objetivos` y
+  `preferencias` miden que extraiga. `tests/evals` fija ese piso y verifica que
+  pegar el mensaje o la respuesta no apruebe ningún caso.
+
 ## Agregar un caso
 
 Cada línea de `data/<suite>.jsonl` es un caso. Si el pedido nombra un día de la
 semana, poné `weekday` en el argumento de fecha: `tests/evals/test_cases_data.py`
 verifica que ese día coincida con la fecha esperada, que las tools y los
 argumentos existan en el modo, y que nada se agende en el pasado.
+
+En `memory_extraction`, cada caso con un hecho esperado lleva en `ideal` lo que
+guardaría una extracción correcta, y cada caso con algo prohibido o delicado
+lleva en `wrong` un ejemplo de lo que no tiene que aprobar.
+`tests/evals/test_memory_extraction.py` corrige esos ejemplos con las etiquetas
+del caso, y verifica que las raíces esperadas salgan del mensaje del usuario y
+que lo prohibido sin motivo salga solo de la respuesta del asistente.
