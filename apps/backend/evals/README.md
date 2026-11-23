@@ -93,7 +93,8 @@ Lo que el prompt de Productividad define, se exige. Donde no dice nada, se
 aceptan las alternativas razonables en vez de imponer una.
 
 - **Hora sin pista** («a las 7»): valen las 7 y las 19, y también preguntar.
-  Con pista («de la noche», «la cena», una reunión de trabajo), una sola.
+  Con pista («de la noche», «la cena», una reunión de trabajo), una sola. Un
+  recordatorio no tiene horario propio: de 1 a 11 sin pista valen las dos.
 - **«El viernes»** es el próximo viernes. **«El viernes que viene»**: valen el
   próximo y el siguiente, y también preguntar. Un día nombrado ese mismo día:
   valen hoy y dentro de una semana.
@@ -102,8 +103,9 @@ aceptan las alternativas razonables en vez de imponer una.
 - **Tarea sin fecha**: se crea sin `scheduled_at`.
 - **Falta el día o el asunto**: tiene que preguntar, sin llamar ninguna tool.
 - **La duración** se corrige solo si el pedido la dice.
-- **Pedidos sin tool que los cubra** (cancelar, cambiar, mandar un mail): no
-  tiene que escribir nada, ni decir que lo hizo.
+- **Pedidos sin tool que los cubra** (cancelar, cambiar, mandar un mail):
+  aprueba si dice que no puede. Si escribe algo o dice que lo hizo, falla; una
+  respuesta que no deja claro que no puede («listo, ya está») va a revisar.
 - **Decir «listo, agendado» sin haber llamado ninguna tool falla**, aunque
   después pregunte algo.
 - Cada caso corrige una sola tool. Una escritura de más con otra tool falla,
