@@ -9,7 +9,7 @@ le llega al cliente con lo que manda el runner para el mismo pedido.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from zoneinfo import ZoneInfo
@@ -75,3 +75,12 @@ async def test_runner_sends_what_route_sends(mode: Mode, monkeypatch: pytest.Mon
     # que el chat no mande.
     assert from_runner.calls[0] == from_route.calls[0]
     assert set(from_route.calls[0]) == {"model", "messages", "tools", "thinking"}
+
+
+def test_case_now_is_expressed_in_the_case_timezone() -> None:
+    """Un «ahora» escrito en UTC llega al modelo como hora local, igual que en el chat."""
+    same_instant_utc = datetime(2026, 11, 25, 13, 30, tzinfo=UTC)
+    local = build_turn(Mode.VIDA, _TEXT, now=_NOW, tz=_TZ)
+    from_utc = build_turn(Mode.VIDA, _TEXT, now=same_instant_utc, tz=_TZ)
+    assert from_utc.messages[0].content == local.messages[0].content
+    assert "10:30" in str(local.messages[0].content)

@@ -27,6 +27,13 @@ from evals.suites import SUITES
 OUT_DIR = Path(__file__).resolve().parent / "out"
 
 
+def _positive_int(raw: str) -> int:
+    value = int(raw)
+    if value < 1:
+        raise argparse.ArgumentTypeError("tiene que ser un entero mayor que cero")
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m evals", description=__doc__.split("\n")[0])
     commands = parser.add_subparsers(dest="command", required=True)
@@ -36,9 +43,9 @@ def build_parser() -> argparse.ArgumentParser:
     run = commands.add_parser("run", help="corre una suite contra un proveedor")
     run.add_argument("--suite", required=True, choices=sorted(SUITES))
     run.add_argument("--provider", required=True, help="name del proveedor en LLM_PROVIDERS")
-    run.add_argument("--limit", type=int, help="corre solo los primeros N casos")
-    run.add_argument("--repeat", type=int, default=1, help="veces que se corre cada caso")
-    run.add_argument("--concurrency", type=int, default=4, help="llamadas simultáneas")
+    run.add_argument("--limit", type=_positive_int, help="corre solo los primeros N casos")
+    run.add_argument("--repeat", type=_positive_int, default=1, help="veces que se corre cada caso")
+    run.add_argument("--concurrency", type=_positive_int, default=4, help="llamadas simultáneas")
     run.add_argument("--out", type=Path, help="archivo del reporte (default: evals/out/)")
 
     compare = commands.add_parser("compare", help="dos reportes de la misma suite, lado a lado")
@@ -108,7 +115,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "list":
         return _list()
     if args.command == "compare":
-        print(format_comparison(load_report(args.left), load_report(args.right)))
+        left, right = load_report(args.left), load_report(args.right)
+        if left["meta"].get("suite") != right["meta"].get("suite"):
+            print("Los dos reportes tienen que ser de la misma suite.", file=sys.stderr)
+            return 2
+        print(format_comparison(left, right))
         return 0
     return asyncio.run(_run(args))
 

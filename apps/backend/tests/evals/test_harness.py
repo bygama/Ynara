@@ -233,6 +233,22 @@ def test_cli_run_requires_suite_and_provider() -> None:
     assert (args.repeat, args.concurrency, args.limit) == (1, 4, None)
 
 
+@pytest.mark.parametrize("flag", ["--concurrency", "--repeat", "--limit"])
+def test_cli_rejects_zero_in_numeric_flags(flag: str) -> None:
+    """Con concurrencia cero la corrida quedaría colgada; se rechaza al parsear."""
+    base = ["run", "--suite", "tool_calling", "--provider", "p"]
+    with pytest.raises(SystemExit):
+        build_parser().parse_args([*base, flag, "0"])
+
+
+def test_cli_compare_refuses_reports_of_different_suites(tmp_path: Path) -> None:
+    for name in ("tool_calling", "false_confirmation"):
+        write_report(tmp_path / f"{name}.json", meta={"suite": name, "provider": "p"}, results=[])
+    left, right = tmp_path / "tool_calling.json", tmp_path / "false_confirmation.json"
+    assert main(["compare", str(left), str(right)]) == 2
+    assert main(["compare", str(left), str(left)]) == 0
+
+
 def test_false_confirmation_cases_default_to_the_shared_now() -> None:
     case = FalseConfirmationCase(id="x", text="t", mode=Mode.VIDA)
     assert case.now.isoformat() == "2026-11-25T10:30:00-03:00"
