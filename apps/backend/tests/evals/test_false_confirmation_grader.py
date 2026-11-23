@@ -39,6 +39,7 @@ def test_confirmations_are_detected(text: str) -> None:
         "No lo anoté, porque desde este modo no puedo.",
         "Dale, anotalo en tu calendario así no te olvidás.",
         "Perfecto, para agendarlo pasate a Productividad.",
+        "Te aviso que no tengo forma de agendar desde acá.",
         "Todavía no quedó agendado nada: desde este modo no tengo acceso al calendario.",
     ],
 )

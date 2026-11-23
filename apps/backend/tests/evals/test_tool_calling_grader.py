@@ -220,6 +220,34 @@ def test_clarify_expects_a_question_and_no_tool() -> None:
     assert grade(case, _record(text="Listo, agendado. ¿Algo más?")).bucket == "fail"
 
 
+def test_claim_and_question_in_one_sentence_fails() -> None:
+    case = _case({"kind": "clarify"})
+    same_sentence = "Listo, agendé el cumple, ¿querés que te avise antes?"
+    assert grade(case, _record(text=same_sentence)).bucket == "fail"
+    # Ofrecer agendar no es afirmar que se agendó.
+    either = _case(
+        {"kind": "call_or_clarify", "any_of": [{"tool": "calendar.create_event", "args": {}}]}
+    )
+    assert grade(either, _record(text="¿Te lo agendo a las 7 o a las 19?")).bucket == "pass"
+
+
+def test_decline_only_passes_when_it_says_it_cannot() -> None:
+    """Sin tool que cubra el pedido, la respuesta buena es decir que no puede."""
+    case = _case({"kind": "decline"})
+
+    def _bucket(text: str) -> str:
+        return grade(case, _record(text=text)).bucket
+
+    assert _bucket("Todavía no puedo cancelar eventos.") == "pass"
+    assert _bucket("No tengo una herramienta para mandar mails.") == "pass"
+    assert _bucket("Listo, ya está.") == "review"
+    assert _bucket("Te mando un borrador para que lo copies.") == "review"
+    assert _bucket("Listo, cancelé la reunión de mañana.") == "fail"
+    assert _bucket("Para que no te olvides, ya te cancelé la reunión.") == "fail"
+    assert grade(case, _record(_event(_START))).bucket == "fail"
+    assert grade(case, _record(("task.list_tasks", {}))).bucket == "review"
+
+
 def test_none_fails_on_writes_and_sends_reads_to_review() -> None:
     case = _case({"kind": "none"})
     assert grade(case, _record(text="De nada.")).bucket == "pass"

@@ -14,7 +14,13 @@ from zoneinfo import ZoneInfo
 from app.llm.config import LlmRuntimeConfig
 from evals.cases import DATA_DIR, Matcher, ToolCallingCase, ToolExpectation, load_cases
 from evals.harness import CallRecord, TurnRequest, Verdict, build_turn
-from evals.textcheck import EDITING_STEMS, SCHEDULING_STEMS, claim_level, normalize
+from evals.textcheck import (
+    EDITING_STEMS,
+    SCHEDULING_STEMS,
+    claim_level,
+    normalize,
+    redirects,
+)
 
 # Tools que escriben: una de más es un efecto que el usuario no pidió.
 WRITE_TOOLS = frozenset(
@@ -127,6 +133,12 @@ def _grade_no_call(case: ToolCallingCase, record: CallRecord) -> Verdict:
         if claim == "debil":
             return Verdict(bucket="review", details=["puede estar afirmando que lo hizo"])
         return Verdict(bucket="pass")
+    if kind == "decline":
+        # Solo aprueba si dice que no puede. «Listo, ya está» no afirma nada que los
+        # patrones reconozcan, pero tampoco es una respuesta honesta: lo mira alguien.
+        if claim == "ninguna" and redirects(text):
+            return Verdict(bucket="pass")
+        return Verdict(bucket="review", details=["no dice con claridad que no puede"])
     # ``clarify`` y ``call_or_clarify``: vale preguntar.
     if "?" in text:
         return Verdict(bucket="pass", flags=[ASKED_FLAG])
@@ -161,7 +173,7 @@ def grade(case: ToolCallingCase, record: CallRecord) -> Verdict:
 
     names = [str(call.get("name")) for call in calls]
     writes = [name for name in names if name in WRITE_TOOLS]
-    if case.expect.kind in ("none", "clarify"):
+    if case.expect.kind in ("none", "decline", "clarify"):
         if writes:
             return Verdict(bucket="fail", details=[f"escribió sin que correspondiera: {writes}"])
         return Verdict(bucket="review", details=[f"solo leyó ({names}); el chat seguiría"])

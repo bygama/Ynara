@@ -28,10 +28,12 @@ _FILLERS = re.compile(
 _NEGATIONS = frozenset({"no", "nunca", "tampoco", "sin", "ni"})
 # Ofrecimientos y consejos: el verbo aparece, pero nadie dice que la acción se hizo.
 _HEDGE = re.compile(
-    r"\b(?:queres\s+que|si\s+queres|podes|podrias|para\s+que|conviene|deberias"
+    r"\b(?:queres\s+que|si\s+queres|podes|podrias|conviene|deberias"
     r"|tenes\s+que|te\s+recomiendo|te\s+sugiero)\b"
 )
-_SENTENCE = re.compile(r"[^.!?\n]+[.!?]*")
+# Una pregunta que abre con «¿» es otra oración: «Listo, agendado, ¿algo más?» afirma
+# y después pregunta.
+_SENTENCE = re.compile(r"¿?[^.!?\n¿]+[.!?]*")
 _WORD = re.compile(r"\w+")
 
 # Dice que no puede, manda a otro modo o le pide al usuario que lo haga.
@@ -39,7 +41,8 @@ _REDIRECTS = tuple(
     re.compile(pattern)
     for pattern in (
         r"\bno\s+(?:\w+\s+){0,2}puedo\b",
-        r"\bno\s+tengo\s+(?:acceso|forma|manera|como)\b",
+        r"\bno\s+tengo\s+(?:acceso|forma|manera|como|(?:una?\s+)?herramientas?)\b",
+        r"\bno\s+(?:es\s+posible|se\s+puede)\b",
         r"\bmodo\s+productividad\b",
         r"\bpas\w*\s+al?\s+(?:modo\s+)?productividad\b",
         r"\b(?:cambi|pas)\w*\s+(?:a|al|de)\s+modo\b",
@@ -64,11 +67,15 @@ def _strong_patterns(stems: str) -> tuple[re.Pattern[str], ...]:
         for pattern in (
             rf"\b(?:listo|hecho|perfecto|dale|joya|de una|ok|okey)\b[^.!?\n]{{0,40}}\b{done}\b",
             rf"\b(?:ya|te|lo|la|los|las|se|me)\s+(?:lo\s+|la\s+|los\s+|las\s+|te\s+)?"
-            rf"(?P<v>{stems}(?:e|o|i))\b",
+            rf"(?P<v>{stems}(?:e|i))\b",
+            # El presente («te lo agendo») promete la acción solo con los verbos de
+            # agendar; «te mando un borrador» no dice que mandó nada.
+            rf"\b(?:ya|te|lo|la|los|las|se|me)\s+(?:lo\s+|la\s+|los\s+|las\s+|te\s+)?"
+            rf"(?P<v>{SCHEDULING_STEMS}o)\b",
             rf"\b(?:quedo|queda|esta|quedaron|estan|deje|tengo)\s+(?P<v>{stems}ad[oa]s?)\b",
             rf"\b(?P<v>{stems}ad[oa]s?)\s+(?:para|el|la|a\s+las|manana|hoy|en)\b",
             rf"^\W*(?P<v>{stems}ad[oa]s?)\b",
-            r"\bte\s+(?:lo\s+)?(?P<v>recuerdo|aviso)\b",
+            r"\bte\s+(?:lo\s+)?(?P<v>recuerdo|aviso)\b(?!\s+que\b)",
             r"\bte\s+(?:lo\s+)?voy\s+a\s+(?P<v>recordar|avisar)\b",
             rf"\b(?:voy|vamos)\s+a\s+(?P<v>{stems}ar\w*)\b",
         )

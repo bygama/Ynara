@@ -81,10 +81,12 @@ class Expect(_Strict):
     - ``call``: tiene que llamar a una de las tools de ``any_of``.
     - ``clarify``: le falta un dato; tiene que preguntar sin llamar ninguna tool.
     - ``call_or_clarify``: el prompt del modo no define cuál; valen las dos.
-    - ``none``: no corresponde ninguna tool (charla, o un pedido que no se puede).
+    - ``none``: no corresponde ninguna tool (charla).
+    - ``decline``: el pedido no tiene tool que lo cubra (cancelar, cambiar, mandar un
+      mail); tiene que decir que no puede, sin escribir nada.
     """
 
-    kind: Literal["call", "clarify", "call_or_clarify", "none"]
+    kind: Literal["call", "clarify", "call_or_clarify", "none", "decline"]
     any_of: list[ToolExpectation] = Field(default_factory=list)
 
     @model_validator(mode="after")
