@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
@@ -368,6 +369,43 @@ async def test_agent_engine_invalid_layer_skipped() -> None:
     ops = extraction.ops
     assert len(ops) == 1
     assert ops[0].layer == "semantic"
+
+
+async def test_agent_engine_non_string_op_or_layer_skipped() -> None:
+    """Un ``op`` o un ``layer`` que no es string se saltea: no tumba el worker."""
+    fake_llm = FakeLlmClient(models=frozenset({"agente"}))
+    raw_ops = [
+        {"op": ["ADD"], "layer": "semantic", "content": "x"},
+        {"op": "ADD", "layer": {"name": "semantic"}, "content": "x"},
+        {"op": None, "layer": "semantic"},
+        {"op": "ADD", "layer": "semantic", "content": "hecho valido"},
+    ]
+    fake_llm.queue_result(_make_result(_json_ops(raw_ops)))
+    engine = AgentMemoryEngine(llm_client=fake_llm, model="agente")
+    extraction = await engine.consolidate(user_msg="x", model_response="y", mode="vida")
+    assert [op.content for op in extraction.ops] == ["hecho valido"]
+
+
+async def test_agent_engine_non_string_fields_count_as_missing() -> None:
+    """``content`` nulo no se guarda como el texto "None"; ``key`` y ``target_id``, igual."""
+    fake_llm = FakeLlmClient(models=frozenset({"agente"}))
+    raw_ops = [
+        {"op": "ADD", "layer": "semantic", "content": None},
+        {"op": "ADD", "layer": "semantic", "content": 42},
+        {"op": "ADD", "layer": "procedural", "key": 5, "value": {"a": 1}},
+        {"op": "DELETE", "layer": "semantic", "target_id": ["id"]},
+    ]
+    fake_llm.queue_result(_make_result(_json_ops(raw_ops)))
+    engine = AgentMemoryEngine(llm_client=fake_llm, model="agente")
+    extraction = await engine.consolidate(user_msg="x", model_response="y", mode="vida")
+    ops = extraction.ops
+    assert [op.content for op in ops] == ["", "", "", ""]
+    assert [op.key for op in ops] == [None, None, None, None]
+    assert [op.target_id for op in ops] == [None, None, None, None]
+    # Sin contenido, sin key o sin target_id, ``apply_ops`` no escribe ni borra nada.
+    semantic, procedural = MagicMock(), MagicMock()
+    assert await apply_ops(ops, semantic_store=semantic, procedural_store=procedural) == 0
+    assert semantic.method_calls == [] and procedural.method_calls == []
 
 
 async def test_agent_engine_llm_failure_returns_empty() -> None:
