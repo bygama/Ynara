@@ -14,6 +14,7 @@ from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import Any, Literal, Protocol
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field
 
@@ -103,7 +104,9 @@ def build_turn(
     cfg = config if config is not None else load_llm_config()
     mode_cfg = cfg.modes[mode.value]
     model_cfg = cfg.model_for_mode(mode.value)
-    system = f"{load_prompt(mode)}\n\n{build_now_preamble(now, tz_label=tz)}"
+    # Como ``current_now(tz)`` en el chat: el «ahora» se expresa en el huso del usuario.
+    local_now = now.astimezone(ZoneInfo(tz))
+    system = f"{load_prompt(mode)}\n\n{build_now_preamble(local_now, tz_label=tz)}"
     # Los stores solo guardan la sesión al construirse: sin sesión no hay I/O, y las
     # specs salen del mismo registro que usa el chat.
     memory_context = build_memory_context(
