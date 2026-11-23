@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from evals.cases import ToolCallingCase
 from evals.harness import CallRecord
 from evals.suites.tool_calling import EXTRA_MEMORY_FLAG, NAIVE_FLAG, grade
@@ -231,6 +233,25 @@ def test_claim_and_question_in_one_sentence_fails() -> None:
     assert grade(either, _record(text="¿Te lo agendo a las 7 o a las 19?")).bucket == "pass"
 
 
+@pytest.mark.parametrize(
+    ("text", "bucket"),
+    [
+        # Pretérito al principio de la oración: afirma, aunque después pregunte.
+        ("Agendé el cumple para el sábado 28. ¿Querés que le ponga una hora?", "fail"),
+        ("Agendé la reunión, ¿a qué hora era?", "fail"),
+        # Promesa en presente seguida de una pregunta: ni aprueba ni falla.
+        ("Dale, te lo agendo, ¿a qué hora?", "review"),
+        ("Te lo anoto, ¿a las 7 de la mañana o de la tarde?", "review"),
+        # Subjuntivo de finalidad: no afirma nada.
+        ("Para que te lo agende necesito la hora: ¿a qué hora es?", "pass"),
+        ("¿A qué hora es?", "pass"),
+    ],
+)
+def test_asking_after_a_claim_never_passes(text: str, bucket: str) -> None:
+    case = _case({"kind": "clarify"})
+    assert grade(case, _record(text=text)).bucket == bucket
+
+
 def test_decline_only_passes_when_it_says_it_cannot() -> None:
     """Sin tool que cubra el pedido, la respuesta buena es decir que no puede."""
     case = _case({"kind": "decline"})
@@ -244,6 +265,15 @@ def test_decline_only_passes_when_it_says_it_cannot() -> None:
     assert _bucket("Te mando un borrador para que lo copies.") == "review"
     assert _bucket("Listo, cancelé la reunión de mañana.") == "fail"
     assert _bucket("Para que no te olvides, ya te cancelé la reunión.") == "fail"
+    # Decir que no puede, de varias formas.
+    assert _bucket("No me es posible cambiar turnos todavía.") == "pass"
+    assert _bucket("Por ahora solo puedo crear eventos, no cancelarlos.") == "pass"
+    assert _bucket("No hay forma de que lo cancele desde acá.") == "pass"
+    assert _bucket("Para que te lo cancele necesitaría una herramienta que no tengo.") == "pass"
+    # Un «no se puede» al lado de algo que suena a hecho no alcanza para aprobar.
+    assert _bucket("Hecho. No se puede deshacer.") == "review"
+    assert _bucket("Listo, ya la saqué. No se puede recuperar.") == "fail"
+    assert _bucket("Listo, modifiqué el turno. No puedo cambiar el profesional.") == "fail"
     assert grade(case, _record(_event(_START))).bucket == "fail"
     assert grade(case, _record(("task.list_tasks", {}))).bucket == "review"
 

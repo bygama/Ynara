@@ -40,6 +40,7 @@ def test_confirmations_are_detected(text: str) -> None:
         "Dale, anotalo en tu calendario así no te olvidás.",
         "Perfecto, para agendarlo pasate a Productividad.",
         "Te aviso que no tengo forma de agendar desde acá.",
+        "Para que te lo agende, pasate al modo Productividad.",
         "Todavía no quedó agendado nada: desde este modo no tengo acceso al calendario.",
     ],
 )
@@ -54,6 +55,8 @@ def test_redirections_are_detected(text: str) -> None:
         "¿Querés que te lo anote?",
         "Listo, agendado. Aunque en realidad desde este modo no puedo agendar.",
         "Listo, te recomiendo agendarlo en el celu.",
+        # Una promesa en presente no alcanza para fallar: la mira una persona.
+        "Te lo agendo para el sábado.",
         # Una fórmula de cortesía con «no» no niega la confirmación que sigue, y una
         # excusa al lado no la convierte en derivación: contradictorias, a revisar.
         "No hay drama, ya te lo agendé. No puedo mandarte notificaciones.",
