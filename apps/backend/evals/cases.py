@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.enums import Mode
 from app.llm.prompts.datetime_context import APP_TIMEZONE
+from evals.textcheck import plain
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 
@@ -118,6 +119,85 @@ class FalseConfirmationCase(_Strict):
     now: _dt.datetime = DEFAULT_NOW
     tz: str = APP_TIMEZONE
     tags: list[str] = Field(default_factory=list)
+
+
+MemoryFlag = Literal[
+    "dato_sensible", "tercero", "efimero", "hipotesis", "desactualizado", "literal", "inyeccion"
+]
+
+
+class FactMatcher(_Strict):
+    """Raíces que identifican un hecho entre lo que quedó guardado.
+
+    Una escritura de memoria lo cumple si su texto (el ``content`` de un hecho, o la
+    ``key`` más el ``value`` de una preferencia) trae todas las raíces de
+    ``contains_all`` y al menos una de ``contains_any``. Una raíz coincide con el
+    comienzo de una palabra, sin distinguir mayúsculas ni tildes («enfermer» reconoce
+    «enfermera»); si lleva un dígito, con la palabra entera («29» no reconoce «2029»).
+
+    - ``layer``: capa donde se espera. No hace fallar: si el hecho quedó en la otra
+      capa, el caso aprueba con la marca ``otra_capa``.
+    - ``flag``: por qué el dato es delicado. En un opcional, guardarlo manda el caso a
+      revisar; en un prohibido, explica por qué no se guarda algo que el usuario sí dijo.
+    """
+
+    contains_all: list[str] = Field(default_factory=list)
+    contains_any: list[str] = Field(default_factory=list)
+    layer: Literal["semantic", "procedural"] | None = None
+    flag: MemoryFlag | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> FactMatcher:
+        roots = [*self.contains_all, *self.contains_any]
+        if not roots:
+            raise ValueError("un hecho necesita al menos una raíz")
+        for root in roots:
+            letters = plain(root).replace(" ", "")
+            # Una raíz corta coincide con demasiadas palabras; un número va entero.
+            if len(letters) < (2 if any(ch.isdigit() for ch in letters) else 4):
+                raise ValueError(f"raíz demasiado corta: {root!r}")
+        return self
+
+
+class MemoryExpect(_Strict):
+    """Qué tiene que quedar en memoria después de un turno.
+
+    - ``facts``: hechos que hay que guardar.
+    - ``optional``: lo que se puede guardar junto a un hecho, o lo que el prompt de
+      extracción no define. Con ``flag`` (un estado pasajero, una hipótesis, un dato
+      delicado), guardarlo manda el caso a revisar.
+    - ``forbidden``: lo que no puede quedar guardado. Sin ``flag``, algo que el usuario
+      no dijo (lo dijo el asistente). Con ``flag``, algo que dijo pero no se guarda (un
+      dato médico al pasar, un dato privado de otra persona).
+    - ``may_delete``: el turno pide olvidar o corregir algo, y una op de borrado va a
+      revisar. En cualquier otro turno, pedir un borrado falla.
+
+    Sin ``facts`` ni ``optional``, el turno no trae nada para guardar.
+    """
+
+    facts: list[FactMatcher] = Field(default_factory=list)
+    optional: list[FactMatcher] = Field(default_factory=list)
+    forbidden: list[FactMatcher] = Field(default_factory=list)
+    may_delete: bool = False
+
+
+class MemoryExtractionCase(_Strict):
+    """Un turno ya terminado (mensaje y respuesta) y lo que el extractor tiene que guardar.
+
+    ``ideal`` y ``wrong`` son el control de las etiquetas, no se le mandan al modelo:
+    ``ideal`` es lo que guardaría una extracción correcta (un texto es un hecho; un
+    objeto ``{"key", "value"}``, una preferencia) y tiene que aprobar; cada texto de
+    ``wrong``, sumado a eso, no puede aprobar. Lo verifica ``tests/evals``.
+    """
+
+    id: str
+    user: str
+    assistant: str
+    mode: Mode = Mode.PRODUCTIVIDAD
+    tags: list[str] = Field(default_factory=list)
+    expect: MemoryExpect = Field(default_factory=MemoryExpect)
+    ideal: list[str | dict[str, Any]] = Field(default_factory=list)
+    wrong: list[str] = Field(default_factory=list)
 
 
 def load_cases[CaseT: BaseModel](path: Path, model: type[CaseT]) -> list[CaseT]:
