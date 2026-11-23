@@ -11,9 +11,10 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from app.llm.clients.base import LLMClient
 from app.llm.config import LlmRuntimeConfig
 from evals.cases import DATA_DIR, Matcher, ToolCallingCase, ToolExpectation, load_cases
-from evals.harness import CallRecord, TurnRequest, Verdict, build_turn
+from evals.harness import CallRecord, TurnRequest, Verdict, build_turn, call_model
 from evals.textcheck import (
     EDITING_STEMS,
     SCHEDULING_STEMS,
@@ -214,6 +215,11 @@ class ToolCallingSuite:
 
     def build(self, case: ToolCallingCase, config: LlmRuntimeConfig) -> TurnRequest:
         return build_turn(case.mode, case.text, now=case.now, tz=case.tz, config=config)
+
+    async def call(
+        self, client: LLMClient, case: ToolCallingCase, config: LlmRuntimeConfig
+    ) -> CallRecord:
+        return await call_model(client, self.build(case, config))
 
     def grade(self, case: ToolCallingCase, record: CallRecord) -> Verdict:
         return grade(case, record)

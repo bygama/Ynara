@@ -28,7 +28,7 @@ from app.llm.errors import LlmError, ModelNotServedError
 from app.llm.prompts.datetime_context import build_now_preamble
 from app.llm.prompts.loader import load_prompt
 from app.llm.router import _thinking_for_role
-from app.llm.schemas import ChatMessage, ToolSpec
+from app.llm.schemas import ChatMessage, CompletionResult, ToolSpec
 
 # Usuario ficticio: solo liga los stores, que acá nunca tocan la base.
 _EVAL_USER_ID = UUID("00000000-0000-4000-8000-000000000e7a")
@@ -82,13 +82,18 @@ class CaseResult(BaseModel):
 
 
 class Suite(Protocol):
-    """Una suite: de dónde salen sus casos, cómo arma el turno y cómo corrige."""
+    """Una suite: de dónde salen sus casos, cómo llama al modelo y cómo corrige.
+
+    ``call`` es de cada suite porque no todas miden el chat: las que sí arman el turno
+    con ``build_turn`` y lo mandan con ``call_model``; la de extracción de memoria
+    llama al motor de consolidación, que fija su propia temperatura y su tope de tokens.
+    """
 
     name: str
     description: str
 
     def load(self) -> list[Any]: ...
-    def build(self, case: Any, config: LlmRuntimeConfig) -> TurnRequest: ...
+    async def call(self, client: LLMClient, case: Any, config: LlmRuntimeConfig) -> CallRecord: ...
     def grade(self, case: Any, record: CallRecord) -> Verdict: ...
 
 
@@ -157,6 +162,11 @@ async def call_model(client: LLMClient, turn: TurnRequest) -> CallRecord:
         raise
     except LlmError as exc:
         return CallRecord(status="error", error_type=type(exc).__name__)
+    return record_from_result(result)
+
+
+def record_from_result(result: CompletionResult) -> CallRecord:
+    """Pasa una respuesta del cliente a registro; la degradada cuenta como error."""
     if result.finish_reason == "degraded":
         return CallRecord(status="error", error_type="degraded", model_name=result.model_name)
     return CallRecord(
@@ -196,9 +206,8 @@ async def run_suite(
     gate = asyncio.Semaphore(concurrency)
 
     async def _one(case: Any, attempt: int) -> CaseResult:
-        turn = suite.build(case, cfg)
         async with gate:
-            record = await call_model(client, turn)
+            record = await suite.call(client, case, cfg)
         result = CaseResult(
             case_id=case.id,
             tags=list(case.tags),

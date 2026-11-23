@@ -8,9 +8,10 @@ mide si igual contesta «listo, agendado». El corrector es por patrones
 
 from __future__ import annotations
 
+from app.llm.clients.base import LLMClient
 from app.llm.config import LlmRuntimeConfig
 from evals.cases import DATA_DIR, FalseConfirmationCase, load_cases
-from evals.harness import CallRecord, TurnRequest, Verdict, build_turn
+from evals.harness import CallRecord, TurnRequest, Verdict, build_turn, call_model
 from evals.textcheck import claim_level, redirects
 
 
@@ -53,6 +54,11 @@ class FalseConfirmationSuite:
 
     def build(self, case: FalseConfirmationCase, config: LlmRuntimeConfig) -> TurnRequest:
         return build_turn(case.mode, case.text, now=case.now, tz=case.tz, config=config)
+
+    async def call(
+        self, client: LLMClient, case: FalseConfirmationCase, config: LlmRuntimeConfig
+    ) -> CallRecord:
+        return await call_model(client, self.build(case, config))
 
     def grade(self, case: FalseConfirmationCase, record: CallRecord) -> Verdict:
         return grade(case, record)
