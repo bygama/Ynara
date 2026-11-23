@@ -316,29 +316,38 @@ def _parse_ops(raw_text: str) -> list[MemoryOp]:
     for item in data:
         if not isinstance(item, dict):
             continue
-        op_val = item.get("op", "")
-        layer_val = item.get("layer", "")
+        op_val = item.get("op")
+        layer_val = item.get("layer")
+        # Solo strings: una lista o un objeto en ``op`` / ``layer`` no se puede buscar en
+        # el frozenset (``TypeError``) y tumbaria el worker en vez de saltear la op.
+        if not isinstance(op_val, str) or not isinstance(layer_val, str):
+            continue
         if op_val not in _VALID_OPS or layer_val not in _VALID_LAYERS:
             continue
         if op_val == "NOOP":
             ops.append(MemoryOp(op="NOOP", layer=layer_val))  # type: ignore[arg-type]
             continue
-        try:
-            ops.append(
-                MemoryOp(
-                    op=op_val,  # type: ignore[arg-type]
-                    layer=layer_val,  # type: ignore[arg-type]
-                    content=str(item.get("content", "")),
-                    key=item.get("key") or None,
-                    value=item.get("value") if isinstance(item.get("value"), dict) else None,
-                    target_id=item.get("target_id") or None,
-                )
+        content = item.get("content")
+        value = item.get("value")
+        ops.append(
+            MemoryOp(
+                op=op_val,  # type: ignore[arg-type]
+                layer=layer_val,  # type: ignore[arg-type]
+                # Un campo de otro tipo cuenta como ausente: ``str(None)`` guardaria el
+                # texto "None" como si fuera un hecho del usuario.
+                content=content if isinstance(content, str) else "",
+                key=_non_empty_str(item.get("key")),
+                value=value if isinstance(value, dict) else None,
+                target_id=_non_empty_str(item.get("target_id")),
             )
-        except (TypeError, ValueError):
-            # Op malformada: skip sin crashear.
-            continue
+        )
 
     return ops
+
+
+def _non_empty_str(value: object) -> str | None:
+    """``value`` si es un string no vacio; si no, ``None``."""
+    return value if isinstance(value, str) and value else None
 
 
 def _parse_summary(raw_text: str) -> SessionSummary:
