@@ -58,6 +58,10 @@ class CallRecord(BaseModel):
     model_name: str | None = None
     latency_ms: float = 0.0
     has_reasoning: bool = False
+    # Solo la suite de extracción: las ops que devolvió el motor de memoria y lo que
+    # habrían escrito en una memoria vacía. ``Any``: es JSON del modelo, de forma libre.
+    memory_ops: list[dict[str, Any]] = Field(default_factory=list)
+    memory_writes: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class Verdict(BaseModel):

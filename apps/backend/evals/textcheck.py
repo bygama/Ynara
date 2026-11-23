@@ -82,6 +82,11 @@ def normalize(text: str) -> str:
     return "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
 
 
+def plain(text: str) -> str:
+    """``normalize`` y además sin puntuación: palabras separadas por un espacio."""
+    return " ".join(re.findall(r"[a-z0-9]+", normalize(text)))
+
+
 def _strong_patterns(stems: str) -> tuple[re.Pattern[str], ...]:
     done = rf"(?P<v>{stems}(?:ad[oa]s?|e|i))"
     return tuple(
