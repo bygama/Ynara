@@ -181,8 +181,10 @@ async def test_expected_facts() -> None:
         case, ops_json(add_op("El usuario se llama Renata y vive en Rosario."))
     )
     assert (together.bucket, together.flags) == ("pass", [SEVERAL_FACTS_FLAG])
+    # Lo mismo dos veces son dos filas en la base: lo mira una persona.
     twice = await verdict_for(case, ops_json(*two_ops, two_ops[0]))
-    assert (twice.bucket, twice.flags) == ("pass", [DUPLICATE_FLAG])
+    assert (twice.bucket, twice.flags) == ("review", [DUPLICATE_FLAG])
+    assert twice.details == ["guardó lo mismo más de una vez"]
 
 
 async def test_pasting_the_turn_is_not_extracting() -> None:

@@ -236,7 +236,9 @@ def _review_writes(
     if unknown:
         reasons.append(f"{unknown} escritura(s) que las etiquetas no prevén")
     if len(set(texts)) < len(texts):
+        # ``apply_ops`` no deduplica: en la base quedarían dos filas iguales.
         flags.append(DUPLICATE_FLAG)
+        reasons.append("guardó lo mismo más de una vez")
     return flags, reasons
 
 
