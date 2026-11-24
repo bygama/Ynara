@@ -148,7 +148,7 @@ def raw_items(text: str) -> list[Any] | None:
     """
     try:
         data = json.loads(_strip_reasoning_and_fences(text))
-    except ValueError:
+    except (ValueError, RecursionError):
         return None
     return data if isinstance(data, list) else None
 
