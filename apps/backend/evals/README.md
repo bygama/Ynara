@@ -232,6 +232,6 @@ lleva en `wrong` un ejemplo de lo que no tiene que aprobar.
 `tests/evals/test_memory_extraction_labels.py` corrige esos ejemplos con las
 etiquetas del caso, y verifica que las raíces esperadas salgan del mensaje del
 usuario y que lo prohibido sin motivo salga solo de la respuesta del asistente.
-La única raíz opcional que no sale del mensaje es la que generaliza un dato
-médico prohibido («una medicación» por el nombre del remedio): va a revisar con
-`dato_sensible`, y los casos que la usan están contados en el test.
+El único matcher opcional sin ninguna raíz en el mensaje es el que generaliza
+un dato médico prohibido («una medicación» por el nombre del remedio): va a
+revisar con `dato_sensible`, y los casos que lo usan están contados en el test.
