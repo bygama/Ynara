@@ -304,7 +304,8 @@ def _parse_ops(raw_text: str) -> list[MemoryOp]:
     """
     try:
         data = json.loads(_strip_reasoning_and_fences(raw_text))
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError, RecursionError):
+        # ``RecursionError``: un JSON anidado miles de veces agota el parser.
         logger.debug("memory_engine: JSON invalido en respuesta del modelo (descartado)")
         return []
 
@@ -319,7 +320,7 @@ def _parse_ops(raw_text: str) -> list[MemoryOp]:
         op_val = item.get("op")
         layer_val = item.get("layer")
         # Solo strings: una lista o un objeto en ``op`` / ``layer`` no se puede buscar en
-        # el frozenset (``TypeError``) y tumbaria el worker en vez de saltear la op.
+        # el frozenset (``TypeError``): se perdia el turno entero en vez de saltear la op.
         if not isinstance(op_val, str) or not isinstance(layer_val, str):
             continue
         if op_val not in _VALID_OPS or layer_val not in _VALID_LAYERS:
@@ -334,8 +335,9 @@ def _parse_ops(raw_text: str) -> list[MemoryOp]:
                 op=op_val,  # type: ignore[arg-type]
                 layer=layer_val,  # type: ignore[arg-type]
                 # Un campo de otro tipo cuenta como ausente: ``str(None)`` guardaria el
-                # texto "None" como si fuera un hecho del usuario.
-                content=content if isinstance(content, str) else "",
+                # texto "None" como si fuera un hecho del usuario. Uno hecho solo de
+                # espacios, tambien: seria un hecho vacio.
+                content=content if isinstance(content, str) and content.strip() else "",
                 key=_non_empty_str(item.get("key")),
                 value=value if isinstance(value, dict) else None,
                 target_id=_non_empty_str(item.get("target_id")),
@@ -346,8 +348,8 @@ def _parse_ops(raw_text: str) -> list[MemoryOp]:
 
 
 def _non_empty_str(value: object) -> str | None:
-    """``value`` si es un string no vacio; si no, ``None``."""
-    return value if isinstance(value, str) and value else None
+    """``value`` si es un string con algo mas que espacios; si no, ``None``."""
+    return value if isinstance(value, str) and value.strip() else None
 
 
 def _parse_summary(raw_text: str) -> SessionSummary:
@@ -360,7 +362,8 @@ def _parse_summary(raw_text: str) -> SessionSummary:
     """
     try:
         data = json.loads(_strip_reasoning_and_fences(raw_text))
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError, RecursionError):
+        # ``RecursionError``: igual que en ``_parse_ops``, un JSON anidado miles de veces.
         logger.debug("memory_engine: JSON invalido en resumen del modelo (descartado)")
         return SessionSummary()
 
