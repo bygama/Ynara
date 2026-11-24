@@ -90,10 +90,24 @@ def test_tags_are_known_and_sin_info_means_nothing_to_save() -> None:
 
 
 def test_expected_roots_come_from_the_user_message() -> None:
-    """Un hecho esperado u opcional lo dijo el usuario: su mensaje lo cumple."""
+    """Un hecho esperado u opcional lo dijo el usuario: su mensaje lo cumple.
+
+    La excepción es generalizar un dato sensible prohibido («una medicación» por el
+    nombre del remedio): el usuario no usó esas palabras, y guardarlo va a revisar.
+    Los casos que la usan están contados, para que no se cuele otro sin mirarlo.
+    """
+    generalized = set()
     for case in CASES:
-        for matcher in [*case.expect.facts, *case.expect.optional]:
-            assert matches(matcher, plain(case.user)), (case.id, matcher)
+        user = plain(case.user)
+        for matcher in case.expect.facts:
+            assert matches(matcher, user), (case.id, matcher)
+        hides_sensitive = any(m.flag == "dato_sensible" for m in case.expect.forbidden)
+        for matcher in case.expect.optional:
+            if matches(matcher, user):
+                continue
+            assert matcher.flag == "dato_sensible" and hides_sensitive, (case.id, matcher)
+            generalized.add(case.id)
+    assert generalized == {"mx-137", "mx-228"}
 
 
 def test_forbidden_without_a_reason_is_what_only_the_assistant_said() -> None:
