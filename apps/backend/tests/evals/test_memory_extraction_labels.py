@@ -94,8 +94,9 @@ def test_expected_roots_come_from_the_user_message() -> None:
 
     La excepción es generalizar un dato sensible prohibido («una medicación» por el
     nombre del remedio): el usuario no usó esas palabras, y guardarlo va a revisar.
-    Los casos que la usan están contados, para que no se cuele otro sin mirarlo.
+    Los matchers que la usan están contados, para que no se cuele otro sin mirarlo.
     """
+    general_terms = ("medicac", "medicam", "remedio", "pastilla", "farmac")
     generalized = set()
     for case in CASES:
         user = plain(case.user)
@@ -106,8 +107,8 @@ def test_expected_roots_come_from_the_user_message() -> None:
             if matches(matcher, user):
                 continue
             assert matcher.flag == "dato_sensible" and hides_sensitive, (case.id, matcher)
-            generalized.add(case.id)
-    assert generalized == {"mx-137", "mx-228"}
+            generalized.add((case.id, *matcher.contains_all, *matcher.contains_any))
+    assert generalized == {("mx-137", *general_terms), ("mx-228", *general_terms)}
 
 
 def test_forbidden_without_a_reason_is_what_only_the_assistant_said() -> None:
