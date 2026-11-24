@@ -46,6 +46,13 @@ def test_parse_summary_invalid_json_returns_empty() -> None:
     assert out.summary == ""
 
 
+def test_parse_summary_deeply_nested_json_returns_empty() -> None:
+    """Un JSON anidado miles de veces agota el parser: cuenta como JSON invalido."""
+    assert _parse_summary("[" * 100_000 + "]" * 100_000) == SessionSummary()
+    nested_topics = '{"summary": "x", "topics": ' + "[" * 100_000 + "]" * 100_000 + "}"
+    assert _parse_summary(nested_topics) == SessionSummary()
+
+
 def test_parse_summary_not_object_returns_empty() -> None:
     out = _parse_summary(json.dumps(["lista", "no", "objeto"]))
     assert out.summary == ""

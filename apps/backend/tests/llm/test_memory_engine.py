@@ -387,25 +387,52 @@ async def test_agent_engine_non_string_op_or_layer_skipped() -> None:
 
 
 async def test_agent_engine_non_string_fields_count_as_missing() -> None:
-    """``content`` nulo no se guarda como el texto "None"; ``key`` y ``target_id``, igual."""
+    """Un campo de otro tipo, nulo o en blanco cuenta como ausente: no se guarda nada."""
     fake_llm = FakeLlmClient(models=frozenset({"agente"}))
     raw_ops = [
         {"op": "ADD", "layer": "semantic", "content": None},
         {"op": "ADD", "layer": "semantic", "content": 42},
+        {"op": "ADD", "layer": "semantic", "content": "   "},
         {"op": "ADD", "layer": "procedural", "key": 5, "value": {"a": 1}},
+        {"op": "ADD", "layer": "procedural", "key": "  ", "value": {"a": 1}},
         {"op": "DELETE", "layer": "semantic", "target_id": ["id"]},
+        {"op": "DELETE", "layer": "semantic", "target_id": " "},
     ]
     fake_llm.queue_result(_make_result(_json_ops(raw_ops)))
     engine = AgentMemoryEngine(llm_client=fake_llm, model="agente")
     extraction = await engine.consolidate(user_msg="x", model_response="y", mode="vida")
     ops = extraction.ops
-    assert [op.content for op in ops] == ["", "", "", ""]
-    assert [op.key for op in ops] == [None, None, None, None]
-    assert [op.target_id for op in ops] == [None, None, None, None]
+    assert [op.content for op in ops] == [""] * 7
+    assert [op.key for op in ops] == [None] * 7
+    assert [op.target_id for op in ops] == [None] * 7
     # Sin contenido, sin key o sin target_id, ``apply_ops`` no escribe ni borra nada.
     semantic, procedural = MagicMock(), MagicMock()
     assert await apply_ops(ops, semantic_store=semantic, procedural_store=procedural) == 0
     assert semantic.method_calls == [] and procedural.method_calls == []
+
+
+async def test_agent_engine_blank_update_does_not_overwrite_a_fact() -> None:
+    """Un UPDATE con ``content`` en blanco no pisa el hecho que ya estaba."""
+    fake_llm = FakeLlmClient(models=frozenset({"agente"}))
+    target_id = "00000000-0000-0000-0000-000000000001"
+    raw_ops = [{"op": "UPDATE", "layer": "semantic", "target_id": target_id, "content": "   "}]
+    fake_llm.queue_result(_make_result(_json_ops(raw_ops)))
+    engine = AgentMemoryEngine(llm_client=fake_llm, model="agente")
+    extraction = await engine.consolidate(user_msg="x", model_response="y", mode="vida")
+    assert [(op.target_id, op.content) for op in extraction.ops] == [(target_id, "")]
+    semantic, procedural = MagicMock(), MagicMock()
+    applied = await apply_ops(extraction.ops, semantic_store=semantic, procedural_store=procedural)
+    assert applied == 0
+    assert semantic.method_calls == [] and procedural.method_calls == []
+
+
+async def test_agent_engine_deeply_nested_json_returns_empty() -> None:
+    """Un JSON anidado miles de veces agota el parser: se descarta como JSON invalido."""
+    fake_llm = FakeLlmClient(models=frozenset({"agente"}))
+    fake_llm.queue_result(_make_result("[" * 100_000 + "]" * 100_000))
+    engine = AgentMemoryEngine(llm_client=fake_llm, model="agente")
+    extraction = await engine.consolidate(user_msg="x", model_response="y", mode="vida")
+    assert extraction.ops == []
 
 
 async def test_agent_engine_llm_failure_returns_empty() -> None:
