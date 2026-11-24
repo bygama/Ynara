@@ -137,6 +137,8 @@ def test_raw_items_follow_the_engine_cleanup() -> None:
     assert raw_items("") is None
     assert raw_items('{"op": "NOOP", "layer": "semantic"}') is None
     assert raw_items("Acá van las operaciones: []") is None
+    # Anidado miles de veces agota el parser: es un formato inválido, no un corte.
+    assert raw_items("[" * 100_000 + "]" * 100_000) is None
 
 
 async def test_prose_cut_at_the_token_cap_is_an_invalid_format() -> None:
