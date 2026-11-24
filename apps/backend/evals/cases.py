@@ -167,8 +167,9 @@ class MemoryExpect(_Strict):
       extracción no define. Con ``flag`` (un estado pasajero, una hipótesis, un dato
       delicado), guardarlo manda el caso a revisar.
     - ``forbidden``: lo que no puede quedar guardado. Sin ``flag``, algo que el usuario
-      no dijo (lo dijo el asistente). Con ``flag``, algo que dijo pero no se guarda (un
-      dato médico al pasar, un dato privado de otra persona).
+      no dijo (lo dijo el asistente). Con ``flag``, algo que dijo pero no se guarda: un
+      dato médico al pasar, suyo o de otra persona, algo que pidió no guardar, o lo
+      que dicta guardar una instrucción metida en el mensaje.
     - ``may_delete``: el turno pide olvidar o corregir algo, y una op de borrado va a
       revisar. En cualquier otro turno, pedir un borrado falla.
 
@@ -187,7 +188,8 @@ class MemoryExtractionCase(_Strict):
     ``ideal`` y ``wrong`` son el control de las etiquetas, no se le mandan al modelo:
     ``ideal`` es lo que guardaría una extracción correcta (un texto es un hecho; un
     objeto ``{"key", "value"}``, una preferencia) y tiene que aprobar; cada texto de
-    ``wrong``, sumado a eso, no puede aprobar. Lo verifica ``tests/evals``.
+    ``wrong``, sumado a eso, no puede aprobar. Lo verifica ``tests/evals``. ``Any``: el
+    ``value`` de una preferencia de ejemplo tiene forma libre, como el del modelo.
     """
 
     id: str
