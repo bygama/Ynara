@@ -19,6 +19,9 @@ _BUCKET_LABEL = {
     "error": "errores de llamada",
     "truncated": "cortados por tope de tokens",
 }
+# De peor a mejor, para quedarse con el peor intento de un caso corrido varias veces:
+# una respuesta mala entre tres es un caso malo.
+_WORST_FIRST = ("fail", "error", "truncated", "review", "pass")
 
 
 def _percentile(values: Sequence[float], percent: int) -> float | None:
@@ -35,15 +38,30 @@ def summarize(results: Sequence[CaseResult]) -> dict[str, Any]:
     ``pass_rate`` es sobre lo que el modelo llegó a contestar (aprobados, fallados y a
     revisar). Los errores de llamada y los cortes por tope de tokens van aparte: son
     del proveedor o del presupuesto de tokens, no de la calidad de la respuesta.
+
+    ``worst_by_case`` y ``cases_with_flag`` cuentan casos, no llamadas: cada caso con
+    su peor intento, y en cuántos casos apareció cada marca en algún intento.
+    ``flags_by_tag`` reparte las marcas por tag (por modo, por tipo de caso).
     """
     buckets = Counter(result.verdict.bucket for result in results)
     answered = buckets["pass"] + buckets["fail"] + buckets["review"]
     ok_records = [r.record for r in results if r.record.status == "ok"]
     latencies = [record.latency_ms for record in ok_records]
     by_tag: dict[str, Counter[str]] = {}
+    flags_by_tag: dict[str, Counter[str]] = {}
+    worst: dict[str, str] = {}
+    case_flags: dict[str, set[str]] = {}
     for result in results:
+        bucket = result.verdict.bucket
         for tag in result.tags:
-            by_tag.setdefault(tag, Counter())[result.verdict.bucket] += 1
+            by_tag.setdefault(tag, Counter())[bucket] += 1
+            if result.verdict.flags:
+                flags_by_tag.setdefault(tag, Counter()).update(result.verdict.flags)
+        previous = worst.get(result.case_id, bucket)
+        worst[result.case_id] = min(previous, bucket, key=_WORST_FIRST.index)
+        case_flags.setdefault(result.case_id, set()).update(result.verdict.flags)
+    worst_counts = Counter(worst.values())
+    with_flag = Counter(flag for flags in case_flags.values() for flag in flags)
     return {
         "total": len(results),
         "buckets": {name: buckets[name] for name in BUCKETS},
@@ -51,6 +69,9 @@ def summarize(results: Sequence[CaseResult]) -> dict[str, Any]:
         "errors": dict(Counter(r.record.error_type for r in results if r.record.status == "error")),
         "flags": dict(Counter(flag for r in results for flag in r.verdict.flags)),
         "by_tag": {tag: dict(counts) for tag, counts in sorted(by_tag.items())},
+        "flags_by_tag": {tag: dict(counts) for tag, counts in sorted(flags_by_tag.items())},
+        "worst_by_case": {name: worst_counts[name] for name in BUCKETS},
+        "cases_with_flag": dict(sorted(with_flag.items())),
         "models": sorted({record.model_name for record in ok_records if record.model_name}),
         "prompt_tokens": sum(record.prompt_tokens for record in ok_records),
         "completion_tokens": sum(record.completion_tokens for record in ok_records),
@@ -87,6 +108,12 @@ def format_summary(meta: dict[str, Any], summary: dict[str, Any]) -> str:
         lines.append(f"Errores por tipo: {summary['errors']}")
     if summary["flags"]:
         lines.append(f"Marcas: {summary['flags']}")
+    worst = summary.get("worst_by_case")
+    if worst and meta.get("repeat", 1) > 1:
+        shown = ", ".join(f"{_BUCKET_LABEL[name]} {worst[name]}" for name in BUCKETS if worst[name])
+        lines.append(f"Peor intento de cada caso: {shown}")
+        if summary.get("cases_with_flag"):
+            lines.append(f"Casos con cada marca en algún intento: {summary['cases_with_flag']}")
     lines.append(
         f"Tokens: {summary['prompt_tokens']} de entrada, {summary['completion_tokens']} de "
         f"salida · con razonamiento: {summary['with_reasoning']}"
@@ -128,6 +155,11 @@ def format_comparison(left: dict[str, Any], right: dict[str, Any]) -> str:
         ("tokens de salida", str(sum_l["completion_tokens"]), str(sum_r["completion_tokens"])),
         ("latencia p50 (ms)", str(sum_l["latency_ms_p50"]), str(sum_r["latency_ms_p50"])),
         ("latencia p95 (ms)", str(sum_l["latency_ms_p95"]), str(sum_r["latency_ms_p95"])),
+    ]
+    flags_l, flags_r = sum_l.get("flags", {}), sum_r.get("flags", {})
+    rows += [
+        (f"marca {flag}", str(flags_l.get(flag, 0)), str(flags_r.get(flag, 0)))
+        for flag in sorted(flags_l.keys() | flags_r.keys())
     ]
     width = max(len(label) for label, _, _ in rows)
     lines = [
