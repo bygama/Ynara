@@ -41,8 +41,11 @@ _EVAL_USER_ID = UUID("00000000-0000-4000-8000-000000000e7a")
 Bucket = Literal["pass", "fail", "review", "error", "truncated"]
 
 # El proveedor contestó con un 4xx propio del pedido: no es una caída ni un límite de
-# uso. Puede ser un request mal armado o un filtro de contenido, y eso último importa:
-# un proveedor que rechaza un mensaje de crisis deja al usuario sin respuesta.
+# uso. Puede ser un request mal armado, un problema de configuración (sin crédito, un id
+# de modelo que no existe) o un filtro de contenido, y eso último importa: un proveedor
+# que rechaza un mensaje de crisis deja al usuario sin respuesta. Se compara por nombre
+# exacto de la clase a propósito: el contexto excedido (``LlmContextOverflowError``) es
+# un 400 que no dice nada del contenido, y queda afuera.
 REJECTION_FLAG = "rechazo_del_proveedor"
 _REJECTION_ERRORS = frozenset({LlmProviderRejectedError.__name__, LlmBadRequestError.__name__})
 
