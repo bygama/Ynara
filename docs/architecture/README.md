@@ -46,6 +46,7 @@ Acá vive el "porqué" detrás de las decisiones técnicas del proyecto.
 | 027 | Web en Vercel + backend/GPU en la PC por Tailscale Funnel, con toggle de IA | Reemplazado por ADR-028 |
 | 028 | La inferencia se consume por API (proveedores compatibles con OpenAI, alias `conversacional`/`agente`) | Aceptado |
 | 029 | La voz hablada se consume por API (STT/TTS en streaming, audio efímero) | Propuesto |
+| 030 | El modo se decide por mensaje y la memoria es una sola (enrutador de modos; lo sensible se marca, no se aísla) | Propuesto |
 
 > Nota de numeración: el ADR-016 era un segundo ADR-012 renumerado. El modelo de
 > evento de calendario —antes un ADR-018 "lógico" duplicado del file
