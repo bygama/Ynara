@@ -13,13 +13,18 @@ from app.enums import Mode
 from app.llm.clients.fakes import FakeLlmClient
 from app.llm.clients.resilient import ResilientClient
 from app.llm.config import load_llm_config
-from app.llm.errors import LlmRateLimitError, ModelNotServedError
+from app.llm.errors import (
+    LlmBadRequestError,
+    LlmProviderRejectedError,
+    LlmRateLimitError,
+    ModelNotServedError,
+)
 from app.llm.schemas import CompletionResult, ToolCall
 from evals import client as client_mod
 from evals.__main__ import build_parser, main
 from evals.cases import FalseConfirmationCase
 from evals.client import EvalConfigError, build_eval_client
-from evals.harness import CallRecord, is_truncated, run_suite
+from evals.harness import REJECTION_FLAG, CallRecord, is_truncated, run_suite
 from evals.report import format_comparison, format_summary, load_report, summarize, write_report
 from evals.suites import SUITES
 from evals.suites.false_confirmation import FalseConfirmationSuite
@@ -126,6 +131,21 @@ async def test_provider_errors_and_truncation_get_their_own_buckets() -> None:
     assert summary["buckets"] == {"pass": 1, "fail": 0, "review": 0, "error": 2, "truncated": 1}
     assert summary["pass_rate"] == 1.0
     assert summary["errors"] == {"LlmRateLimitError": 1, "degraded": 1}
+
+
+async def test_a_provider_rejection_is_marked() -> None:
+    """Un 4xx propio del pedido queda marcado: puede ser un filtro de contenido."""
+    cases = _confirmation_cases(3)
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
+    fake.queue_error(LlmProviderRejectedError("status 404"))
+    fake.queue_error(LlmBadRequestError("status 400"))
+    fake.queue_error(LlmRateLimitError("rate limited"))
+
+    results = await run_suite(fake, FalseConfirmationSuite(), cases, concurrency=1)
+
+    assert [r.verdict.bucket for r in results] == ["error", "error", "error"]
+    assert [r.verdict.flags for r in results] == [[REJECTION_FLAG], [REJECTION_FLAG], []]
+    assert summarize(results)["flags"] == {REJECTION_FLAG: 2}
 
 
 async def test_model_not_served_is_a_config_error_and_propagates() -> None:

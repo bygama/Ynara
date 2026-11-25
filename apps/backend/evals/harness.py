@@ -24,7 +24,12 @@ from app.llm.clients.embedding import FakeEmbeddingClient
 from app.llm.clients.reranker import FakeReranker
 from app.llm.config import LlmRuntimeConfig, load_llm_config
 from app.llm.context import build_memory_context
-from app.llm.errors import LlmError, ModelNotServedError
+from app.llm.errors import (
+    LlmBadRequestError,
+    LlmError,
+    LlmProviderRejectedError,
+    ModelNotServedError,
+)
 from app.llm.prompts.datetime_context import build_now_preamble
 from app.llm.prompts.loader import load_prompt
 from app.llm.router import _thinking_for_role
@@ -34,6 +39,12 @@ from app.llm.schemas import ChatMessage, CompletionResult, ToolSpec
 _EVAL_USER_ID = UUID("00000000-0000-4000-8000-000000000e7a")
 
 Bucket = Literal["pass", "fail", "review", "error", "truncated"]
+
+# El proveedor contestó con un 4xx propio del pedido: no es una caída ni un límite de
+# uso. Puede ser un request mal armado o un filtro de contenido, y eso último importa:
+# un proveedor que rechaza un mensaje de crisis deja al usuario sin respuesta.
+REJECTION_FLAG = "rechazo_del_proveedor"
+_REJECTION_ERRORS = frozenset({LlmProviderRejectedError.__name__, LlmBadRequestError.__name__})
 
 
 class TurnRequest(BaseModel):
@@ -189,7 +200,12 @@ def record_from_result(result: CompletionResult) -> CallRecord:
 def grade_record(suite: Suite, case: Any, record: CallRecord) -> Verdict:
     """Separa lo que no llegó a contestar antes de pasarle el caso al corrector."""
     if record.status == "error":
-        return Verdict(bucket="error", details=[record.error_type or "error"])
+        rejected = record.error_type in _REJECTION_ERRORS
+        return Verdict(
+            bucket="error",
+            details=[record.error_type or "error"],
+            flags=[REJECTION_FLAG] if rejected else [],
+        )
     if is_truncated(record):
         return Verdict(bucket="truncated", details=["tope de tokens: respuesta cortada"])
     return suite.grade(case, record)
