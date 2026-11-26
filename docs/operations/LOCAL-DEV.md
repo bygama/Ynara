@@ -149,13 +149,15 @@ usalo solo con uno en el que confíes. Desde `apps/backend`:
   de cada request que falló, el status, el tipo y el mensaje del error y el
   `request-id`. Nunca la credencial, el texto del modelo, el razonamiento ni
   las firmas.
-- `cambio_de_esfuerzo` prueba la regla del validador que exige el mismo
-  esfuerzo en `on` y `off` cuando `off` es `disabled`: dice si la API la
-  hace necesaria. Con `between_tools` la API ya acepta el cambio y el
-  validador no lo exige. Antes corre la misma confirmación con el mismo esfuerzo
-  como control; si el control no pasa, no concluye. Solo un 400 de request
-  inválido en la confirmación cuenta como «la regla queda» (un contexto
-  excedido, no); cualquier otro error es una falla.
+- `cambio_de_esfuerzo` dice si la API acepta, en la confirmación, un
+  esfuerzo en `off` distinto del de `on`. Con `disabled` el validador
+  exige el mismo; con `between_tools` no, porque un modelo lo aceptó
+  (ADR-031 D3). Si con tu modelo la API lo rechaza, poné en `off` el
+  esfuerzo de `on`: el validador no te va a frenar. Antes corre la misma
+  confirmación con el mismo esfuerzo como control; si el control no pasa,
+  no concluye. Solo un 400 de request inválido en la confirmación cuenta
+  como rechazo (un contexto excedido, no); cualquier otro error es una
+  falla.
 
 ## Hot reload
 
