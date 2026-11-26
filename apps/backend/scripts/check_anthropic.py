@@ -308,7 +308,7 @@ async def _forced(
     """Una vuelta de una iteración: si el modelo solo llama a la tool, hay confirmación.
 
     ``probe``: el caso prueba una regla del validador. Un 400 de request inválido en la
-    confirmación es una respuesta (la regla queda); cualquier otro error es una falla.
+    confirmación es una respuesta (un rechazo); cualquier otro error es una falla.
     """
     loop, exc, recorder = await _tool_loop(make, thinking, _TOOL_ONLY_PROMPT, max_iterations=1)
     first = recorder.posts[0].block_types if recorder.posts else []
@@ -318,7 +318,7 @@ async def _forced(
         else:
             rejected = False
         if rejected:
-            detail = "la API rechaza el cambio de esfuerzo (400): la regla queda"
+            detail = "la API rechaza el cambio de esfuerzo (400): off lleva el de on"
             return CaseResult(name, OK, detail, block_types=first, exchanges=recorder.exchanges)
         return _failure(name, exc, recorder)
     unproven = _unproven_round(name, recorder, called_tool=bool(loop.actions))
@@ -330,7 +330,7 @@ async def _forced(
         return CaseResult(name, INCONCLUSIVE, detail, block_types=first, exchanges=exchanges)
     reason = clean_reason(loop.finish_reason)
     if probe:
-        detail = "la API acepta el cambio de esfuerzo: la regla se puede relajar"
+        detail = "la API acepta el cambio de esfuerzo en la confirmación"
     else:
         detail = f"confirmación forzada aceptada, finish_reason {reason}"
     exchanges = recorder.exchanges
@@ -345,7 +345,7 @@ async def case_effort_change(make: ClientFactory) -> CaseResult:
     """Primero un control con el mismo esfuerzo; la sonda solo cuenta si el control pasa.
 
     Sin el control, un 400 que no tiene que ver con el esfuerzo (por ejemplo, de la
-    confirmación misma) se leería como «la regla queda».
+    confirmación misma) se leería como un rechazo del cambio.
     """
     name = "cambio_de_esfuerzo"
     control = await _forced(make, name, _TOOLS, probe=False)

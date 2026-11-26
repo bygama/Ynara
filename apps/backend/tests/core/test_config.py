@@ -564,13 +564,26 @@ def test_disabled_off_keeps_the_effort_of_on(off_effort: str | None) -> None:
         _provider_settings([_anthropic(thinking=_thinking(agente=alias))])
 
 
-@pytest.mark.parametrize("off_effort", [None, "low"])
-def test_between_tools_off_can_change_the_effort(off_effort: str | None) -> None:
-    """La API acepta otro esfuerzo con ``between_tools`` en la misma vuelta (ADR-031 D3)."""
-    alias = _off_alias("between_tools", off_effort)
+def test_between_tools_off_can_change_the_effort() -> None:
+    """La API aceptó otro esfuerzo con ``between_tools`` en la misma vuelta (ADR-031 D3)."""
+    alias = _off_alias("between_tools", "low")
     provider = _provider_settings([_anthropic(thinking=_thinking(agente=alias))]).llm_providers[0]
     assert provider.thinking is not None
-    assert provider.thinking["agente"].off.effort == off_effort
+    assert provider.thinking["agente"].off.effort == "low"
+
+
+def test_between_tools_off_needs_an_effort_when_on_has_one() -> None:
+    """Una confirmación sin esfuerzo después de una vuelta con esfuerzo no se probó."""
+    alias = _off_alias("between_tools", None)
+    with pytest.raises(ValueError, match="con off between_tools, off necesita un effort"):
+        _provider_settings([_anthropic(thinking=_thinking(agente=alias))])
+
+
+def test_between_tools_without_effort_on_both_sides_is_accepted() -> None:
+    alias = {"on": {"type": "between_tools"}, "off": {"type": "between_tools"}}
+    provider = _provider_settings([_anthropic(thinking=_thinking(agente=alias))]).llm_providers[0]
+    assert provider.thinking is not None
+    assert provider.thinking["agente"].off.effort is None
 
 
 def test_adaptive_off_can_change_the_effort() -> None:

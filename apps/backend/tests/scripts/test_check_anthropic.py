@@ -444,7 +444,7 @@ async def test_the_effort_probe_reports_that_the_rule_stays_on_a_400() -> None:
     code, lines = await _run(handler, ["cambio_de_esfuerzo"])
     assert code == 0
     assert lines[1] == (
-        "[OK] cambio_de_esfuerzo: la API rechaza el cambio de esfuerzo (400): la regla queda"
+        "[OK] cambio_de_esfuerzo: la API rechaza el cambio de esfuerzo (400): off lleva el de on"
     )
     assert "effort no coincide" in lines[-1]
     # El control (mismo esfuerzo) va primero; la sonda, después.
@@ -496,7 +496,7 @@ async def test_the_effort_probe_reports_that_the_rule_can_go_when_the_api_accept
     handler, _ = _api()
     _, lines = await _run(handler, ["cambio_de_esfuerzo"])
     assert lines[1] == (
-        "[OK] cambio_de_esfuerzo: la API acepta el cambio de esfuerzo: la regla se puede relajar"
+        "[OK] cambio_de_esfuerzo: la API acepta el cambio de esfuerzo en la confirmación"
     )
 
 
