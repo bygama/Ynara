@@ -351,8 +351,12 @@ async def case_effort_change(make: ClientFactory) -> CaseResult:
     name = "cambio_de_esfuerzo"
     control = await _forced(make, name, _ADAPTIVE, probe=False)
     if control.outcome != OK:
-        detail = f"el control con el mismo esfuerzo no pasó ({control.outcome}): no concluye"
-        return CaseResult(name, INCONCLUSIVE, detail, exchanges=control.exchanges)
+        why = f"{control.outcome}: {control.detail}"
+        detail = f"el control con el mismo esfuerzo no pasó ({why}): no concluye"
+        exchanges = control.exchanges
+        return CaseResult(
+            name, INCONCLUSIVE, detail, block_types=control.block_types, exchanges=exchanges
+        )
     return await _forced(make, name, _EFFORT_CHANGE, probe=True)
 
 
