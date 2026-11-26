@@ -142,7 +142,8 @@ usalo solo con uno en el que confíes. Desde `apps/backend`:
   `disabled` (el default) o `between_tools`. Hay modelos que rechazan
   `disabled` con un 400 que dice cuál aceptan: en ese caso, repetí con
   `--apagado between_tools` y usá ese mismo modo en el `off` de
-  `LLM_PROVIDERS`.
+  `LLM_PROVIDERS`. Si el modelo no acepta ninguno de los dos, no se puede
+  apagar: su `off` va en `adaptive` con el esfuerzo mínimo (ADR-031).
 - Imprime el resultado de cada caso con su detalle (el `finish_reason` o la
   cantidad de llamadas), los tokens y los tipos de bloque cuando los hay, y
   de cada request que falló, el status, el tipo y el mensaje del error y el
