@@ -88,6 +88,8 @@ por ese campo.
   esa combinación para que la config no prometa algo que el cliente ignora.
 - La configuración del razonamiento (D3), el piso de `max_tokens` (D4) y el timeout
   (D9) van en la misma entrada.
+- La validación de la lista entera (la misma que hoy rechaza nombres repetidos)
+  rechaza más de una entrada `anthropic`, por lo que explica D10.
 
 ### D3 — Razonamiento: un modo configurado por alias y por intención
 
@@ -154,8 +156,8 @@ produjo y la lista de bloques tal como llegaron.
   se aplica igual sea cual sea la antigüedad de la cuenta, y un 400 por historial
   editado es un bug nuestro que salta en las pruebas. Con `disabled` y
   `between_tools` no se manda, porque la API no lo acepta ahí: en esos requests (por
-  ejemplo, la confirmación forzada con `thinking=False`) el control depende de la
-  cuenta.
+  ejemplo, la confirmación forzada del alias `agente`, que pide `thinking=False`) el
+  control depende de la cuenta.
 
 Tres ajustes del tool loop salen de esto:
 
@@ -211,17 +213,19 @@ Se reusa `raise_for_provider_status`, con dos cambios en `_http.py`:
 - **`prompt is too long`** se suma a las firmas de contexto excedido, así un 400 por
   ventana llega como `LlmContextOverflowError` y no como request inválido.
 - La lectura del código de error suma la ruta del body de Anthropic
-  (`error.details.error_code`), además de la de OpenAI (`error.code`). Solo se usa
-  para etiquetar logs y alertas (ver el 429 abajo); no cambia la clase de ningún
-  error.
+  (`error.details.error_code`), además de la de OpenAI (`error.code`). La misma
+  lectura sigue sirviendo para detectar el contexto excedido; además, la rama del 429
+  pasa a leer el body (en streaming, después de `aread()`) solo para etiquetar el
+  tope de gasto en logs y alertas (ver abajo), sin cambiar la clase del error.
 
 El resto ya cae en la taxonomía de hoy, sin cambiar su clase:
 
 - **El 429 por tope de gasto** sigue siendo `LlmRateLimitError`, como cualquier 429
   sin `Retry-After`: con otra entrada en la lista, el pool pasa a ella; sin otra, hace
   backoff y, si se agota, el error es transitorio. Así la consolidación de memoria
-  reintenta con su política de hoy (5 reintentos, con esperas de 30 s a 600 s) en vez
-  de descartar el turno en el primer intento. Un tope que dure más que esa ventana
+  reintenta con su política de hoy (5 reintentos con backoff exponencial y jitter,
+  unos 15 minutos como mucho en total) en vez de descartar el turno en el primer
+  intento. Un tope que dure más que esa ventana
   pierde igual esa consolidación, y mientras dura cada llamada del chat agota sus
   intentos antes de degradar. Por eso el valor `enforced_spend_limit_reached` se
   registra con una etiqueta fija (nunca con el body) y alimenta las alertas de la
@@ -249,11 +253,14 @@ tool loop suma estas reglas:
 - El texto parcial y el razonamiento de la llamada rechazada se descartan. Si antes
   hubo acciones exitosas, el usuario ve el aviso de acciones hechas, que es cierto;
   si no, el texto de respaldo genérico.
-- Un turno que termina en rechazo no se encola para consolidar: nada de lo que el
-  modelo rechazó llega a la memoria.
+- Un turno que termina en rechazo no se encola para la consolidación por turno (el
+  encolado está en el servicio de chat). El texto parcial y el razonamiento del
+  rechazo nunca llegan a la memoria, porque se descartan antes.
 
-Qué ve el usuario ante un rechazo en Bienestar queda como pendiente explícito de la
-compuerta 2 de ADR-028 (crisis).
+El turno igual se guarda en la sesión, con el pedido del usuario y el texto que vio, y
+el resumen al cerrar la sesión lo incluye. Si un pedido rechazado debe quedar fuera de
+la memoria episódica, y qué ve el usuario ante un rechazo en Bienestar, quedan como
+pendientes explícitos de la compuerta 2 de ADR-028 (crisis).
 
 ### D8 — Uso de tokens
 
@@ -287,9 +294,9 @@ un precio distinto. `completion_tokens` es `output_tokens` e incluye el razonami
 
 ### D10 — Respaldo dentro de Anthropic
 
-La lista puede tener varias entradas con `protocol: "anthropic"`, cada una con su
-`name` y su `LLM_API_KEY_<NAME>`. Una segunda entrada con la credencial de otra cuenta
-de Anthropic cubriría una credencial revocada o vencida (401) y el saldo agotado
+El pool admite varias entradas del mismo protocolo, cada una con su `name` y su
+`LLM_API_KEY_<NAME>`, así que una segunda entrada `anthropic` no necesitaría código
+nuevo en el cliente. Con la credencial de otra cuenta de Anthropic cubriría una credencial revocada o vencida (401) y el saldo agotado
 (402).
 
 - El pool no distingue esos casos de un 429: pasa a la entrada siguiente ante un 429
@@ -328,7 +335,8 @@ Mientras se decide, el texto de ADR-028 no cambia y la compuerta sigue abierta.
 - El razonamiento dentro de una vuelta con tools se preserva, que es lo que la API
   necesita para que el modelo siga su propio plan entre llamadas.
 - La caché del prefijo fijo baja el costo y la latencia de cada turno.
-- Varias entradas de Anthropic funcionan sin código extra, gracias al pool existente.
+- Cuando se confirmen los términos, una segunda cuenta de Anthropic solo pide levantar
+  la regla del validador: el cliente y el pool ya la soportan.
 
 ## Consecuencias negativas
 
@@ -342,7 +350,7 @@ Mientras se decide, el texto de ADR-028 no cambia y la compuerta sigue abierta.
     `max_tokens` y el timeout.
 - El router y la pasada del agente (dos mensajes `system`) y el tool loop (llamadas
   descartadas, errores de tools, confirmación forzada, rechazos) cambian de forma, y
-  el encolado de la consolidación deja afuera los turnos rechazados.
+  el servicio de chat deja de encolar la consolidación de los turnos rechazados.
 - `temperature` deja de tener efecto con este proveedor.
 - Los modos, los esfuerzos y los pisos de `max_tokens` no se pueden fijar sin correr
   las evals contra el proveedor real, que cuesta tokens.
