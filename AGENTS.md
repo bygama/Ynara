@@ -6,7 +6,7 @@
 
 **Qué es Ynara**: asistente personal adaptativo con memoria propia.
 
-**Stack**: Next.js 16 (web) + Expo 53+ (mobile) + FastAPI + Pydantic v2 + SQLAlchemy 2 async (backend) + inferencia por API de proveedores compatibles con OpenAI, con dos alias de modelo, `conversacional` y `agente` (ADR-028) + memoria in-house (3 stores semantic/episodic/procedural, AES-256-GCM per-user — ADR-010) + Postgres 16 + pgvector.
+**Stack**: Next.js 16 (web) + Expo 53+ (mobile) + FastAPI + Pydantic v2 + SQLAlchemy 2 async (backend) + inferencia por API de proveedores compatibles con OpenAI o con la Messages API de Anthropic, con dos alias de modelo, `conversacional` y `agente` (ADR-028, ADR-031) + memoria in-house (3 stores semantic/episodic/procedural, AES-256-GCM per-user — ADR-010) + Postgres 16 + pgvector.
 
 **Reglas más críticas**:
 
@@ -195,7 +195,7 @@ Para tareas con un solo archivo, va inline. Para tareas con múltiples pasos, ca
 | `packages/ui/` | Componentes UI realmente compartibles entre web y mobile |
 | `packages/core/` | Lógica no-visual compartida web+mobile (stores Zustand, hooks TanStack Query, cliente HTTP) — ADR-016 |
 | `packages/config/` | tsconfig.base estricto + biome + eslint compartidos |
-| `docs/architecture/adrs/` | 28 ADRs inmutables (ADR-001 a ADR-028; índice y estados en `docs/architecture/README.md`). Cambio arquitectónico nuevo = ADR nuevo |
+| `docs/architecture/adrs/` | ADRs inmutables (índice y estados en `docs/architecture/README.md`). Cambio arquitectónico nuevo = ADR nuevo |
 | `docs/conventions/AI-GUIDELINES.md` | 15 reglas extendidas + landmines aprendidas |
 | `infra/docker/` | docker-compose dev (solo Redis) y prod |
 | `skills/*/SKILL.md` | 6 procedimientos reutilizables para humanos e IAs |
@@ -213,7 +213,7 @@ Para tareas con un solo archivo, va inline. Para tareas con múltiples pasos, ca
 4. **Privacidad de datos y proveedores de IA.** La regla tiene dos partes:
 
    - **4a. Datos de usuario.** Nunca contenido del usuario (mensajes, memoria, agenda) ni PII en logs, mensajes de error, métricas ni Sentry: se loguean ids opacos, enums y `type(exc).__name__`. Los datos de usuario no van a terceros (APIs externas, analytics, servicios de IA), salvo a los proveedores de IA aprobados en 4b y solo para la inferencia. Minimización: a cada llamada va solo lo que esa llamada necesita.
-   - **4b. Proveedores de IA.** La inferencia (chat, agente, consolidación de memoria y embeddings) se consume por API, con HTTP compatible con OpenAI, y el único lugar del backend que habla con los proveedores es `apps/backend/app/llm/clients/providers/`. Las credenciales son secretos en variables de entorno (regla #2): nunca en el código, en `ynara.config.json` ni en logs. Para datos reales de usuarios solo se usan proveedores con DPA y cláusulas modelo de la AAIP firmadas (Ley 25.326) y que no entrenen con los datos; hasta cerrar las compuertas de [ADR-028](./docs/architecture/adrs/ADR-028-inferencia-por-api.md), se pueden usar proveedores que no entrenen con los datos exclusivamente para pruebas y evaluación con datos sintéticos. Prohibido llamar APIs de IA desde cualquier otro lugar del backend y desde `apps/web`, `apps/mobile`, `apps/admin` o `apps/landing`.
+   - **4b. Proveedores de IA.** La inferencia (chat, agente, consolidación de memoria y embeddings) se consume por API, con HTTP compatible con OpenAI o con la Messages API de Anthropic ([ADR-031](./docs/architecture/adrs/ADR-031-cliente-nativo-messages-api.md)), y el único lugar del backend que habla con los proveedores es `apps/backend/app/llm/clients/providers/`. Las credenciales son secretos en variables de entorno (regla #2): nunca en el código, en `ynara.config.json` ni en logs. Para datos reales de usuarios solo se usan proveedores con DPA y cláusulas modelo de la AAIP firmadas (Ley 25.326) y que no entrenen con los datos; hasta cerrar las compuertas de [ADR-028](./docs/architecture/adrs/ADR-028-inferencia-por-api.md), se pueden usar proveedores que no entrenen con los datos exclusivamente para pruebas y evaluación con datos sintéticos. Prohibido llamar APIs de IA desde cualquier otro lugar del backend y desde `apps/web`, `apps/mobile`, `apps/admin` o `apps/landing`.
 
    **Severidad: bloqueante** (las dos partes).
 
