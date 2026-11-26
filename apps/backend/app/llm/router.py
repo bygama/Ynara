@@ -294,7 +294,8 @@ async def route(
     # primero, turnos completos, orden cronológico) para no desbordar ``context_tokens`` —
     # crítico en ``conversacional`` (8192). ``final_system`` ya incluye prompt + preámbulo +
     # bloque de memoria, así que el recorte reserva ese tamaño + el mensaje actual + la
-    # completion. messages = [system, *historial_recortado, user_actual]: el historial va
+    # completion. messages = [system fijo, system variable, *historial_recortado,
+    # user_actual]: el historial va
     # después del system, así que la cache de prefijos no lo alcanza (el system termina
     # en lo variable).
     budgeted_history = trim_history_to_budget(
@@ -303,8 +304,15 @@ async def route(
         system_prompt=final_system,
         current_user=request.text,
     )
+    # El system viaja en DOS mensajes (ADR-031 D6): el prompt del modo (fijo) y lo que
+    # cambia por turno (preambulo y bloque de memoria). El cliente de Anthropic cachea
+    # el primero; el de Chat Completions los vuelve a unir con una linea en blanco, asi
+    # que el proveedor recibe el mismo ``final_system`` de siempre. Los presupuestos de
+    # arriba se calculan sobre ese string unido.
+    variable_system = f"{now_preamble}\n\n{context_block}" if context_block else now_preamble
     messages = [
-        ChatMessage(role="system", content=final_system),
+        ChatMessage(role="system", content=system_prompt),
+        ChatMessage(role="system", content=variable_system),
         *budgeted_history,
         ChatMessage(role="user", content=request.text),
     ]

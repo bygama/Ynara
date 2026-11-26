@@ -322,10 +322,11 @@ async def test_route_injects_datetime_preamble_in_system() -> None:
     finally:
         router_mod.build_memory_context = original
 
-    system_msg = fake.complete_calls[0]["messages"][0]
+    fixed_msg, system_msg = fake.complete_calls[0]["messages"][:2]
+    # El prompt del modo va solo en el primer system; el preambulo abre el segundo.
+    assert (fixed_msg.role, fixed_msg.content) == ("system", load_prompt(Mode.VIDA))
     assert system_msg.role == "system"
-    # El prompt del modo abre el system y el preambulo va justo despues.
-    assert system_msg.content.startswith(f"{load_prompt(Mode.VIDA)}\n\nFecha y hora actual: ")
+    assert system_msg.content.startswith("Fecha y hora actual: ")
     # 2026-07-22 cae miércoles (el dia se deriva con weekday(), no se hardcodea). El
     # preámbulo ahora nombra el huso (``tz_label``) en vez de la frase genérica "hora local".
     assert (
@@ -371,6 +372,7 @@ async def test_route_system_keeps_fixed_prefix_for_cache(monkeypatch: pytest.Mon
         (datetime(2026, 7, 22, 18, 31, tzinfo=tz), "segundo mensaje"),
     ]
     fake = FakeLlmClient(models=frozenset({"conversacional"}))
+    fixed: list[str] = []
     systems: list[str] = []
     for now, text in turns:
         fake.queue_result(_result(text="ok", finish_reason="stop", model_name="org/chat"))
@@ -384,19 +386,20 @@ async def test_route_system_keeps_fixed_prefix_for_cache(monkeypatch: pytest.Mon
             reranker=FakeReranker(),
             config=_cfg(),
         )
-        systems.append(fake.complete_calls[-1]["messages"][0].content)
+        fixed_msg, variable_msg = fake.complete_calls[-1]["messages"][:2]
+        assert fixed_msg.role == variable_msg.role == "system"
+        fixed.append(fixed_msg.content)
+        systems.append(variable_msg.content)
 
     prompt = load_prompt(Mode.VIDA)
     for system, (_now, text) in zip(systems, turns, strict=True):
-        # Orden: prompt del modo -> preambulo de fecha -> bloque de memoria (cierra).
-        assert system.startswith(f"{prompt}\n\n")
-        date_at = system.index("Fecha y hora actual: ")
-        memory_at = system.index("## Contexto de memoria")
-        assert len(prompt) < date_at < memory_at
+        # Orden del system variable: preambulo de fecha -> bloque de memoria (cierra).
+        assert system.startswith("Fecha y hora actual: ")
+        assert system.index("## Contexto de memoria") > 0
         assert system.endswith(f"recuerdo sobre {text}")
-    # Lo variable cambia entre turnos; el prefijo fijo (el prompt del modo) no.
+    # Lo variable cambia entre turnos; el system fijo (el prompt del modo) no.
     assert systems[0] != systems[1]
-    assert systems[0][: len(prompt)] == systems[1][: len(prompt)] == prompt
+    assert fixed == [prompt, prompt]
 
 
 @pytest.mark.asyncio
@@ -445,13 +448,13 @@ async def test_route_splices_history_between_system_and_user() -> None:
         router_mod.build_memory_context = original
 
     messages = fake.complete_calls[0]["messages"]
-    assert messages[0].role == "system"
+    assert messages[0].role == messages[1].role == "system"
     # Historial entre el system y el mensaje actual, en orden cronológico:
-    assert (messages[1].role, messages[1].content) == ("user", "me llamo Mateo")
-    assert (messages[2].role, messages[2].content) == ("assistant", "Hola Mateo, anotado.")
+    assert (messages[2].role, messages[2].content) == ("user", "me llamo Mateo")
+    assert (messages[3].role, messages[3].content) == ("assistant", "Hola Mateo, anotado.")
     # El mensaje actual va ÚLTIMO:
     assert (messages[-1].role, messages[-1].content) == ("user", "¿cómo me llamo?")
-    assert len(messages) == 4
+    assert len(messages) == 5
 
 
 # ---------------------------------------------------------------------------
@@ -901,7 +904,7 @@ async def test_integration_conversational_reads_memory_via_prompt(db_session: An
 
     # El system prompt que llego al modelo contiene el bloque de contexto.
     messages = fake.complete_calls[0]["messages"]
-    system_msg = messages[0]
+    system_msg = messages[1]
     assert system_msg.role == "system"
     assert "Contexto de memoria" in system_msg.content
     assert "pref.idioma" in system_msg.content
@@ -1005,7 +1008,7 @@ async def test_integration_agent_alias_and_context(db_session: Any) -> None:
     )
 
     messages = fake.complete_calls[0]["messages"]
-    system_msg = messages[0]
+    system_msg = messages[1]
     assert "Contexto de memoria" in system_msg.content
     assert "trabaja en inteligencia artificial" in system_msg.content
     assert fake.complete_calls[0]["model"] == "agente"
@@ -1059,7 +1062,7 @@ async def test_integration_user_no_memory_no_context_block(db_session: Any) -> N
 
     assert resp.text == "hola nuevo!"
     messages = fake.complete_calls[0]["messages"]
-    system_msg = messages[0]
+    system_msg = messages[1]
     assert "Contexto de memoria" not in system_msg.content
 
 
