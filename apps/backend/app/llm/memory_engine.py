@@ -395,6 +395,16 @@ def _raise_if_degraded(result: CompletionResult) -> None:
         raise LlmTransientError("respuesta degradada")
 
 
+def _is_refusal(result: CompletionResult) -> bool:
+    """``True`` si el proveedor rechazó la respuesta (``content_filter``, ADR-031 D7).
+
+    El texto de un rechazo puede venir cortado y no es una extracción ni un resumen:
+    nunca llega a la memoria. Reintentar el mismo pedido se rechazaría igual, así que
+    se descarta sin reintento.
+    """
+    return result.finish_reason == "content_filter"
+
+
 def _printable_id(value: str) -> str:
     """``value`` sin caracteres no imprimibles, recortado al largo de la columna."""
     cleaned = "".join(ch for ch in value if ch.isprintable()).strip()
@@ -488,6 +498,9 @@ class AgentMemoryEngine:
             return TurnExtraction()
 
         _raise_if_degraded(result)
+        if _is_refusal(result):
+            logger.warning("memory_engine: extraccion descartada (rechazo del proveedor)")
+            return TurnExtraction()
         return TurnExtraction(
             ops=_parse_ops(result.text),
             model_id=_audit_model_id(result.model_name, self._model),
@@ -532,6 +545,9 @@ class AgentMemoryEngine:
             return SessionSummary()
 
         _raise_if_degraded(result)
+        if _is_refusal(result):
+            logger.warning("memory_engine: resumen descartado (rechazo del proveedor)")
+            return SessionSummary()
         return replace(
             _parse_summary(result.text),
             model_id=_audit_model_id(result.model_name, self._model),

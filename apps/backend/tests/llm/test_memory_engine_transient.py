@@ -329,3 +329,51 @@ async def test_apply_ops_propagates_through_the_per_op_savepoint() -> None:
         )
 
     session.begin_nested.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# rechazo del proveedor (ADR-031 D7): se descarta sin reintento
+# ---------------------------------------------------------------------------
+
+
+def _refusal_text() -> str:
+    """Texto parcial de un rechazo, con la forma de una extracción válida."""
+    return json.dumps([{"op": "ADD", "layer": "semantic", "content": _SECRET}])
+
+
+async def test_consolidate_discards_a_refused_extraction(caplog: pytest.LogCaptureFixture) -> None:
+    from app.llm.schemas import CompletionResult
+
+    client = _llm()
+    client.queue_result(
+        CompletionResult(
+            text=_refusal_text(),
+            finish_reason="content_filter",
+            prompt_tokens=1,
+            completion_tokens=1,
+            model_name="org/agent",
+            latency_ms=1.0,
+        )
+    )
+    with caplog.at_level(logging.WARNING):
+        extraction = await _consolidate(_engine(client))
+    assert extraction == TurnExtraction()
+    assert "rechazo del proveedor" in caplog.text
+    assert _SECRET not in caplog.text
+
+
+async def test_summarize_discards_a_refused_summary() -> None:
+    from app.llm.schemas import CompletionResult
+
+    client = _llm()
+    client.queue_result(
+        CompletionResult(
+            text=json.dumps({"summary": _SECRET, "topics": {}}),
+            finish_reason="content_filter",
+            prompt_tokens=1,
+            completion_tokens=1,
+            model_name="org/agent",
+            latency_ms=1.0,
+        )
+    )
+    assert await _summarize(_engine(client)) == SessionSummary()

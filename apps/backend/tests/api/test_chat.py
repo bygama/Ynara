@@ -313,6 +313,42 @@ async def test_enqueue_failure_does_not_break_turn(db_session: AsyncSession) -> 
         await _delete_user(db_session, user.id)
 
 
+async def test_refused_turn_is_not_consolidated(db_session: AsyncSession) -> None:
+    """Un turno que el proveedor rechaza no se consolida, aunque el modo escriba memoria.
+
+    El usuario ve el fallback (no hubo acciones previas), pero eso no es una respuesta
+    del modelo: no hay nada que extraer para la memoria.
+    """
+    from app.llm.router import _FALLBACK_TEXT
+
+    user = await _seed_user(db_session)
+    fake = FakeLlmClient(models=frozenset({"agente"}))
+    fake.queue_result(
+        _completion(text="parcial", finish_reason="content_filter", model_name="org/agent")
+    )
+
+    client = await _client(db_session, llm_client=fake)
+    try:
+        with patch("app.services.chat.consolidate_turn") as mock_task:
+            mock_task.delay = MagicMock()
+            async with client:
+                resp = await client.post(
+                    "/v1/chat",
+                    json={"text": "agenda una reunion", "mode": "productividad"},
+                    headers=_bearer(user.id),
+                )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["finish_reason"] == "content_filter"
+        # El texto parcial del rechazo se descarta y se muestra el fallback.
+        assert body["text"] == _FALLBACK_TEXT
+        mock_task.delay.assert_not_called()
+    finally:
+        app.dependency_overrides.clear()
+        await _delete_user(db_session, user.id)
+
+
 # ---------------------------------------------------------------------------
 # Tools SÍNCRONAS en el chat de produccion (ADR-022): calendar.create_event REAL
 # ---------------------------------------------------------------------------
