@@ -28,6 +28,24 @@ from app.llm.schemas import ChatMessage, ToolSpec
 _REASONING_KEYS = ("reasoning_content", "reasoning")
 
 
+def join_system_messages(messages: list[ChatMessage]) -> list[ChatMessage]:
+    """Une cada tramo de mensajes ``system`` seguidos en uno solo, con una línea en blanco.
+
+    El router manda el system partido en lo fijo y lo variable (ADR-031 D6) para que
+    el cliente de Anthropic pueda cachear lo fijo. Chat Completions no tiene esa
+    distinción: acá se vuelve a unir y el proveedor recibe el mismo texto de siempre.
+    """
+    joined: list[ChatMessage] = []
+    for message in messages:
+        previous = joined[-1] if joined else None
+        if message.role == "system" and previous is not None and previous.role == "system":
+            parts = [part for part in (previous.content, message.content) if part]
+            joined[-1] = ChatMessage(role="system", content="\n\n".join(parts))
+        else:
+            joined.append(message)
+    return joined
+
+
 def encode_message(message: ChatMessage) -> dict[str, Any]:
     """``ChatMessage`` -> mensaje del wire, con los nombres de tools mapeados.
 

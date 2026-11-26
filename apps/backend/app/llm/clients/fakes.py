@@ -26,6 +26,7 @@ from app.llm.schemas import (
     CompletionChunk,
     CompletionResult,
     ModelHealth,
+    ToolChoice,
     ToolSpec,
 )
 
@@ -105,6 +106,7 @@ class FakeLlmClient:
         max_tokens: int = 1024,
         temperature: float = 0.7,
         thinking: bool | None = None,
+        tool_choice: ToolChoice = "auto",
         timeout_s: float | None = None,
     ) -> CompletionResult:
         # ``thinking`` se registra para que los tests de routing por rol (ADR-012
@@ -112,7 +114,13 @@ class FakeLlmClient:
         # True agente, None desconocido).
         if self._record_calls:
             self.complete_calls.append(
-                {"model": model, "messages": messages, "tools": tools, "thinking": thinking}
+                {
+                    "model": model,
+                    "messages": messages,
+                    "tools": tools,
+                    "thinking": thinking,
+                    "tool_choice": tool_choice,
+                }
             )
         if not self._results:
             if self._degrade_when_empty:
@@ -132,6 +140,7 @@ class FakeLlmClient:
         max_tokens: int = 1024,
         temperature: float = 0.7,
         thinking: bool | None = None,
+        tool_choice: ToolChoice = "auto",
         timeout_s: float | None = None,
     ) -> AsyncIterator[CompletionChunk]:
         if self._record_calls:

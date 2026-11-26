@@ -17,6 +17,7 @@ from app.llm.schemas import (
     CompletionChunk,
     CompletionResult,
     ModelHealth,
+    ProviderBlocks,
     ToolCall,
     ToolSpec,
 )
@@ -159,3 +160,44 @@ class TestRouterContract:
     def test_chat_response_defaults(self) -> None:
         resp = ChatResponse(text="hola", session_id="s1")
         assert resp.actions == []
+
+
+# ---------- bloques crudos del proveedor (ADR-031 D5) ----------
+
+
+def test_provider_blocks_stay_out_of_repr() -> None:
+    blocks = ProviderBlocks(
+        provider="principal",
+        blocks=[{"type": "thinking", "thinking": "razonamiento sintético", "signature": "s"}],
+    )
+    message = ChatMessage(role="assistant", content="ok", provider_blocks=blocks)
+    result = CompletionResult(
+        text="ok",
+        finish_reason="stop",
+        prompt_tokens=1,
+        completion_tokens=1,
+        model_name="m",
+        latency_ms=0.0,
+        provider_blocks=blocks,
+    )
+    for obj in (blocks, message, result):
+        assert "razonamiento sintético" not in repr(obj)
+        assert "razonamiento sintético" not in str(obj)
+
+
+def test_chat_message_defaults_for_new_fields() -> None:
+    message = ChatMessage(role="tool", content="{}", tool_call_id="c1", name="x")
+    assert message.is_error is False
+    assert message.provider_blocks is None
+
+
+def test_completion_result_cache_tokens_default_to_zero() -> None:
+    result = CompletionResult(
+        text="ok",
+        finish_reason="stop",
+        prompt_tokens=1,
+        completion_tokens=1,
+        model_name="m",
+        latency_ms=0.0,
+    )
+    assert (result.cache_read_tokens, result.cache_creation_tokens) == (0, 0)
