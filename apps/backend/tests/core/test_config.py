@@ -549,16 +549,28 @@ def test_alias_without_adaptive_mode_needs_no_floor() -> None:
     assert provider.thinking["agente"].max_tokens_floor is None
 
 
-@pytest.mark.parametrize("off_type", ["disabled", "between_tools"])
-@pytest.mark.parametrize("off_effort", [None, "low"])
-def test_off_without_thinking_keeps_the_effort_of_on(off_type: str, off_effort: str | None) -> None:
-    """La confirmación forzada pasa a ``off`` en la misma vuelta: no cambia el esfuerzo."""
+def _off_alias(off_type: str, off_effort: str | None) -> dict[str, object]:
     off: dict[str, object] = {"type": off_type}
     if off_effort is not None:
         off["effort"] = off_effort
-    alias = {"on": {"type": "adaptive", "effort": "medium"}, "off": off, "max_tokens_floor": 1024}
-    with pytest.raises(ValueError, match="el effort de off tiene que ser el de on"):
+    return {"on": {"type": "adaptive", "effort": "medium"}, "off": off, "max_tokens_floor": 1024}
+
+
+@pytest.mark.parametrize("off_effort", [None, "low"])
+def test_disabled_off_keeps_the_effort_of_on(off_effort: str | None) -> None:
+    """La confirmación forzada pasa a ``off`` en la misma vuelta: no cambia el esfuerzo."""
+    alias = _off_alias("disabled", off_effort)
+    with pytest.raises(ValueError, match="con off disabled, el effort de off tiene que ser"):
         _provider_settings([_anthropic(thinking=_thinking(agente=alias))])
+
+
+@pytest.mark.parametrize("off_effort", [None, "low"])
+def test_between_tools_off_can_change_the_effort(off_effort: str | None) -> None:
+    """La API acepta otro esfuerzo con ``between_tools`` en la misma vuelta (ADR-031 D3)."""
+    alias = _off_alias("between_tools", off_effort)
+    provider = _provider_settings([_anthropic(thinking=_thinking(agente=alias))]).llm_providers[0]
+    assert provider.thinking is not None
+    assert provider.thinking["agente"].off.effort == off_effort
 
 
 def test_adaptive_off_can_change_the_effort() -> None:
