@@ -39,7 +39,8 @@ con un PR.
   memoria. Lee y escribe memoria y llama tools. La consolidación la
   hace `AgentMemoryEngine` (`apps/backend/app/llm/memory_engine.py`).
 - **Proveedor de IA** — servicio externo que sirve los modelos con una
-  API compatible con OpenAI (ADR-028). Los del chat van en
+  API compatible con OpenAI (ADR-028) o con la Messages API de
+  Anthropic (ADR-031, `protocol: "anthropic"`). Los del chat van en
   `LLM_PROVIDERS`, en orden de prioridad, con la credencial en
   `LLM_API_KEY_<NAME>`; el de embeddings, en las `EMBEDDING_*`. Solo se
   usan los aprobados por la regla #4b, y hasta cerrar las compuertas

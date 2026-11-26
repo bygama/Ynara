@@ -15,9 +15,9 @@ proveedores aprobados y solo para la inferencia (regla #4).
 ## Estado
 
 - **Construido y mergeado**: capa LLM **M0–M8** completa — config single-source, cliente resiliente de los proveedores por API (pool + circuit breaker + respaldo), prompts por modo, tools de agente (calendar + task reales, síncronas en el chat — ADR-022; reminder stub), tools `memory.*` (M7), router LLM (M8). Auth JWT real (`/v1/auth` register/token/me). Endpoints `/v1/chat` (sync + SSE streaming), `/v1/sessions` (list/detail/close), `/v1/memory` (list/detail/export, PATCH/DELETE individual por capa, wipe total). Persistencia de turnos crudos cifrados (`conversation_turns`, operativa) en `/v1/chat` + consolidación **episódica** async al cerrar la sesión (`consolidate_session`: resume con el alias `agente`, embeddea, cifra y persiste en `episodic_memory`, purga los turnos). Workers Celery: consolidación async (semantic/procedural + episódica, con reintentos ante fallas transitorias del proveedor e idempotente por turno) + decay procedural. Cifrado AES-256-GCM per-user (`app/core/crypto.py`). Guard anti-prod (`app/core/db_guard.py`). Migraciones: cadena de **16** (de `initial_schema` hasta `audit_log.origin_model_id`); 12 tablas, 9 enums, pgvector + pgcrypto. Ver [`docs/MIGRATIONS.md`](./docs/MIGRATIONS.md).
-- **Inferencia**: `LLM_BACKEND=api` arma un `OpenAICompatClient` por proveedor de
-  `LLM_PROVIDERS`, en orden de prioridad, detrás de un `ResilientClient` con respaldo
-  (ADR-028). El código pide un alias (`conversacional` o `agente`) y cada proveedor lo
+- **Inferencia**: `LLM_BACKEND=api` arma un cliente por proveedor de `LLM_PROVIDERS`
+  según su `protocol` (`OpenAICompatClient` o `AnthropicClient`, ADR-031), en orden de
+  prioridad, detrás de un `ResilientClient` con respaldo (ADR-028). El código pide un alias (`conversacional` o `agente`) y cada proveedor lo
   traduce a su id de modelo. Default `LLM_BACKEND=fake` (`FakeLlmClient` determinista,
   sin red); production no arranca con el fake. `EMBEDDING_BACKEND=api` arma el
   `ApiEmbeddingClient` contra el proveedor de embeddings (`EMBEDDING_BASE_URL`,
@@ -76,7 +76,7 @@ Copiar `.env.example` a `.env` (gitignored). Críticas:
 | `REDIS_URL` | Broker + result backend de Celery. |
 | `JWT_SECRET` | Firma de tokens (auth). |
 | `LLM_BACKEND` | `fake` (default, `FakeLlmClient` sin red) o `api` (proveedores de `LLM_PROVIDERS`). Production exige `api`. |
-| `LLM_PROVIDERS` | Lista JSON de proveedores en orden de prioridad: `name`, `base_url`, `models` (`{alias: model_id}` con `conversacional` y `agente`) y `supports_reasoning_effort` (ADR-028). |
+| `LLM_PROVIDERS` | Lista JSON de proveedores en orden de prioridad: `name`, `protocol` (`openai` por default o `anthropic`), `base_url`, `models` (`{alias: model_id}` con `conversacional` y `agente`), `supports_reasoning_effort` (solo `openai`), `thinking` por alias (solo `anthropic`, obligatorio) y `timeout_s` opcional (ADR-028, ADR-031). |
 | `LLM_API_KEY_<NAME>` | Credencial de cada proveedor (`<NAME>` es su `name` en mayúsculas). Secreto: solo en el entorno, nunca en el JSON, la config ni los logs. |
 | `EMBEDDING_BACKEND` | `fake` (default, `FakeEmbeddingClient` sin red) o `api` (el proveedor de `EMBEDDING_BASE_URL`). Production exige `api`. |
 | `EMBEDDING_BASE_URL` | URL base de la API del proveedor de embeddings, con el `/v1` (https). |
