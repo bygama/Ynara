@@ -112,16 +112,6 @@ manda para `True` y cuál para `False`. Hay tres modos:
   para `False`.
 - El validador rechaza `disabled` y `between_tools` junto con un esfuerzo `xhigh` o
   `max` (la API da un 400 en esa combinación).
-- Con `disabled` en `False`, el validador exige el esfuerzo de `True`: la confirmación
-  forzada del tool loop (D5) pasa a `False` en la misma vuelta, y ese cambio no se
-  probó contra la API. Con `between_tools` no lo exige.
-- Verificado contra la API con `scripts/check_anthropic.py` (2026-11-26,
-  `claude-sonnet-5-5`):
-  - el modelo rechaza `disabled` con un 400 que pide `between_tools`;
-  - `between_tools` funciona como modo apagado;
-  - con `between_tools`, la confirmación forzada acepta un esfuerzo distinto del de la
-    primera llamada;
-  - la API acepta los bloques de razonamiento firmados reenviados en la confirmación.
 - `display: "summarized"` hace falta para que `reasoning` (y el evento SSE
   `reasoning` de ADR-028 D9) tenga texto: por defecto la API manda el bloque sin
   texto, solo con su firma.
@@ -133,6 +123,8 @@ manda para `True` y cuál para `False`. Hay tres modos:
   `temperature` del contrato se ignora para este protocolo; los llamadores que hoy lo
   bajan para extraer o resumir (el motor de memoria) dependen del razonamiento apagado
   y del prompt, no de la temperatura.
+
+> **Nota post-aprobación (2026-11-26):** la prueba de humo (`apps/backend/scripts/check_anthropic.py`) se corrió contra la API con `claude-sonnet-5-5`. Ese modelo rechazó `disabled` con un 400 que pide `between_tools`. Con `between_tools` como modo apagado, la llamada volvió sin error, la confirmación forzada del tool loop (D5) pasó de esfuerzo `high` a `low` sin rechazo y la API aceptó los bloques firmados reenviados. Por eso el validador exige que `off` lleve el esfuerzo de `on` solo con `disabled`, que sigue sin probarse, y con `between_tools` pide un esfuerzo explícito en `off` si `on` lo tiene, porque una confirmación sin esfuerzo tampoco se probó. Es un solo modelo: si otro rechaza el cambio con `between_tools`, su `off` lleva el esfuerzo de `on`. Con `disabled` y `between_tools`, el esfuerzo del modo viaja en `output_config.effort`, igual que con el adaptativo.
 
 ### D4 — `max_tokens` con margen para el razonamiento
 
