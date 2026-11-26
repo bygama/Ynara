@@ -150,8 +150,9 @@ usalo solo con uno en el que confíes. Desde `apps/backend`:
   `request-id`. Nunca la credencial, el texto del modelo, el razonamiento ni
   las firmas.
 - `cambio_de_esfuerzo` prueba la regla del validador que exige el mismo
-  esfuerzo en `on` y `off` cuando `off` está apagado: dice si la API la
-  hace necesaria. Antes corre la misma confirmación con el mismo esfuerzo
+  esfuerzo en `on` y `off` cuando `off` es `disabled`: dice si la API la
+  hace necesaria. Con `between_tools` la API ya acepta el cambio y el
+  validador no lo exige. Antes corre la misma confirmación con el mismo esfuerzo
   como control; si el control no pasa, no concluye. Solo un 400 de request
   inválido en la confirmación cuenta como «la regla queda» (un contexto
   excedido, no); cualquier otro error es una falla.
