@@ -311,6 +311,29 @@ def test_apagado_between_tools_replaces_disabled_in_every_case(
     assert "[OK] confirmacion_forzada" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("off_type", ca.OFF_TYPES)
+def test_the_effort_probe_keeps_its_efforts_with_either_off_type(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, off_type: str
+) -> None:
+    handler, payloads = _api()
+    _real_factory_against(monkeypatch, tmp_path, handler)
+    argv = ["--modelo", _MODEL_ID, "--enviar", "--apagado", off_type]
+    assert ca.main([*argv, "--caso", "cambio_de_esfuerzo"]) == 0
+    # Control (alto y alto) y sonda (alto y bajo), con el modo apagado elegido.
+    types = [p["thinking"]["type"] for p in payloads]
+    assert types == ["adaptive", off_type, "adaptive", off_type]
+    assert [p["output_config"]["effort"] for p in payloads] == ["high", "high", "high", "low"]
+
+
+@pytest.mark.parametrize("off_type", ca.OFF_TYPES)
+def test_changing_the_off_type_keeps_the_valid_cases_valid(off_type: str) -> None:
+    for thinking in (ca._ADAPTIVE, ca._BETWEEN_TOOLS, ca._DISABLED, ca._TOOLS):
+        swapped = ca.with_off_type(thinking, off_type)
+        ca.AliasThinking.model_validate(swapped.model_dump())
+    probe = ca.with_off_type(ca._EFFORT_CHANGE, off_type)
+    assert (probe.off.type, probe.off.effort) == (off_type, "low")
+
+
 def test_an_unknown_off_type_is_rejected() -> None:
     with pytest.raises(SystemExit) as excinfo:
         ca.main(["--modelo", _MODEL_ID, "--apagado", "adaptive"])
@@ -515,7 +538,7 @@ async def test_a_provider_error_shows_its_type_message_and_request_id() -> None:
 
     code, lines = await _run(handler, ["apagado"])
     assert code == 1
-    assert lines[1].startswith("[FALLA] apagado: LlmBadRequestError; si el modelo rechaza")
+    assert lines[1].startswith("[FALLA] apagado: LlmBadRequestError; si rechaza este modo")
     assert lines[2] == (
         "    POST /v1/messages -> 400 | invalid_request_error: thinking.type: valor no "
         "admitido para este modelo | request-id req_humo_1"
