@@ -82,5 +82,5 @@ def test_case_now_is_expressed_in_the_case_timezone() -> None:
     same_instant_utc = datetime(2026, 11, 25, 13, 30, tzinfo=UTC)
     local = build_turn(Mode.VIDA, _TEXT, now=_NOW, tz=_TZ)
     from_utc = build_turn(Mode.VIDA, _TEXT, now=same_instant_utc, tz=_TZ)
-    assert from_utc.messages[0].content == local.messages[0].content
-    assert "10:30" in str(local.messages[0].content)
+    assert from_utc.messages[1].content == local.messages[1].content
+    assert "10:30" in str(local.messages[1].content)

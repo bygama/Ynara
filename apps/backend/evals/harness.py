@@ -129,7 +129,7 @@ def build_turn(
     model_cfg = cfg.model_for_mode(mode.value)
     # Como ``current_now(tz)`` en el chat: el «ahora» se expresa en el huso del usuario.
     local_now = now.astimezone(ZoneInfo(tz))
-    system = f"{load_prompt(mode)}\n\n{build_now_preamble(local_now, tz_label=tz)}"
+    preamble = build_now_preamble(local_now, tz_label=tz)
     # Los stores solo guardan la sesión al construirse: sin sesión no hay I/O, y las
     # specs salen del mismo registro que usa el chat.
     memory_context = build_memory_context(
@@ -143,7 +143,9 @@ def build_turn(
     return TurnRequest(
         alias=model_cfg.alias,
         messages=[
-            ChatMessage(role="system", content=system),
+            # Como el router: el system en dos mensajes, fijo y variable (ADR-031 D6).
+            ChatMessage(role="system", content=load_prompt(mode)),
+            ChatMessage(role="system", content=preamble),
             ChatMessage(role="user", content=text),
         ],
         tools=specs or None,

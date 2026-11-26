@@ -136,18 +136,23 @@ def _build_turn_message(user_msg: str, model_response: str) -> str:
     return f"Usuario: {user_msg}\nAsistente: {model_response}"
 
 
-def _build_agent_pass_system() -> str:
-    """Arma el system prompt REAL de la pasada: cuerpo + preámbulo de fecha/hora.
+def _build_agent_pass_system() -> list[ChatMessage]:
+    """Arma el system REAL de la pasada: cuerpo fijo y preámbulo de fecha/hora.
 
     Se construye POR-RUN (no como constante estática) porque suma el preámbulo de
     fecha/hora actual (``current_now()`` lee el reloj acá una sola vez). Sin esto, el
     agente NO podía resolver "mañana"/"el lunes" y pedía la fecha en vez de agendar
     (gap E2E). El huso es el de la app (Argentina), el mismo que usa el router. Mismo
     orden que el router: el cuerpo fijo primero y el preámbulo (cambia cada minuto) al
-    final, para que la cache de prefijos del proveedor reuse el cuerpo.
+    final, para que la cache de prefijos del proveedor reuse el cuerpo. Van en dos
+    mensajes ``system`` (ADR-031 D6): el cliente de Anthropic cachea el primero y el de
+    Chat Completions los vuelve a unir con una línea en blanco.
     """
     now_preamble = build_now_preamble(current_now())
-    return f"{_AGENT_PASS_SYSTEM_BODY}\n\n{now_preamble}"
+    return [
+        ChatMessage(role="system", content=_AGENT_PASS_SYSTEM_BODY),
+        ChatMessage(role="system", content=now_preamble),
+    ]
 
 
 async def _run_agent_pass_in_db(
@@ -174,7 +179,7 @@ async def _run_agent_pass_in_db(
     specs = agent_reg.specs_for(enabled_namespaces)
 
     messages = [
-        ChatMessage(role="system", content=_build_agent_pass_system()),
+        *_build_agent_pass_system(),
         ChatMessage(role="user", content=_build_turn_message(user_msg, model_response)),
     ]
 

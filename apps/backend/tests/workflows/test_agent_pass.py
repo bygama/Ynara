@@ -266,11 +266,12 @@ class TestAsyncAgentPassUnit:
                 session=session,
             )
 
-        # El primer complete recibió el system con el cuerpo fijo primero y el preámbulo
-        # de fecha justo después.
-        system_msg = client.complete_calls[0]["messages"][0]
-        assert system_msg.role == "system"
-        assert system_msg.content.startswith(f"{_AGENT_PASS_SYSTEM_BODY}\n\nFecha y hora actual: ")
+        # El primer complete recibió el system en dos mensajes (ADR-031 D6): el cuerpo
+        # fijo primero y el preámbulo de fecha después.
+        body_msg, system_msg = client.complete_calls[0]["messages"][:2]
+        assert (body_msg.role, system_msg.role) == ("system", "system")
+        assert body_msg.content == _AGENT_PASS_SYSTEM_BODY
+        assert system_msg.content.startswith("Fecha y hora actual: ")
         # 2026-07-22 cae miércoles (el día se deriva con weekday(), no se hardcodea).
         assert (
             "miércoles 22 de julio de 2026, 18:30 (hora local, offset UTC-03:00)"
