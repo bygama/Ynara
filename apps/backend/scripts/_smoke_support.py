@@ -2,8 +2,7 @@
 
 Lo usa ``check_anthropic.py``: el registro de cada request (``Recorder``), el
 resultado de un caso, el formato de la salida, la credencial, el host permitido, la
-tool sintética y el modo apagado. Va
-aparte para que el script quede con los casos.
+tool sintética y el modo apagado. Va aparte para que el script quede con los casos.
 
 Todo lo que sale de una respuesta del proveedor (tipos de bloque, ``finish_reason``,
 tipo y mensaje de error, ``request-id``) se acota y se limpia de caracteres no

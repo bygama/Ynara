@@ -228,7 +228,7 @@ async def case_between_tools(make: ClientFactory) -> CaseResult:
 
 
 async def case_disabled(make: ClientFactory) -> CaseResult:
-    hint = "si el modelo rechaza este modo apagado, el 400 dice cuál acepta: --apagado"
+    hint = "si rechaza este modo, el 400 dice cuál acepta (--apagado); si no, off va en adaptive"
     return await _single_completion(make, "apagado", _DISABLED, max_tokens=256, hint=hint)
 
 
