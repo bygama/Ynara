@@ -7,13 +7,16 @@ request tal como lo arma el cliente. Un caso por cada punto que quedó sin verif
 - ``adaptativo``: el modo adaptativo con ``block_binding`` y su header beta.
 - ``entre_tools``: ``between_tools`` sin tools y con ``max_tokens`` bajo.
 - ``apagado``: el razonamiento apagado (``disabled``).
-- ``vuelta_con_tools``: una vuelta del tool loop real que reenvía los bloques.
+- ``vuelta_con_tools``: una vuelta del tool loop real que reenvía los bloques firmados.
 - ``confirmacion_forzada``: la confirmación con ``tool_choice="none"`` y
   ``thinking=False`` dentro de la misma vuelta.
 - ``cambio_de_esfuerzo``: la misma confirmación con otro esfuerzo en el modo apagado,
   que el validador de ``LLM_PROVIDERS`` hoy rechaza. Dice si esa regla hace falta.
 - ``streaming``: el modo adaptativo por SSE.
 - ``cache``: dos llamadas con el mismo system fijo; la segunda tiene que leer la caché.
+
+Los casos con tools solo concluyen si el modelo llamó a la tool y su primera respuesta
+trajo razonamiento firmado: sin eso no hay bloques que reenviar.
 
 Antes de los casos consulta ``GET /models``: si la credencial o la versión fallan, no
 manda nada más.
@@ -26,7 +29,8 @@ Uso, desde ``apps/backend``::
 Sin ``--enviar`` solo lista los casos y no hace ningún request. ``--caso`` elige uno o
 más casos. La credencial sale de ``LLM_API_KEY_<NOMBRE>`` (``--nombre``, por default
 ``claude``): del entorno o, si no está, del ``.env`` de la carpeta actual. No usa
-``LLM_PROVIDERS`` ni ``Settings``.
+``LLM_PROVIDERS`` ni ``Settings``. La base URL tiene que ser ``api.anthropic.com``
+salvo ``--otro-host``, porque la credencial viaja a ese host.
 
 Datos: todos los mensajes son constantes sintéticas de este archivo; no acepta texto
 libre. Salida: el resultado de cada caso, el status, el ``finish_reason``, los tokens y
@@ -42,40 +46,45 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import sys
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 import httpx
-from dotenv import dotenv_values
 from pydantic import SecretStr
 
-# El script vive fuera del paquete ``app``: se suma ``apps/backend`` al path.
-_BACKEND_DIR = Path(__file__).resolve().parents[1]
-if str(_BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(_BACKEND_DIR))
+# El script vive fuera del paquete ``app``: se suman ``apps/backend`` y esta carpeta.
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+for _path in (_SCRIPTS_DIR.parent, _SCRIPTS_DIR):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
+
+from _smoke_support import (  # noqa: E402
+    FAILED,
+    INCONCLUSIVE,
+    OK,
+    SIGNED_THINKING,
+    CaseResult,
+    Recorder,
+    check_base_url,
+    format_exchange,
+    format_result,
+    load_api_key,
+)
 
 from app.core.llm_providers import LLM_API_KEY_PREFIX, AliasThinking, ThinkingMode  # noqa: E402
 from app.llm.clients.providers.anthropic import AnthropicClient  # noqa: E402
-from app.llm.errors import LlmError  # noqa: E402
+from app.llm.errors import LlmBadRequestError, LlmError  # noqa: E402
 from app.llm.schemas import ChatMessage, CompletionResult  # noqa: E402
-from app.llm.tool_loop import run_tool_loop  # noqa: E402
+from app.llm.tool_loop import ToolLoopResult, run_tool_loop  # noqa: E402
 from app.llm.tools.base import to_spec  # noqa: E402
 from app.llm.tools.registry import ToolRegistry  # noqa: E402
 
 DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
 DEFAULT_NAME = "claude"
 
-OK = "OK"
-FAILED = "FALLA"
-INCONCLUSIVE = "NO CONCLUYE"
-
 _ALIAS = "agente"
 _FLOOR = 1024
-_ERROR_MESSAGE_MAX = 300
 
 # Modos de razonamiento propios de cada caso: no dependen de la config del operador.
 _ADAPTIVE = AliasThinking(
@@ -127,76 +136,6 @@ class EchoTool:
         return {"eco": str(arguments.get("texto", ""))}
 
 
-@dataclass
-class Exchange:
-    """Un request al proveedor, visto desde la respuesta."""
-
-    method: str
-    path: str
-    status: int
-    request_id: str | None = None
-    error_type: str | None = None
-    error_message: str | None = None
-
-
-class Recorder:
-    """Hook de respuesta de ``httpx``: anota cada request y, en un error, su body.
-
-    ``raise_for_provider_status`` descarta el body; sin esto, todos los 400 se ven
-    iguales.
-    """
-
-    def __init__(self) -> None:
-        self.exchanges: list[Exchange] = []
-
-    async def __call__(self, response: httpx.Response) -> None:
-        exchange = Exchange(
-            method=response.request.method,
-            path=response.request.url.path,
-            status=response.status_code,
-            request_id=response.headers.get("request-id"),
-        )
-        if response.status_code >= httpx.codes.BAD_REQUEST:
-            await response.aread()
-            error = _error_of(response)
-            exchange.error_type = _short(error.get("type"))
-            exchange.error_message = _short(error.get("message"))
-        self.exchanges.append(exchange)
-
-    @property
-    def posts(self) -> list[Exchange]:
-        return [e for e in self.exchanges if e.method == "POST"]
-
-
-def _error_of(response: httpx.Response) -> dict[str, Any]:
-    try:
-        body = response.json()
-    except ValueError:
-        return {}
-    error = body.get("error") if isinstance(body, dict) else None
-    return error if isinstance(error, dict) else {}
-
-
-def _short(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    flat = " ".join(value.split())
-    return flat[:_ERROR_MESSAGE_MAX]
-
-
-@dataclass
-class CaseResult:
-    """Resultado de un caso, sin texto del modelo."""
-
-    name: str
-    outcome: str
-    detail: str
-    finish_reason: str | None = None
-    usage: dict[str, int] = field(default_factory=dict)
-    block_types: list[str] = field(default_factory=list)
-    exchanges: list[Exchange] = field(default_factory=list)
-
-
 ClientFactory = Callable[[AliasThinking, Recorder], AnthropicClient]
 
 
@@ -228,23 +167,11 @@ def _usage(result: CompletionResult) -> dict[str, int]:
     }
 
 
-def _block_types(result: CompletionResult) -> list[str]:
-    if result.provider_blocks is None:
-        return []
-    types = []
-    for block in result.provider_blocks.blocks:
-        kind = str(block.get("type", "?"))
-        if kind == "thinking" and block.get("signature"):
-            kind = "thinking(firmado)"
-        types.append(kind)
-    return types
-
-
-async def _with_client(
+async def _with_client[T](
     make: ClientFactory,
     thinking: AliasThinking,
-    action: Callable[[AnthropicClient], Awaitable[Any]],
-) -> tuple[Any, LlmError | None, Recorder]:
+    action: Callable[[AnthropicClient], Awaitable[T]],
+) -> tuple[T | None, LlmError | None, Recorder]:
     recorder = Recorder()
     client = make(thinking, recorder)
     try:
@@ -255,8 +182,11 @@ async def _with_client(
         await client.aclose()
 
 
-def _failure(name: str, exc: LlmError, recorder: Recorder, hint: str = "") -> CaseResult:
-    detail = type(exc).__name__ + (f"; {hint}" if hint else "")
+def _failure(name: str, exc: LlmError | None, recorder: Recorder, hint: str = "") -> CaseResult:
+    """Un caso que no llegó a resultado: el error del proveedor y la pista, si hay."""
+    detail = (type(exc).__name__ if exc is not None else "sin resultado") + (
+        f"; {hint}" if hint else ""
+    )
     return CaseResult(name, FAILED, detail, exchanges=recorder.exchanges)
 
 
@@ -272,7 +202,7 @@ async def _single_completion(
         thinking,
         lambda c: c.complete(model=_ALIAS, messages=_user(_REPLY_PROMPT), max_tokens=max_tokens),
     )
-    if exc is not None:
+    if exc is not None or result is None:
         return _failure(name, exc, recorder, hint)
     outcome = OK if result.finish_reason == "stop" else INCONCLUSIVE
     return CaseResult(
@@ -281,7 +211,7 @@ async def _single_completion(
         f"finish_reason {result.finish_reason}",
         finish_reason=result.finish_reason,
         usage=_usage(result),
-        block_types=_block_types(result),
+        block_types=recorder.posts[0].block_types,
         exchanges=recorder.exchanges,
     )
 
@@ -301,7 +231,7 @@ async def case_disabled(make: ClientFactory) -> CaseResult:
 
 async def _tool_loop(
     make: ClientFactory, thinking: AliasThinking, prompt: str, max_iterations: int
-) -> tuple[Any, LlmError | None, Recorder]:
+) -> tuple[ToolLoopResult | None, LlmError | None, Recorder]:
     registry = ToolRegistry([EchoTool()])
     specs = [to_spec(tool) for tool in registry.tools()]
     return await _with_client(
@@ -320,20 +250,47 @@ async def _tool_loop(
     )
 
 
+def _unproven_round(name: str, recorder: Recorder, called_tool: bool) -> CaseResult | None:
+    """``NO CONCLUYE`` si la vuelta no tuvo una tool llamada con razonamiento firmado."""
+    first = recorder.posts[0].block_types if recorder.posts else []
+    if not called_tool:
+        detail = "el modelo no llamó a la tool"
+    elif SIGNED_THINKING not in first:
+        detail = "la primera respuesta no trajo razonamiento firmado: no hubo bloques que reenviar"
+    else:
+        return None
+    return CaseResult(name, INCONCLUSIVE, detail, block_types=first, exchanges=recorder.exchanges)
+
+
 async def case_tool_round(make: ClientFactory) -> CaseResult:
     name = "vuelta_con_tools"
     loop, exc, recorder = await _tool_loop(make, _ADAPTIVE, _TOOL_ROUND_PROMPT, max_iterations=3)
-    if exc is not None:
+    if exc is not None or loop is None:
         return _failure(name, exc, recorder)
-    calls = len(recorder.posts)
-    if not loop.actions:
-        return CaseResult(
-            name, INCONCLUSIVE, "el modelo no llamó a la tool", exchanges=recorder.exchanges
-        )
+    unproven = _unproven_round(name, recorder, called_tool=bool(loop.actions))
+    if unproven is not None:
+        return unproven
     outcome = OK if loop.finish_reason == "stop" else INCONCLUSIVE
+    calls = len(recorder.posts)
     detail = f"{len(loop.actions)} tool, {calls} llamadas, finish_reason {loop.finish_reason}"
     return CaseResult(
-        name, outcome, detail, finish_reason=loop.finish_reason, exchanges=recorder.exchanges
+        name,
+        outcome,
+        detail,
+        finish_reason=loop.finish_reason,
+        block_types=recorder.posts[0].block_types,
+        exchanges=recorder.exchanges,
+    )
+
+
+def _rejected_on_confirmation(exc: LlmError, recorder: Recorder) -> bool:
+    """La primera llamada pasó y la confirmación volvió con un 400 de request inválido."""
+    posts = recorder.posts
+    return (
+        isinstance(exc, LlmBadRequestError)
+        and len(posts) >= 2
+        and posts[0].status == httpx.codes.OK
+        and posts[1].status == httpx.codes.BAD_REQUEST
     )
 
 
@@ -342,26 +299,40 @@ async def _forced(
 ) -> CaseResult:
     """Una vuelta de una iteración: si el modelo solo llama a la tool, hay confirmación.
 
-    ``probe``: el caso prueba una regla del validador, así que un rechazo de la
-    confirmación es una respuesta (la regla queda), no una falla.
+    ``probe``: el caso prueba una regla del validador. Un 400 de request inválido en la
+    confirmación es una respuesta (la regla queda); cualquier otro error es una falla.
     """
     loop, exc, recorder = await _tool_loop(make, thinking, _TOOL_ONLY_PROMPT, max_iterations=1)
-    calls = len(recorder.posts)
-    if exc is not None:
-        if probe and calls >= 2:
-            detail = f"la API rechaza el cambio de esfuerzo ({type(exc).__name__}): la regla queda"
-            return CaseResult(name, OK, detail, exchanges=recorder.exchanges)
+    first = recorder.posts[0].block_types if recorder.posts else []
+    if exc is not None or loop is None:
+        if (
+            probe
+            and exc is not None
+            and SIGNED_THINKING in first
+            and _rejected_on_confirmation(exc, recorder)
+        ):
+            detail = "la API rechaza el cambio de esfuerzo (400): la regla queda"
+            return CaseResult(name, OK, detail, block_types=first, exchanges=recorder.exchanges)
         return _failure(name, exc, recorder)
-    if calls < 2:
-        reason = "el modelo no llamó a la tool" if not loop.actions else "el modelo escribió texto"
-        detail = f"{reason}: no hubo confirmación forzada"
-        return CaseResult(name, INCONCLUSIVE, detail, exchanges=recorder.exchanges)
+    unproven = _unproven_round(name, recorder, called_tool=bool(loop.actions))
+    if unproven is not None:
+        return unproven
+    if len(recorder.posts) < 2:
+        detail = "el modelo escribió texto: no hubo confirmación forzada"
+        return CaseResult(
+            name, INCONCLUSIVE, detail, block_types=first, exchanges=recorder.exchanges
+        )
     if probe:
         detail = "la API acepta el cambio de esfuerzo: la regla se puede relajar"
     else:
         detail = f"confirmación forzada aceptada, finish_reason {loop.finish_reason}"
     return CaseResult(
-        name, OK, detail, finish_reason=loop.finish_reason, exchanges=recorder.exchanges
+        name,
+        OK,
+        detail,
+        finish_reason=loop.finish_reason,
+        block_types=first,
+        exchanges=recorder.exchanges,
     )
 
 
@@ -386,7 +357,7 @@ async def case_streaming(make: ClientFactory) -> CaseResult:
         return chunks, finish
 
     outcome, exc, recorder = await _with_client(make, _ADAPTIVE, consume)
-    if exc is not None:
+    if exc is not None or outcome is None:
         return _failure(name, exc, recorder)
     chunks, finish = outcome
     result = OK if finish == "stop" else INCONCLUSIVE
@@ -413,14 +384,15 @@ async def case_cache(make: ClientFactory) -> CaseResult:
         return first, second
 
     pair, exc, recorder = await _with_client(make, _ADAPTIVE, twice)
-    if exc is not None:
+    if exc is not None or pair is None:
         return _failure(name, exc, recorder)
     first, second = pair
     created, read = first.cache_creation_tokens, second.cache_read_tokens
     if read > 0:
         outcome, detail = OK, f"la segunda llamada leyó {read} tokens de la caché"
     elif created == 0:
-        outcome, detail = INCONCLUSIVE, "sin caché: el prefijo no llega al mínimo del modelo"
+        outcome = INCONCLUSIVE
+        detail = "ninguna llamada creó ni leyó caché (quizás el prefijo no llega al mínimo)"
     else:
         outcome, detail = FAILED, f"creó {created} tokens de caché y la segunda no los leyó"
     return CaseResult(name, outcome, detail, usage=_usage(second), exchanges=recorder.exchanges)
@@ -432,7 +404,7 @@ CASES: dict[str, tuple[Case, str]] = {
     "adaptativo": (case_adaptive, "adaptive con block_binding y el header beta"),
     "entre_tools": (case_between_tools, "between_tools sin tools, max_tokens 512"),
     "apagado": (case_disabled, "razonamiento disabled"),
-    "vuelta_con_tools": (case_tool_round, "tool loop real con los bloques reenviados"),
+    "vuelta_con_tools": (case_tool_round, "tool loop real con los bloques firmados reenviados"),
     "confirmacion_forzada": (
         case_forced_confirmation,
         "tool_choice none con thinking=False en la misma vuelta",
@@ -457,28 +429,6 @@ async def check_health(make: ClientFactory) -> tuple[bool, Recorder]:
     return health.healthy, recorder
 
 
-def format_exchange(exchange: Exchange) -> str:
-    parts = [f"{exchange.method} {exchange.path} -> {exchange.status}"]
-    if exchange.error_type or exchange.error_message:
-        parts.append(f"{exchange.error_type or '?'}: {exchange.error_message or ''}".strip())
-    if exchange.request_id:
-        parts.append(f"request-id {exchange.request_id}")
-    return " | ".join(parts)
-
-
-def format_result(result: CaseResult) -> list[str]:
-    lines = [f"[{result.outcome}] {result.name}: {result.detail}"]
-    if result.usage:
-        usage = ", ".join(f"{key} {value}" for key, value in result.usage.items())
-        lines.append(f"    tokens: {usage}")
-    if result.block_types:
-        lines.append(f"    bloques: {', '.join(result.block_types)}")
-    lines.extend(
-        f"    {format_exchange(e)}" for e in result.exchanges if e.status >= httpx.codes.BAD_REQUEST
-    )
-    return lines
-
-
 async def run_checks(
     make: ClientFactory, names: Sequence[str], out: Callable[[str], None] = print
 ) -> int:
@@ -500,22 +450,16 @@ async def run_checks(
     return 1 if failed else 0
 
 
-def load_api_key(name: str, env_file: Path) -> SecretStr:
-    """``LLM_API_KEY_<NAME>`` del entorno o, si no está, del ``.env``. Nunca la muestra."""
-    variable = f"{LLM_API_KEY_PREFIX}{name.upper()}"
-    value = os.environ.get(variable)
-    if not value and env_file.is_file():
-        value = dotenv_values(env_file).get(variable)
-    if not value or not value.strip():
-        raise SystemExit(f"falta {variable}: ponela en el entorno o en {env_file.name}")
-    return SecretStr(value.strip())
-
-
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Prueba de humo del cliente de Anthropic.")
+    parser = argparse.ArgumentParser(
+        description="Prueba de humo del cliente de Anthropic.", allow_abbrev=False
+    )
     parser.add_argument("--modelo", required=True, help="id del modelo en la API")
     parser.add_argument("--nombre", default=DEFAULT_NAME, help="nombre de la credencial")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    parser.add_argument(
+        "--otro-host", action="store_true", help="permite una base URL fuera de Anthropic"
+    )
     parser.add_argument("--caso", action="append", choices=list(CASES), help="repetible")
     parser.add_argument("--enviar", action="store_true", help="manda los requests (gasta tokens)")
     return parser.parse_args(argv)
@@ -530,9 +474,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"  - {name}: {CASES[name][1]}")
         print("Para mandarlos, sumá --enviar.")
         return 0
+    check_base_url(args.base_url, allow_other_host=args.otro_host)
+    variable = f"{LLM_API_KEY_PREFIX}{args.nombre.upper()}"
     make = api_client_factory(
         base_url=args.base_url,
-        api_key=load_api_key(args.nombre, Path.cwd() / ".env"),
+        api_key=load_api_key(variable, Path.cwd() / ".env"),
         model_id=args.modelo,
         name=args.nombre,
     )

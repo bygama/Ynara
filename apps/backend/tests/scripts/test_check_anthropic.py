@@ -1,10 +1,16 @@
 """Tests de la prueba de humo de Anthropic (``scripts/check_anthropic.py``).
 
 Sin red: cada caso corre contra un ``httpx.MockTransport`` que contesta con la forma
-de la Messages API y datos sintéticos. Cubren el modo lista (no hace requests), el
-corte por ``health``, el resultado de cada caso, el detalle de un error del proveedor,
-los casos que no concluyen, la credencial (nunca se imprime) y que el script no lee
-``Settings``.
+de la Messages API y datos sintéticos. Cubren:
+
+- el modo lista (no arma cliente) y los flags (sin abreviaturas, host permitido);
+- el camino de ``--enviar`` de punta a punta, sin ``Settings``;
+- el corte por ``health``;
+- el resultado de cada caso y la forma del request que verifica;
+- cuándo un caso con tools no concluye (sin tool o sin razonamiento firmado);
+- la sonda de esfuerzo: solo un 400 en la confirmación cuenta como respuesta;
+- el detalle de un error del proveedor, acotado y limpio;
+- la credencial, el texto del modelo, el razonamiento y las firmas, que no se imprimen.
 
 El script vive fuera del paquete ``app``, así que se importa por path con
 ``importlib``, como ``test_check_doc_catalogs.py``.
@@ -24,9 +30,14 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
+from app.llm.clients.providers._anthropic_wire import THINKING_BINDING_BETA
+
 _SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "check_anthropic.py"
 _API_KEY = "sk-test-anthropic-smoke-0123456789"
 _MODEL_ID = "modelo-humo-test"
+_THINKING_TEXT = "razonamiento-sintetico-humo"
+_SIGNATURE = "firma-sintetica-humo"
+_REPLY_TEXT = "respuesta-sintetica-humo"
 
 
 def _load_module() -> ModuleType:
@@ -61,9 +72,10 @@ def _message(
     }
 
 
-_THINKING_BLOCK = {"type": "thinking", "thinking": "razonamiento de prueba", "signature": "sig"}
-_TEXT_BLOCK = {"type": "text", "text": "listo"}
+_THINKING_BLOCK = {"type": "thinking", "thinking": _THINKING_TEXT, "signature": _SIGNATURE}
+_TEXT_BLOCK = {"type": "text", "text": _REPLY_TEXT}
 _TOOL_USE = {"type": "tool_use", "id": "toolu_1", "name": "smoke__echo", "input": {"texto": "hola"}}
+_TOOL_REPLY = _message([_THINKING_BLOCK, _TOOL_USE], stop_reason="tool_use")
 
 
 def _sse(*events: dict[str, Any]) -> bytes:
@@ -96,12 +108,11 @@ def _api(
     health_status: int = 200,
     tool_use_reply: dict[str, Any] | None = None,
     after_tool: Callable[[dict[str, Any]], httpx.Response] | None = None,
+    cache_read: int = 900,
 ) -> tuple[Handler, list[dict[str, Any]]]:
     """Un doble de la API: ``/models``, ``/messages`` con tools, sin tools y por SSE."""
     payloads: list[dict[str, Any]] = []
-    first_tool_reply = tool_use_reply or _message(
-        [_THINKING_BLOCK, _TOOL_USE], stop_reason="tool_use"
-    )
+    first_tool_reply = tool_use_reply or _TOOL_REPLY
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["x-api-key"] == _API_KEY
@@ -120,14 +131,13 @@ def _api(
         if "system" not in payload:
             return httpx.Response(200, json=_message([_THINKING_BLOCK, _TEXT_BLOCK]))
         # El caso de caché: la primera llamada con system crea, la segunda lee.
-        with_system = sum(1 for p in payloads if "system" in p)
-        cached = 900 if with_system % 2 == 0 else 0
+        second = sum(1 for p in payloads if "system" in p) % 2 == 0
         return httpx.Response(
             200,
             json=_message(
                 [_THINKING_BLOCK, _TEXT_BLOCK],
-                cache_read_input_tokens=cached,
-                cache_creation_input_tokens=900 - cached,
+                cache_read_input_tokens=cache_read if second else 0,
+                cache_creation_input_tokens=0 if second else 900,
             ),
         )
 
@@ -150,12 +160,16 @@ def _factory(handler: Handler) -> Any:
     return make
 
 
-def _bad_request(message: str) -> httpx.Response:
+def _error(status: int, error_type: str, message: str) -> httpx.Response:
     return httpx.Response(
-        400,
-        json={"type": "error", "error": {"type": "invalid_request_error", "message": message}},
+        status,
+        json={"type": "error", "error": {"type": error_type, "message": message}},
         headers={"request-id": "req_humo_1"},
     )
+
+
+def _bad_request(message: str) -> httpx.Response:
+    return _error(400, "invalid_request_error", message)
 
 
 async def _run(handler: Handler, names: list[str]) -> tuple[int, list[str]]:
@@ -164,7 +178,7 @@ async def _run(handler: Handler, names: list[str]) -> tuple[int, list[str]]:
     return code, lines
 
 
-# --- modo lista y health ---------------------------------------------------
+# --- flags, modo lista y --enviar --------------------------------------------
 
 
 def test_without_enviar_it_lists_the_cases_and_sends_nothing(
@@ -178,6 +192,55 @@ def test_without_enviar_it_lists_the_cases_and_sends_nothing(
     out = capsys.readouterr().out
     assert "no se mandó nada" in out
     assert all(name in out for name in ca.CASES)
+
+
+def test_an_abbreviated_flag_does_not_turn_on_enviar() -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        ca.main(["--modelo", _MODEL_ID, "--env"])
+    assert excinfo.value.code == 2
+
+
+def test_enviar_runs_the_cases_with_the_key_and_without_settings(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    handler, payloads = _api()
+    seen: dict[str, Any] = {}
+
+    def fake_factory(**kwargs: Any) -> Any:
+        seen.update(kwargs)
+        return _factory(handler)
+
+    def no_settings(*_: Any, **__: Any) -> Any:
+        raise AssertionError("el script no usa Settings")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LLM_API_KEY_CLAUDE", _API_KEY)
+    monkeypatch.setattr("app.core.config.Settings.__init__", no_settings)
+    monkeypatch.setattr(ca, "api_client_factory", fake_factory)
+    code = ca.main(["--modelo", _MODEL_ID, "--enviar", "--caso", "adaptativo"])
+    assert code == 0
+    assert seen["api_key"].get_secret_value() == _API_KEY
+    assert seen["base_url"] == "https://api.anthropic.com/v1"
+    assert seen["model_id"] == _MODEL_ID
+    assert len(payloads) == 1
+    out = capsys.readouterr().out
+    assert "[OK] adaptativo" in out
+    assert _API_KEY not in out
+
+
+def test_another_host_needs_an_explicit_flag(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def no_client(**_: Any) -> Any:
+        raise AssertionError("no arma un cliente contra otro host sin --otro-host")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LLM_API_KEY_CLAUDE", _API_KEY)
+    monkeypatch.setattr(ca, "api_client_factory", no_client)
+    with pytest.raises(SystemExit) as excinfo:
+        ca.main(["--modelo", _MODEL_ID, "--enviar", "--base-url", "https://otro.example/v1"])
+    assert "--otro-host" in str(excinfo.value)
+    ca.check_base_url("https://otro.example/v1", allow_other_host=True)
 
 
 async def test_a_failed_health_check_stops_before_any_message() -> None:
@@ -212,30 +275,16 @@ async def test_the_adaptive_case_sends_the_beta_header_and_reports_block_types()
 
     _, lines = await _run(spy, ["adaptativo"])
     post = next(r for r in seen if r.method == "POST")
-    assert post.headers["anthropic-beta"] == "thinking-binding-controls-2026-08-01"
+    assert post.headers["anthropic-beta"] == THINKING_BINDING_BETA
     assert json.loads(post.content)["max_tokens"] == 1024
     assert "    bloques: thinking(firmado), text" in lines
 
 
-async def test_a_provider_error_shows_its_type_message_and_request_id() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/models"):
-            return httpx.Response(200, json={"data": []})
-        return _bad_request("thinking.type: valor no admitido\npara este modelo")
-
-    code, lines = await _run(handler, ["apagado"])
-    assert code == 1
-    assert lines[1].startswith("[FALLA] apagado: LlmBadRequestError; si el modelo no se puede")
-    assert lines[2] == (
-        "    POST /v1/messages -> 400 | invalid_request_error: thinking.type: valor no "
-        "admitido para este modelo | request-id req_humo_1"
-    )
-
-
-async def test_the_tool_round_replays_the_blocks_of_the_first_call() -> None:
+async def test_the_tool_round_replays_the_signed_blocks_of_the_first_call() -> None:
     handler, payloads = _api()
     _, lines = await _run(handler, ["vuelta_con_tools"])
     assert lines[1] == "[OK] vuelta_con_tools: 1 tool, 2 llamadas, finish_reason stop"
+    assert lines[2] == "    bloques: thinking(firmado), tool_use"
     replayed = payloads[1]["messages"][1]["content"]
     assert replayed[0] == _THINKING_BLOCK
 
@@ -245,7 +294,19 @@ async def test_a_tool_round_without_a_tool_call_does_not_conclude() -> None:
     code, lines = await _run(handler, ["vuelta_con_tools", "confirmacion_forzada"])
     assert code == 0
     assert lines[1] == "[NO CONCLUYE] vuelta_con_tools: el modelo no llamó a la tool"
-    assert lines[2].startswith("[NO CONCLUYE] confirmacion_forzada: el modelo no llamó")
+    forced = "[NO CONCLUYE] confirmacion_forzada: el modelo no llamó a la tool"
+    assert forced in lines
+
+
+@pytest.mark.parametrize("case", ["vuelta_con_tools", "confirmacion_forzada", "cambio_de_esfuerzo"])
+async def test_a_tool_case_without_signed_thinking_does_not_conclude(case: str) -> None:
+    handler, _ = _api(tool_use_reply=_message([_TOOL_USE], stop_reason="tool_use"))
+    code, lines = await _run(handler, [case])
+    assert code == 0
+    assert lines[1] == (
+        f"[NO CONCLUYE] {case}: la primera respuesta no trajo razonamiento firmado: "
+        "no hubo bloques que reenviar"
+    )
 
 
 async def test_the_forced_confirmation_goes_with_tool_choice_none_and_thinking_off() -> None:
@@ -258,17 +319,30 @@ async def test_the_forced_confirmation_goes_with_tool_choice_none_and_thinking_o
     assert forced["output_config"] == {"effort": "low"}
 
 
-async def test_the_effort_probe_reports_that_the_rule_stays_when_the_api_rejects_it() -> None:
+async def test_the_effort_probe_reports_that_the_rule_stays_on_a_400() -> None:
     handler, payloads = _api(after_tool=lambda _: _bad_request("effort no coincide"))
     code, lines = await _run(handler, ["cambio_de_esfuerzo"])
     assert code == 0
     assert lines[1] == (
-        "[OK] cambio_de_esfuerzo: la API rechaza el cambio de esfuerzo "
-        "(LlmBadRequestError): la regla queda"
+        "[OK] cambio_de_esfuerzo: la API rechaza el cambio de esfuerzo (400): la regla queda"
     )
-    assert "effort no coincide" in lines[2]
+    assert "effort no coincide" in lines[-1]
     assert payloads[0]["output_config"] == {"effort": "medium"}
     assert payloads[1]["output_config"] == {"effort": "low"}
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        _error(529, "overloaded_error", "sobrecarga"),
+        _error(429, "rate_limit_error", "demasiados pedidos"),
+    ],
+)
+async def test_the_effort_probe_fails_on_any_other_error(reply: httpx.Response) -> None:
+    handler, _ = _api(after_tool=lambda _: reply)
+    code, lines = await _run(handler, ["cambio_de_esfuerzo"])
+    assert code == 1
+    assert lines[1].startswith("[FALLA] cambio_de_esfuerzo:")
 
 
 async def test_the_effort_probe_reports_that_the_rule_can_go_when_the_api_accepts_it() -> None:
@@ -288,7 +362,14 @@ async def test_the_cache_case_reads_the_second_call_and_marks_the_fixed_system()
     assert "cache_control" not in system[1]
 
 
-async def test_a_cache_below_the_minimum_does_not_conclude() -> None:
+async def test_a_cache_that_is_created_but_not_read_fails() -> None:
+    handler, _ = _api(cache_read=0)
+    code, lines = await _run(handler, ["cache"])
+    assert code == 1
+    assert lines[1] == "[FALLA] cache: creó 900 tokens de caché y la segunda no los leyó"
+
+
+async def test_a_cache_neither_created_nor_read_does_not_conclude() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/models"):
             return httpx.Response(200, json={"data": []})
@@ -296,19 +377,53 @@ async def test_a_cache_below_the_minimum_does_not_conclude() -> None:
 
     code, lines = await _run(handler, ["cache"])
     assert code == 0
-    assert lines[1].startswith("[NO CONCLUYE] cache: sin caché")
+    assert lines[1].startswith("[NO CONCLUYE] cache: ninguna llamada creó ni leyó caché")
 
 
-# --- credencial --------------------------------------------------------------
+# --- errores del proveedor ------------------------------------------------------
 
 
-async def test_the_api_key_and_the_model_text_are_never_printed() -> None:
+async def test_a_provider_error_shows_its_type_message_and_request_id() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": []})
+        return _bad_request("thinking.type: valor no admitido\npara este modelo")
+
+    code, lines = await _run(handler, ["apagado"])
+    assert code == 1
+    assert lines[1].startswith("[FALLA] apagado: LlmBadRequestError; si el modelo no se puede")
+    assert lines[2] == (
+        "    POST /v1/messages -> 400 | invalid_request_error: thinking.type: valor no "
+        "admitido para este modelo | request-id req_humo_1"
+    )
+
+
+async def test_provider_fields_are_bounded_and_printable() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": []})
+        return httpx.Response(
+            400,
+            json={"error": {"type": "invalid\x1b[31m_error", "message": "x" * 1000}},
+            headers={"request-id": "r" * 500},
+        )
+
+    _, lines = await _run(handler, ["apagado"])
+    detail = lines[2]
+    assert "\x1b" not in detail
+    assert "x" * 300 in detail and "x" * 301 not in detail
+    assert "r" * 60 in detail and "r" * 61 not in detail
+
+
+# --- lo que nunca sale --------------------------------------------------------------
+
+
+async def test_the_key_the_model_text_the_reasoning_and_the_signatures_never_print() -> None:
     handler, _ = _api()
     _, lines = await _run(handler, list(ca.CASES))
     output = "\n".join(lines)
-    assert _API_KEY not in output
-    assert "razonamiento de prueba" not in output
-    assert "sig" not in output.replace("signature", "")
+    for secret in (_API_KEY, _REPLY_TEXT, _THINKING_TEXT, _SIGNATURE):
+        assert secret not in output
 
 
 def test_the_key_comes_from_the_environment_first(
@@ -317,9 +432,9 @@ def test_the_key_comes_from_the_environment_first(
     env_file = tmp_path / ".env"
     env_file.write_text("LLM_API_KEY_CLAUDE=desde-el-archivo\n", encoding="utf-8")
     monkeypatch.setenv("LLM_API_KEY_CLAUDE", "desde-el-entorno")
-    assert ca.load_api_key("claude", env_file).get_secret_value() == "desde-el-entorno"
+    assert ca.load_api_key("LLM_API_KEY_CLAUDE", env_file).get_secret_value() == "desde-el-entorno"
     monkeypatch.delenv("LLM_API_KEY_CLAUDE")
-    assert ca.load_api_key("claude", env_file).get_secret_value() == "desde-el-archivo"
+    assert ca.load_api_key("LLM_API_KEY_CLAUDE", env_file).get_secret_value() == "desde-el-archivo"
 
 
 def test_a_missing_key_names_the_variable_and_nothing_else(
@@ -327,5 +442,5 @@ def test_a_missing_key_names_the_variable_and_nothing_else(
 ) -> None:
     monkeypatch.delenv("LLM_API_KEY_OTRA", raising=False)
     with pytest.raises(SystemExit) as excinfo:
-        ca.load_api_key("otra", tmp_path / ".env")
+        ca.load_api_key("LLM_API_KEY_OTRA", tmp_path / ".env")
     assert str(excinfo.value) == "falta LLM_API_KEY_OTRA: ponela en el entorno o en .env"
