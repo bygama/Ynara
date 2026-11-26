@@ -4,8 +4,9 @@ Centraliza la decision entre los clientes fake y los reales, por settings:
 
 - ``LLM_BACKEND=fake`` (el default: dev y CI) -> ``FakeLlmClient`` determinista, sin
   red.
-- ``LLM_BACKEND=api`` -> un ``OpenAICompatClient`` por entrada de ``LLM_PROVIDERS``, en
-  orden de prioridad, reunidos en un pool y envueltos en un ``ResilientClient`` (retry,
+- ``LLM_BACKEND=api`` -> un cliente por entrada de ``LLM_PROVIDERS`` segun su
+  ``protocol`` (``OpenAICompatClient`` o ``AnthropicClient``, ADR-031 D2), en orden de
+  prioridad, reunidos en un pool y envueltos en un ``ResilientClient`` (retry,
   breaker por proveedor y respaldo, ADR-028 D2). En production es el unico valor que
   arranca (``Settings._require_llm_api``).
 - ``EMBEDDING_BACKEND=api`` -> ``ApiEmbeddingClient`` contra el proveedor de embeddings
@@ -35,6 +36,7 @@ from app.llm.clients.embedding import EmbeddingClient, FakeEmbeddingClient
 from app.llm.clients.fakes import FakeLlmClient
 from app.llm.clients.parsers import OpenAIToolCallParser
 from app.llm.clients.pool import build_provider_pool
+from app.llm.clients.providers.anthropic import AnthropicClient
 from app.llm.clients.providers.embeddings import ApiEmbeddingClient
 from app.llm.clients.providers.openai_compat import OpenAICompatClient
 from app.llm.clients.reranker import RERANKER_PASSTHROUGH, FakeReranker, Reranker
@@ -46,7 +48,9 @@ from app.llm.config import LlmRuntimeConfig
 # entre ellos) mas un request al respaldo tiene que entrar en el presupuesto total del
 # ``ResilientClient``: 3 x 20 s + 2,5 s + 20 s = 82,5 s < 90 s
 # (``check_resilience_budget``). El timeout cubre la generacion entera: el chat usa
-# ``complete``, que espera la respuesta completa.
+# ``complete``, que espera la respuesta completa. Es el default de cada entrada de
+# ``LLM_PROVIDERS``; una entrada puede fijar el suyo (``timeout_s``, ADR-031 D9) y el
+# chequeo se hace con el de cada una.
 PROVIDER_REQUEST_TIMEOUT_S = 20.0
 PROVIDER_MAX_ATTEMPTS = 3
 PROVIDER_BASE_BACKOFF_S = 0.5
@@ -62,6 +66,7 @@ _REASONING_EFFORT_ON = "medium"
 def check_resilience_budget(
     *,
     timeout_s: float = PROVIDER_REQUEST_TIMEOUT_S,
+    backup_timeout_s: float | None = None,
     max_attempts: int = PROVIDER_MAX_ATTEMPTS,
     base_backoff_s: float = PROVIDER_BASE_BACKOFF_S,
     max_backoff_s: float = PROVIDER_MAX_BACKOFF_S,
@@ -69,23 +74,42 @@ def check_resilience_budget(
 ) -> None:
     """``ValueError`` si el respaldo no entra en el presupuesto despues del peor caso.
 
-    El peor caso del principal son ``max_attempts`` requests cortados por timeout mas
-    el backoff maximo entre ellos (exponencial con jitter, con techo, como
-    ``RetryPolicy.backoff``). Despues tiene que quedar lugar para un request al
-    respaldo; si no, el presupuesto corta antes y la respuesta degrada aunque el
+    El peor caso de una entrada son ``max_attempts`` requests cortados por su timeout
+    (``timeout_s``) mas el backoff maximo entre ellos (exponencial con jitter, con
+    techo, como ``RetryPolicy.backoff``). Despues tiene que quedar lugar para un
+    request a la entrada siguiente (``backup_timeout_s``, por default el mismo
+    timeout); si no, el presupuesto corta antes y la respuesta degrada aunque el
     respaldo este sano.
     """
+    backup_s = timeout_s if backup_timeout_s is None else backup_timeout_s
     backoff_s = sum(
         min(min(base_backoff_s * 2**attempt, max_backoff_s) + base_backoff_s, max_backoff_s)
         for attempt in range(max_attempts - 1)
     )
-    worst_case_s = max_attempts * timeout_s + backoff_s + timeout_s
+    worst_case_s = max_attempts * timeout_s + backoff_s + backup_s
     if worst_case_s >= total_budget_s:
         raise ValueError(
             f"el timeout por request ({timeout_s} s) no deja lugar al respaldo: "
             f"{max_attempts} intentos + backoff + respaldo suman {worst_case_s} s, "
             f"y el presupuesto es {total_budget_s} s"
         )
+
+
+def _provider_timeout_s(provider: LlmProvider) -> float:
+    """Timeout por request de una entrada: el suyo o el default (ADR-031 D9)."""
+    return provider.timeout_s if provider.timeout_s is not None else PROVIDER_REQUEST_TIMEOUT_S
+
+
+def _check_providers_budget(providers: list[LlmProvider]) -> None:
+    """``check_resilience_budget`` para cada entrada, con el timeout de la siguiente.
+
+    La ultima no tiene respaldo y se mide contra si misma, como cuando hay una sola:
+    asi el peor caso de cada entrada deja lugar a otro request del mismo largo.
+    """
+    timeouts = [_provider_timeout_s(provider) for provider in providers]
+    for index, timeout_s in enumerate(timeouts):
+        following = timeouts[index + 1] if index + 1 < len(timeouts) else timeout_s
+        check_resilience_budget(timeout_s=timeout_s, backup_timeout_s=following)
 
 
 def _quiet_httpx_request_logs() -> None:
@@ -107,8 +131,20 @@ def _wants_real_llm(settings: Settings) -> bool:
 
 def _build_provider_client(
     provider: LlmProvider, settings: Settings, parser: OpenAIToolCallParser
-) -> OpenAICompatClient:
-    """Un ``OpenAICompatClient`` para una entrada de ``LLM_PROVIDERS``."""
+) -> LLMClient:
+    """El cliente de una entrada de ``LLM_PROVIDERS``, segun su ``protocol``."""
+    if provider.protocol == "anthropic":
+        # ``Settings`` ya valido que una entrada anthropic traiga ``thinking``.
+        assert provider.thinking is not None
+        return AnthropicClient(
+            name=provider.name,
+            base_url=provider.base_url,
+            api_key=settings.llm_api_keys[provider.name],
+            model_map=provider.models,
+            thinking=provider.thinking,
+            http_client=httpx.AsyncClient(),
+            default_timeout_s=_provider_timeout_s(provider),
+        )
     return OpenAICompatClient(
         name=provider.name,
         base_url=provider.base_url,
@@ -118,7 +154,7 @@ def _build_provider_client(
         reasoning_effort_on=_REASONING_EFFORT_ON if provider.supports_reasoning_effort else None,
         reasoning_effort_off=None,
         parser=parser,
-        default_timeout_s=PROVIDER_REQUEST_TIMEOUT_S,
+        default_timeout_s=_provider_timeout_s(provider),
     )
 
 
@@ -127,7 +163,7 @@ def build_llm_client(
 ) -> LLMClient:
     """Construye el cliente LLM segun ``LLM_BACKEND``: el de los proveedores o el fake.
 
-    ``api``: un ``OpenAICompatClient`` por proveedor, en el orden de ``LLM_PROVIDERS``
+    ``api``: un cliente por proveedor (segun su ``protocol``), en el orden de ``LLM_PROVIDERS``
     (el primero es el principal), en un pool con respaldo y envuelto en un
     ``ResilientClient``. ``Settings`` ya valido que haya proveedores y que cada uno
     tenga su credencial.
@@ -150,7 +186,7 @@ def build_llm_client(
             degrade_when_empty=degrade,
         )
 
-    check_resilience_budget()
+    _check_providers_budget(settings.llm_providers)
     _quiet_httpx_request_logs()
     parser = OpenAIToolCallParser()
     clients: list[LLMClient] = [
