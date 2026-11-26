@@ -31,6 +31,7 @@ from app.llm.errors import (
     LlmOverloadedError,
     LlmProviderRejectedError,
     LlmRateLimitError,
+    LlmSpendLimitError,
     LlmTimeoutError,
     LlmTransientError,
     LlmUnavailableError,
@@ -173,6 +174,54 @@ def test_rate_limit_without_retry_after() -> None:
     with pytest.raises(LlmRateLimitError) as excinfo:
         raise_for_provider_status(httpx.Response(429, json=_error_body("slow down")))
     assert excinfo.value.retry_after_s is None
+    assert not isinstance(excinfo.value, LlmSpendLimitError)
+
+
+def _anthropic_error_body(
+    error_type: str, message: str, *, error_code: str | None = None
+) -> dict[str, object]:
+    """Body de error con la forma de Anthropic (el código va en ``error.details``)."""
+    error: dict[str, object] = {"type": error_type, "message": message}
+    if error_code is not None:
+        error["details"] = {"error_code": error_code}
+    return {"type": "error", "error": error}
+
+
+def test_429_spend_limit_is_a_rate_limit_with_its_own_name() -> None:
+    """El tope de gasto sigue siendo un 429 (mismo manejo) con un nombre que lo dice."""
+    body = _anthropic_error_body(
+        "rate_limit_error", "spend limit", error_code="enforced_spend_limit_reached"
+    )
+    with pytest.raises(LlmSpendLimitError) as excinfo:
+        raise_for_provider_status(httpx.Response(429, json=body))
+    assert isinstance(excinfo.value, LlmRateLimitError)
+    assert isinstance(excinfo.value, LlmTransientError)
+    assert excinfo.value.retry_after_s is None
+    assert "spend limit" not in str(excinfo.value)
+
+
+def test_429_with_other_anthropic_code_is_plain_rate_limit() -> None:
+    body = _anthropic_error_body("rate_limit_error", "slow down", error_code="other_limit")
+    with pytest.raises(LlmRateLimitError) as excinfo:
+        raise_for_provider_status(httpx.Response(429, json=body))
+    assert not isinstance(excinfo.value, LlmSpendLimitError)
+
+
+async def test_429_spend_limit_in_stream_needs_the_body_read() -> None:
+    """Como el overflow: sin leer el body de un stream queda como límite de tasa común."""
+    raw = b'{"error": {"details": {"error_code": "enforced_spend_limit_reached"}}}'
+
+    async def _body() -> AsyncIterator[bytes]:
+        yield raw
+
+    response = httpx.Response(429, content=_body())
+    with pytest.raises(LlmRateLimitError) as excinfo:
+        raise_for_provider_status(response)
+    assert not isinstance(excinfo.value, LlmSpendLimitError)
+    await response.aread()
+    with pytest.raises(LlmSpendLimitError):
+        raise_for_provider_status(response)
+    await response.aclose()
 
 
 # ---------- contexto excedido ----------
@@ -197,6 +246,23 @@ def test_400_with_context_length_code_is_overflow() -> None:
 def test_400_with_overflow_message_is_overflow(message: str) -> None:
     with pytest.raises(LlmContextOverflowError):
         raise_for_provider_status(httpx.Response(400, json=_error_body(message)))
+
+
+def test_400_anthropic_prompt_too_long_is_overflow() -> None:
+    body = _anthropic_error_body(
+        "invalid_request_error", "prompt is too long: 210000 tokens > 200000 maximum"
+    )
+    with pytest.raises(LlmContextOverflowError):
+        raise_for_provider_status(httpx.Response(400, json=body))
+
+
+def test_400_anthropic_error_code_in_details_is_read() -> None:
+    """El código de Anthropic va en ``error.details.error_code`` y se lee igual."""
+    body = _anthropic_error_body(
+        "invalid_request_error", "too much", error_code="context_length_exceeded"
+    )
+    with pytest.raises(LlmContextOverflowError):
+        raise_for_provider_status(httpx.Response(400, json=body))
 
 
 def test_400_generic_stays_bad_request() -> None:
