@@ -58,7 +58,9 @@ El reranker es siempre un passthrough (ADR-028 D5).
 ## Probar contra un proveedor de IA
 
 Es opcional. La IA se consume por API de proveedores compatibles con
-OpenAI ([ADR-028](../architecture/adrs/ADR-028-inferencia-por-api.md)):
+OpenAI o con la Messages API de Anthropic
+([ADR-028](../architecture/adrs/ADR-028-inferencia-por-api.md),
+[ADR-031](../architecture/adrs/ADR-031-cliente-nativo-messages-api.md)):
 no se levanta ningún modelo en tu máquina. **Hasta cerrar las compuertas
 de ADR-028, al proveedor van solo datos sintéticos** (regla #4b): nada de
 datos personales reales, tampoco los tuyos.
