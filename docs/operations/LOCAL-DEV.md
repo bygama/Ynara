@@ -118,7 +118,9 @@ fijos del script y **gasta tokens**: corrélo a mano, nunca en la CI.
 No usa `LLM_PROVIDERS` ni `Settings`, así que no hace falta tocar la cadena
 de proveedores del backend. Solo lee `LLM_API_KEY_CLAUDE` (o
 `LLM_API_KEY_<NOMBRE>` con `--nombre`), del entorno o del `.env` de la
-carpeta donde lo corrés. Desde `apps/backend`:
+carpeta donde lo corrés. La base URL tiene que ser `api.anthropic.com`,
+porque la credencial viaja a ese host: otra solo pasa con `--otro-host`.
+Desde `apps/backend`:
 
 ```powershell
 # Lista los casos; no manda nada.
@@ -130,14 +132,16 @@ carpeta donde lo corrés. Desde `apps/backend`:
 - Antes de los casos consulta `GET /models`, que no gasta tokens: si la
   credencial o la versión fallan, no manda nada más.
 - Cada caso termina en `OK`, `FALLA` o `NO CONCLUYE`, cuando el modelo no
-  hizo lo que el caso necesitaba (por ejemplo, contestar sin llamar a la
-  tool). Sale con código 1 si alguno falla.
+  hizo lo que el caso necesitaba: por ejemplo, contestar sin llamar a la
+  tool, o llamarla sin razonamiento firmado, que deja la vuelta sin bloques
+  que reenviar. Sale con código 1 si alguno falla.
 - Imprime status, `finish_reason`, tokens y tipos de bloque. Nunca la
   credencial, el texto del modelo, el razonamiento ni las firmas. De un
   error del proveedor muestra el tipo, el mensaje y el `request-id`.
 - `cambio_de_esfuerzo` prueba la regla del validador que exige el mismo
   esfuerzo en `on` y `off` cuando `off` está apagado: dice si la API la
-  hace necesaria.
+  hace necesaria. Solo un 400 en la confirmación cuenta como «la regla
+  queda»; cualquier otro error es una falla.
 
 ## Hot reload
 
