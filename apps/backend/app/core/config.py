@@ -28,6 +28,7 @@ from app.core.llm_providers import (
     _LlmApiKeysSource,
     validate_embedding_api_config,
     validate_llm_api_config,
+    validate_provider_list,
 )
 from app.core.urls import validated_base_url
 
@@ -95,7 +96,7 @@ class Settings(BaseSettings):
         DEFAULT_EMBEDDING_BATCH_SIZE, gt=0, le=2048, alias="EMBEDDING_BATCH_SIZE"
     )
     # Timeout por request del embedder (segundos), con backend ``api``. El chat toma el
-    # suyo de PROVIDER_REQUEST_TIMEOUT_S (app/llm/clients/factory.py).
+    # de cada entrada de LLM_PROVIDERS (``timeout_s``) o PROVIDER_REQUEST_TIMEOUT_S.
     embedding_timeout_s: float = Field(30.0, gt=0, alias="EMBEDDING_TIMEOUT_S")
 
     # Cifrado de memoria a nivel campo (ADR-007 D3). Base64 de 32 bytes random
@@ -316,12 +317,8 @@ class Settings(BaseSettings):
     @field_validator("llm_providers")
     @classmethod
     def _reject_repeated_providers(cls, providers: list[LlmProvider]) -> list[LlmProvider]:
-        """Fail-fast: dos proveedores con el mismo ``name`` compartirían credencial."""
-        names = [provider.name for provider in providers]
-        repeated = sorted({name for name in names if names.count(name) > 1})
-        if repeated:
-            raise ValueError(f"LLM_PROVIDERS repite el proveedor: {', '.join(repeated)}")
-        return providers
+        """Fail-fast sobre la lista entera (lógica en ``validate_provider_list``)."""
+        return validate_provider_list(providers)
 
     @classmethod
     def settings_customise_sources(

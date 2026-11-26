@@ -426,6 +426,157 @@ def test_providers_reject_a_repeated_name() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Entradas anthropic (ADR-031 D2, D3, D4, D9 y D10)
+# ---------------------------------------------------------------------------
+
+_ADAPTIVE_LOW: dict[str, object] = {"type": "adaptive", "effort": "low"}
+
+_ANTHROPIC_PROVIDER: dict[str, object] = {
+    "name": "claude",
+    "protocol": "anthropic",
+    "base_url": "https://api.anthropic.test/v1",
+    "models": {"conversacional": "modelo-chat", "agente": "modelo-agente"},
+    "thinking": {
+        "conversacional": {"on": _ADAPTIVE_LOW, "off": _ADAPTIVE_LOW, "max_tokens_floor": 2048},
+        "agente": {
+            "on": {"type": "adaptive", "effort": "medium"},
+            "off": {"type": "disabled", "effort": "medium"},
+            "max_tokens_floor": 4096,
+        },
+    },
+    "timeout_s": 30,
+}
+
+
+def _anthropic(**change: object) -> dict[str, object]:
+    return {**_ANTHROPIC_PROVIDER, **change}
+
+
+def _thinking(**per_alias: object) -> dict[str, object]:
+    base = dict(_ANTHROPIC_PROVIDER["thinking"])  # type: ignore[call-overload]
+    return {**base, **per_alias}
+
+
+def test_protocol_defaults_to_openai() -> None:
+    s = _provider_settings([_PROVIDER])
+    assert s.llm_providers[0].protocol == "openai"
+    assert s.llm_providers[0].thinking is None
+    assert s.llm_providers[0].timeout_s is None
+
+
+def test_anthropic_entry_is_parsed() -> None:
+    provider = _provider_settings([_ANTHROPIC_PROVIDER]).llm_providers[0]
+    assert provider.protocol == "anthropic"
+    assert provider.timeout_s == 30
+    assert provider.thinking is not None
+    agente = provider.thinking["agente"]
+    assert agente.mode_for(True).type == "adaptive"
+    assert agente.mode_for(True).effort == "medium"
+    # ``None`` usa el modo de ``True``; ``False`` el de apagado.
+    assert agente.mode_for(None) == agente.mode_for(True)
+    assert agente.mode_for(False).type == "disabled"
+    assert agente.max_tokens_floor == 4096
+
+
+def test_anthropic_and_openai_entries_can_be_mixed() -> None:
+    s = _provider_settings([_ANTHROPIC_PROVIDER, _PROVIDER])
+    assert [p.protocol for p in s.llm_providers] == ["anthropic", "openai"]
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"supports_reasoning_effort": True}, "no aplica a una entrada anthropic"),
+        ({"thinking": None}, "necesita thinking para cada alias"),
+        (
+            {"thinking": {"agente": _thinking()["agente"]}},
+            "thinking no cubre el alias: conversacional",
+        ),
+        (
+            {"thinking": _thinking(otro={"on": {"type": "disabled"}, "off": {"type": "disabled"}})},
+            "no está en models: otro",
+        ),
+        ({"protocol": "gemini"}, "protocol"),
+        ({"timeout_s": 0}, "greater than 0"),
+    ],
+)
+def test_anthropic_entry_is_validated(change: dict[str, object], message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        _provider_settings([_anthropic(**change)])
+
+
+def test_thinking_is_rejected_on_an_openai_entry() -> None:
+    provider = {**_PROVIDER, "thinking": _ANTHROPIC_PROVIDER["thinking"]}
+    with pytest.raises(ValueError, match="solo para las entradas anthropic"):
+        _provider_settings([provider])
+
+
+@pytest.mark.parametrize(
+    ("mode", "message"),
+    [
+        ({"type": "adaptive"}, "necesita un effort"),
+        ({"type": "disabled", "effort": "xhigh"}, "solo vale con el modo adaptive"),
+        ({"type": "between_tools", "effort": "max"}, "solo vale con el modo adaptive"),
+        ({"type": "enabled", "effort": "low"}, "type"),
+        ({"type": "adaptive", "effort": "altisimo"}, "effort"),
+        ({"type": "adaptive", "effort": "low", "budget_tokens": 1024}, "Extra inputs"),
+    ],
+)
+def test_thinking_mode_is_validated(mode: dict[str, object], message: str) -> None:
+    alias = {"on": mode, "off": {"type": "disabled"}, "max_tokens_floor": 1024}
+    with pytest.raises(ValueError, match=message):
+        _provider_settings([_anthropic(thinking=_thinking(agente=alias))])
+
+
+def test_effort_without_thinking_is_accepted_below_xhigh() -> None:
+    alias = {"on": _ADAPTIVE_LOW, "off": {"type": "disabled", "effort": "low"}}
+    alias["max_tokens_floor"] = 1024
+    provider = _provider_settings([_anthropic(thinking=_thinking(agente=alias))]).llm_providers[0]
+    assert provider.thinking is not None
+    assert provider.thinking["agente"].off.effort == "low"
+
+
+def test_adaptive_alias_needs_a_max_tokens_floor() -> None:
+    alias = {"on": _ADAPTIVE_LOW, "off": {"type": "disabled"}}
+    with pytest.raises(ValueError, match="necesita max_tokens_floor"):
+        _provider_settings([_anthropic(thinking=_thinking(agente=alias))])
+
+
+def test_alias_without_adaptive_mode_needs_no_floor() -> None:
+    alias = {"on": {"type": "between_tools"}, "off": {"type": "disabled"}}
+    provider = _provider_settings([_anthropic(thinking=_thinking(agente=alias))]).llm_providers[0]
+    assert provider.thinking is not None
+    assert provider.thinking["agente"].max_tokens_floor is None
+
+
+@pytest.mark.parametrize("off_type", ["disabled", "between_tools"])
+@pytest.mark.parametrize("off_effort", [None, "low"])
+def test_off_without_thinking_keeps_the_effort_of_on(off_type: str, off_effort: str | None) -> None:
+    """La confirmación forzada pasa a ``off`` en la misma vuelta: no cambia el esfuerzo."""
+    off: dict[str, object] = {"type": off_type}
+    if off_effort is not None:
+        off["effort"] = off_effort
+    alias = {"on": {"type": "adaptive", "effort": "medium"}, "off": off, "max_tokens_floor": 1024}
+    with pytest.raises(ValueError, match="el effort de off tiene que ser el de on"):
+        _provider_settings([_anthropic(thinking=_thinking(agente=alias))])
+
+
+def test_adaptive_off_can_change_the_effort() -> None:
+    alias = {"on": {"type": "adaptive", "effort": "medium"}, "off": _ADAPTIVE_LOW}
+    alias["max_tokens_floor"] = 1024
+    provider = _provider_settings([_anthropic(thinking=_thinking(agente=alias))]).llm_providers[0]
+    assert provider.thinking is not None
+    assert provider.thinking["agente"].off.effort == "low"
+
+
+def test_providers_reject_a_second_anthropic_entry() -> None:
+    """Una segunda cuenta espera a que se confirmen los términos (ADR-031 D10)."""
+    second = _anthropic(name="claude_respaldo")
+    with pytest.raises(ValueError, match="una sola entrada anthropic"):
+        _provider_settings([_ANTHROPIC_PROVIDER, second])
+
+
+# ---------------------------------------------------------------------------
 # Inferencia por API (ADR-028): LLM_BACKEND y el fail-fast del arranque
 # ---------------------------------------------------------------------------
 
