@@ -1,7 +1,8 @@
 """Piezas de la prueba de humo de Anthropic que no hablan con el modelo.
 
 Lo usa ``check_anthropic.py``: el registro de cada request (``Recorder``), el
-resultado de un caso, el formato de la salida, la credencial y el host permitido. Va
+resultado de un caso, el formato de la salida, la credencial, el host permitido, la
+tool sintética y el modo apagado. Va
 aparte para que el script quede con los casos.
 
 Todo lo que sale de una respuesta del proveedor (tipos de bloque, ``finish_reason``,
@@ -15,11 +16,14 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal, get_args
 from urllib.parse import urlsplit
 
 import httpx
 from dotenv import dotenv_values
 from pydantic import SecretStr
+
+from app.core.llm_providers import AliasThinking, ThinkingMode
 
 OK = "OK"
 FAILED = "FALLA"
@@ -27,6 +31,9 @@ INCONCLUSIVE = "NO CONCLUYE"
 
 ANTHROPIC_HOST = "api.anthropic.com"
 SIGNED_THINKING = "thinking(firmado)"
+
+OffType = Literal["disabled", "between_tools"]
+OFF_TYPES: tuple[str, ...] = get_args(OffType)
 
 _ERROR_MESSAGE_MAX = 300
 _SHORT_FIELD_MAX = 60
@@ -183,3 +190,34 @@ def check_base_url(base_url: str, *, allow_other_host: bool) -> None:
             f"la base URL no es {ANTHROPIC_HOST}: la credencial iría a otro host. "
             "Si es a propósito, sumá --otro-host."
         )
+
+
+class EchoTool:
+    """Tool sintética: devuelve el texto que recibe."""
+
+    name = "smoke.echo"
+    namespace = "smoke"
+    description = "Devuelve el texto que recibe."
+    # Solo lo lee ``to_spec``; no se muta.
+    parameters: dict[str, object] = {  # noqa: RUF012
+        "type": "object",
+        "properties": {"texto": {"type": "string"}},
+        "required": ["texto"],
+    }
+
+    async def execute(self, arguments: dict[str, object]) -> dict[str, object]:
+        return {"eco": str(arguments.get("texto", ""))}
+
+
+def with_off_type(thinking: AliasThinking, off_type: OffType) -> AliasThinking:
+    """Los modos ``disabled`` del caso pasan a ``off_type``, con el mismo esfuerzo.
+
+    Hay modelos que rechazan ``disabled`` con un 400 y piden ``between_tools``. Copia
+    sin validar, como ``model_construct``: el caso de esfuerzo saltea el validador a
+    propósito.
+    """
+
+    def swap(mode: ThinkingMode) -> ThinkingMode:
+        return mode.model_copy(update={"type": off_type}) if mode.type == "disabled" else mode
+
+    return thinking.model_copy(update={"on": swap(thinking.on), "off": swap(thinking.off)})

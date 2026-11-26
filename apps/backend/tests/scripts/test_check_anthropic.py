@@ -3,8 +3,8 @@
 Sin red: cada caso corre contra un ``httpx.MockTransport`` que contesta con la forma
 de la Messages API y datos sintéticos. Cubren:
 
-- el modo lista (no arma cliente) y los flags (sin abreviaturas, https y host
-  permitido);
+- el modo lista (no arma cliente) y los flags (sin abreviaturas, https, host
+  permitido y modo apagado);
 - el camino de ``--enviar`` de punta a punta con la fábrica real, sin ``Settings``;
 - el corte por ``health``;
 - el resultado de cada caso y la forma del request que verifica;
@@ -213,6 +213,28 @@ async def _run(handler: Handler, names: list[str]) -> tuple[int, list[str]]:
     return code, lines
 
 
+def _real_factory_against(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, handler: Handler
+) -> list[httpx.Request]:
+    """Prepara ``main`` para usar la fábrica real: solo el transporte es un doble."""
+    requests: list[httpx.Request] = []
+
+    def spy(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return handler(request)
+
+    real_client = httpx.AsyncClient
+
+    class MockedClient(real_client):
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__(transport=httpx.MockTransport(spy), **kwargs)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LLM_API_KEY_CLAUDE", _API_KEY)
+    monkeypatch.setattr(httpx, "AsyncClient", MockedClient)
+    return requests
+
+
 # --- flags, modo lista y --enviar --------------------------------------------
 
 
@@ -226,6 +248,7 @@ def test_without_enviar_it_lists_the_cases_and_sends_nothing(
     assert ca.main(["--modelo", _MODEL_ID]) == 0
     out = capsys.readouterr().out
     assert "no se mandó nada" in out
+    assert "modo apagado: disabled" in out
     assert all(name in out for name in ca.CASES)
 
 
@@ -248,26 +271,13 @@ def test_enviar_runs_the_cases_with_the_key_and_without_settings(
 ) -> None:
     """La fábrica real de punta a punta: solo el transporte es un doble."""
     handler, payloads = _api()
-    requests: list[httpx.Request] = []
-
-    def spy(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        return handler(request)
-
-    real_client = httpx.AsyncClient
-
-    class MockedClient(real_client):
-        def __init__(self, **kwargs: Any) -> None:
-            super().__init__(transport=httpx.MockTransport(spy), **kwargs)
+    requests = _real_factory_against(monkeypatch, tmp_path, handler)
 
     def no_settings(*_: Any, **__: Any) -> Any:
         raise AssertionError("el script no usa Settings")
 
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("LLM_API_KEY_CLAUDE", _API_KEY)
     monkeypatch.setattr("app.core.config.Settings.__init__", no_settings)
     monkeypatch.setattr("app.core.config.get_settings", no_settings)
-    monkeypatch.setattr(httpx, "AsyncClient", MockedClient)
     code = ca.main(["--modelo", _MODEL_ID, "--enviar", "--caso", "adaptativo"])
     assert code == 0
     # El handler exige la credencial en ``x-api-key``.
@@ -281,6 +291,30 @@ def test_enviar_runs_the_cases_with_the_key_and_without_settings(
     # Los tipos de bloque solo llegan por el ``Recorder``: está colgado del cliente.
     assert "    bloques: thinking(firmado), text" in out
     assert _API_KEY not in out
+
+
+def test_apagado_between_tools_replaces_disabled_in_every_case(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    handler, payloads = _api()
+    _real_factory_against(monkeypatch, tmp_path, handler)
+    argv = ["--modelo", _MODEL_ID, "--enviar", "--apagado", "between_tools"]
+    code = ca.main([*argv, "--caso", "apagado", "--caso", "confirmacion_forzada"])
+    assert code == 0
+    apagado, first, forced = payloads
+    assert apagado["thinking"] == {"type": "between_tools"}
+    assert "output_config" not in apagado
+    # El modo encendido sigue adaptativo; solo cambia cómo se apaga, con el mismo esfuerzo.
+    assert first["thinking"]["type"] == "adaptive"
+    assert forced["thinking"] == {"type": "between_tools"}
+    assert forced["output_config"] == {"effort": "high"}
+    assert "[OK] confirmacion_forzada" in capsys.readouterr().out
+
+
+def test_an_unknown_off_type_is_rejected() -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        ca.main(["--modelo", _MODEL_ID, "--apagado", "adaptive"])
+    assert excinfo.value.code == 2
 
 
 def test_another_host_needs_an_explicit_flag(
@@ -378,7 +412,8 @@ async def test_the_forced_confirmation_goes_with_tool_choice_none_and_thinking_o
     forced = payloads[1]
     assert forced["tool_choice"] == {"type": "none"}
     assert forced["thinking"] == {"type": "disabled"}
-    assert forced["output_config"] == {"effort": "low"}
+    assert forced["output_config"] == {"effort": "high"}
+    assert "números primos" in payloads[0]["messages"][0]["content"]
 
 
 async def test_the_effort_probe_reports_that_the_rule_stays_on_a_400() -> None:
@@ -390,7 +425,7 @@ async def test_the_effort_probe_reports_that_the_rule_stays_on_a_400() -> None:
     )
     assert "effort no coincide" in lines[-1]
     # El control (mismo esfuerzo) va primero; la sonda, después.
-    assert [p["output_config"]["effort"] for p in payloads] == ["low", "low", "medium", "low"]
+    assert [p["output_config"]["effort"] for p in payloads] == ["high", "high", "high", "low"]
 
 
 async def test_the_effort_probe_does_not_conclude_when_the_control_fails() -> None:
@@ -480,7 +515,7 @@ async def test_a_provider_error_shows_its_type_message_and_request_id() -> None:
 
     code, lines = await _run(handler, ["apagado"])
     assert code == 1
-    assert lines[1].startswith("[FALLA] apagado: LlmBadRequestError; si el modelo no se puede")
+    assert lines[1].startswith("[FALLA] apagado: LlmBadRequestError; si el modelo rechaza")
     assert lines[2] == (
         "    POST /v1/messages -> 400 | invalid_request_error: thinking.type: valor no "
         "admitido para este modelo | request-id req_humo_1"

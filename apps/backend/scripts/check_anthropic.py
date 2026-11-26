@@ -6,7 +6,7 @@ request tal como lo arma el cliente. Un caso por cada punto que quedó sin verif
 
 - ``adaptativo``: el modo adaptativo con ``block_binding`` y su header beta.
 - ``entre_tools``: ``between_tools`` sin tools y con ``max_tokens`` bajo.
-- ``apagado``: el razonamiento apagado (``disabled``).
+- ``apagado``: el razonamiento apagado, con el modo de ``--apagado``.
 - ``vuelta_con_tools``: una vuelta del tool loop real que reenvía los bloques firmados.
 - ``confirmacion_forzada``: la confirmación con ``tool_choice="none"`` y
   ``thinking=False`` dentro de la misma vuelta.
@@ -17,7 +17,11 @@ request tal como lo arma el cliente. Un caso por cada punto que quedó sin verif
 - ``cache``: dos llamadas con el mismo system fijo; la segunda tiene que leer la caché.
 
 Los casos con tools solo concluyen si el modelo llamó a la tool y su primera respuesta
-trajo razonamiento firmado: sin eso no hay bloques que reenviar.
+trajo razonamiento firmado: sin eso no hay bloques que reenviar. Por eso piden esfuerzo
+alto y una cuenta antes de la tool: con un pedido trivial, el adaptativo no razona.
+
+``--apagado`` elige cómo se apaga el razonamiento en todos los casos: ``disabled`` (el
+default) o ``between_tools``, para los modelos que rechazan ``disabled`` con un 400.
 
 Antes de los casos consulta ``GET /models``: si la credencial o la versión fallan, no
 manda nada más.
@@ -64,15 +68,19 @@ for _path in (_SCRIPTS_DIR.parent, _SCRIPTS_DIR):
 from _smoke_support import (  # noqa: E402
     FAILED,
     INCONCLUSIVE,
+    OFF_TYPES,
     OK,
     SIGNED_THINKING,
     CaseResult,
+    EchoTool,
+    OffType,
     Recorder,
     check_base_url,
     clean_reason,
     format_exchange,
     format_result,
     load_api_key,
+    with_off_type,
 )
 
 from app.core.llm_providers import LLM_API_KEY_PREFIX, AliasThinking, ThinkingMode  # noqa: E402
@@ -88,6 +96,7 @@ DEFAULT_NAME = "claude"
 
 _ALIAS = "agente"
 _FLOOR = 1024
+_TOOL_FLOOR = 2048
 
 # Modos de razonamiento propios de cada caso: no dependen de la config del operador.
 _ADAPTIVE = AliasThinking(
@@ -100,20 +109,27 @@ _BETWEEN_TOOLS = AliasThinking(
     off=ThinkingMode(type="between_tools", effort="low"),
 )
 _DISABLED = AliasThinking(on=ThinkingMode(type="disabled"), off=ThinkingMode(type="disabled"))
+# Los casos con tools: esfuerzo alto, para que el adaptativo razone antes de la tool.
+_TOOLS = AliasThinking(
+    on=ThinkingMode(type="adaptive", effort="high"),
+    off=ThinkingMode(type="disabled", effort="high"),
+    max_tokens_floor=_TOOL_FLOOR,
+)
 # El validador rechaza un esfuerzo distinto entre on y off con off apagado; este caso
 # existe para ver si la API también lo rechaza, así que saltea el validador a propósito.
 _EFFORT_CHANGE = AliasThinking.model_construct(
-    on=ThinkingMode(type="adaptive", effort="medium"),
+    on=ThinkingMode(type="adaptive", effort="high"),
     off=ThinkingMode(type="disabled", effort="low"),
-    max_tokens_floor=_FLOOR,
+    max_tokens_floor=_TOOL_FLOOR,
 )
 
 _REPLY_PROMPT = "Respondé solo con la palabra: listo."
+_SUM = "Calculá la suma de los números primos menores que 50 y llamá a la tool de eco"
 _TOOL_ROUND_PROMPT = (
-    "Llamá a la tool de eco con el texto 'hola' y, cuando tengas el resultado, "
-    "respondé solo con la palabra: listo."
+    f"{_SUM} con ese número como texto. Cuando tengas su respuesta, respondé solo con la "
+    "palabra: listo."
 )
-_TOOL_ONLY_PROMPT = "Llamá a la tool de eco con el texto 'hola'. No escribas texto: solo la tool."
+_TOOL_ONLY_PROMPT = f"{_SUM} con ese número como texto. No escribas texto: solo la tool."
 # System fijo largo, para pasar el mínimo de tokens que la API pide para cachear.
 _FIXED_SYSTEM = "Sos un asistente de prueba. Estas reglas son sintéticas.\n" + "\n".join(
     f"Regla de prueba {i}: respondé corto, en español y sin listas." for i in range(1, 401)
@@ -122,28 +138,11 @@ _VARIABLE_SYSTEM = "Fecha de prueba: 2026-01-01."
 _FALLBACK = "sin respuesta"
 
 
-class EchoTool:
-    """Tool sintética: devuelve el texto que recibe."""
-
-    name = "smoke.echo"
-    namespace = "smoke"
-    description = "Devuelve el texto que recibe."
-    # Solo lo lee ``to_spec``; no se muta.
-    parameters: dict[str, object] = {  # noqa: RUF012
-        "type": "object",
-        "properties": {"texto": {"type": "string"}},
-        "required": ["texto"],
-    }
-
-    async def execute(self, arguments: dict[str, object]) -> dict[str, object]:
-        return {"eco": str(arguments.get("texto", ""))}
-
-
 ClientFactory = Callable[[AliasThinking, Recorder], AnthropicClient]
 
 
 def api_client_factory(
-    *, base_url: str, api_key: SecretStr, model_id: str, name: str
+    *, base_url: str, api_key: SecretStr, model_id: str, name: str, off_type: OffType
 ) -> ClientFactory:
     """Un ``AnthropicClient`` por caso, con el razonamiento del caso y el ``Recorder``."""
 
@@ -153,7 +152,7 @@ def api_client_factory(
             base_url=base_url,
             api_key=api_key,
             model_map={_ALIAS: model_id},
-            thinking={_ALIAS: thinking},
+            thinking={_ALIAS: with_off_type(thinking, off_type)},
             http_client=httpx.AsyncClient(event_hooks={"response": [recorder]}),
             default_timeout_s=60.0,
         )
@@ -229,7 +228,7 @@ async def case_between_tools(make: ClientFactory) -> CaseResult:
 
 
 async def case_disabled(make: ClientFactory) -> CaseResult:
-    hint = "si el modelo no se puede apagar, su modo off va en between_tools o adaptive"
+    hint = "si el modelo rechaza este modo apagado, el 400 dice cuál acepta: --apagado"
     return await _single_completion(make, "apagado", _DISABLED, max_tokens=256, hint=hint)
 
 
@@ -268,7 +267,7 @@ def _unproven_round(name: str, recorder: Recorder, called_tool: bool) -> CaseRes
 
 async def case_tool_round(make: ClientFactory) -> CaseResult:
     name = "vuelta_con_tools"
-    loop, exc, recorder = await _tool_loop(make, _ADAPTIVE, _TOOL_ROUND_PROMPT, max_iterations=3)
+    loop, exc, recorder = await _tool_loop(make, _TOOLS, _TOOL_ROUND_PROMPT, max_iterations=3)
     if exc is not None or loop is None:
         return _failure(name, exc, recorder)
     unproven = _unproven_round(name, recorder, called_tool=bool(loop.actions))
@@ -339,7 +338,7 @@ async def _forced(
 
 
 async def case_forced_confirmation(make: ClientFactory) -> CaseResult:
-    return await _forced(make, "confirmacion_forzada", _ADAPTIVE, probe=False)
+    return await _forced(make, "confirmacion_forzada", _TOOLS, probe=False)
 
 
 async def case_effort_change(make: ClientFactory) -> CaseResult:
@@ -349,7 +348,7 @@ async def case_effort_change(make: ClientFactory) -> CaseResult:
     confirmación misma) se leería como «la regla queda».
     """
     name = "cambio_de_esfuerzo"
-    control = await _forced(make, name, _ADAPTIVE, probe=False)
+    control = await _forced(make, name, _TOOLS, probe=False)
     if control.outcome != OK:
         why = f"{control.outcome}: {control.detail}"
         detail = f"el control con el mismo esfuerzo no pasó ({why}): no concluye"
@@ -415,7 +414,7 @@ Case = Callable[[ClientFactory], Awaitable[CaseResult]]
 CASES: dict[str, tuple[Case, str]] = {
     "adaptativo": (case_adaptive, "adaptive con block_binding y el header beta"),
     "entre_tools": (case_between_tools, "between_tools sin tools, max_tokens 512"),
-    "apagado": (case_disabled, "razonamiento disabled"),
+    "apagado": (case_disabled, "el razonamiento apagado (--apagado)"),
     "vuelta_con_tools": (case_tool_round, "tool loop real con los bloques firmados reenviados"),
     "confirmacion_forzada": (case_forced_confirmation, "tool_choice none con thinking=False"),
     "cambio_de_esfuerzo": (case_effort_change, "otro esfuerzo en off: la regla del validador"),
@@ -467,6 +466,9 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--otro-host", action="store_true", help="permite una base URL fuera de Anthropic"
     )
     parser.add_argument("--caso", action="append", choices=list(CASES), help="repetible")
+    parser.add_argument(
+        "--apagado", default="disabled", choices=OFF_TYPES, help="cómo se apaga el razonamiento"
+    )
     parser.add_argument("--enviar", action="store_true", help="manda los requests (gasta tokens)")
     return parser.parse_args(argv)
 
@@ -476,6 +478,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     names = args.caso or list(CASES)
     if not args.enviar:
         print(f"Casos contra {args.base_url} con {args.modelo} (no se mandó nada):")
+        print(f"  modo apagado: {args.apagado}")
         for name in names:
             print(f"  - {name}: {CASES[name][1]}")
         print("Para mandarlos, sumá --enviar.")
@@ -487,6 +490,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         api_key=load_api_key(variable, Path.cwd() / ".env"),
         model_id=args.modelo,
         name=args.nombre,
+        off_type=args.apagado,
     )
     return asyncio.run(run_checks(make, names))
 
