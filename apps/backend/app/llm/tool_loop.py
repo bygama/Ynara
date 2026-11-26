@@ -1,7 +1,7 @@
 """Tool loop del router LLM (M8 Ola 1).
 
 Ejecuta iteraciones de llamada al LLM + ejecucion de tools hasta que el
-modelo termina (finish_reason in {'stop','length','degraded'}) o se agotan
+modelo termina (finish_reason in {'stop','length','degraded','content_filter'}) o se agotan
 las iteraciones del guard (MAX_TOOL_ITERATIONS).
 
 Notas y limitaciones conocidas:
@@ -26,9 +26,11 @@ from app.llm.tools.registry import ToolRegistry
 MAX_TOOL_ITERATIONS: int = 5
 
 # Tope defensivo de tool_calls a ejecutar por turno. Si el modelo emite mas, se
-# ejecutan solo las primeras ``MAX_CALLS_PER_TURN`` (las extra se descartan).
-# Acota el fan-out de un turno patologico (modelo en loop emitiendo decenas de
-# calls) sin cambiar el camino feliz, donde un turno trae pocas calls.
+# ejecutan solo las primeras ``MAX_CALLS_PER_TURN``; las extra no se ejecutan y reciben
+# un ``tool_error`` (ADR-031 D5: el turno del assistant queda con TODAS sus calls, como
+# lo devolvio el proveedor, y cada una necesita su resultado). Acota el fan-out de un
+# turno patologico (modelo en loop emitiendo decenas de calls) sin cambiar el camino
+# feliz, donde un turno trae pocas calls.
 MAX_CALLS_PER_TURN: int = 8
 
 # Tope de bytes del JSON de UN resultado de tool antes de inyectarlo en el historial de
@@ -40,8 +42,13 @@ MAX_CALLS_PER_TURN: int = 8
 # legitimas dentro del ``AGENT_LIST_RESULT_LIMIT``.
 TOOL_RESULT_MAX_BYTES: int = 32_768
 
+# El modelo rechazo responder (``refusal`` de la Messages API, ADR-031 D7). Corta la
+# vuelta, no dispara la confirmacion forzada (se rechazaria igual) y su texto parcial y
+# su razonamiento se descartan.
+_REFUSAL_REASON = "content_filter"
+
 # finish_reason que indica que el loop debe terminar (con o sin tool_calls).
-_TERMINAL_REASONS = frozenset({"stop", "length", "degraded"})
+_TERMINAL_REASONS = frozenset({"stop", "length", "degraded", _REFUSAL_REASON})
 
 # Ack determinista cuando el modelo EJECUTO tools pero no devolvio texto en lenguaje
 # natural (ni siquiera tras la completion forzada): el usuario no debe ver el
@@ -101,6 +108,30 @@ async def _execute_anywhere(
     return tool_error("unknown_tool", f"tool desconocida: {name}")
 
 
+def _tool_message(call: ToolCall, result: dict[str, object]) -> ChatMessage:
+    """El ``ChatMessage(role='tool')`` que se inyecta al historial para ``call``.
+
+    Aplica el tope de bytes (un resultado demasiado grande se reemplaza por un
+    ``tool_error``) y marca ``is_error`` si lo que se inyecta tiene la forma de
+    ``tool_error`` (ADR-031 D5): el cliente de Anthropic lo manda como un
+    ``tool_result`` con ``is_error``.
+    """
+    injected = result
+    content = json.dumps(injected, ensure_ascii=False)
+    if len(content.encode("utf-8")) > TOOL_RESULT_MAX_BYTES:
+        injected = tool_error("result_too_large", f"resultado de {call.name} demasiado grande")
+        content = json.dumps(injected, ensure_ascii=False)
+    return ChatMessage(
+        role="tool",
+        tool_call_id=call.id,
+        name=call.name,
+        content=content,
+        # La forma de ``tool_error``: ``{"error": {...}}``. Un resultado exitoso que trae
+        # una clave ``error`` en ``None`` no cuenta.
+        is_error=isinstance(injected.get("error"), dict),
+    )
+
+
 async def run_tool_loop(
     *,
     llm_client: object,
@@ -118,14 +149,16 @@ async def run_tool_loop(
     1. Llama a ``llm_client.complete(model=model, messages=messages,
        tools=specs or None)``.
     2. Termina si no hay tool_calls O si finish_reason es terminal
-       (``stop`` / ``length`` / ``degraded``).
+       (``stop`` / ``length`` / ``degraded`` / ``content_filter``). Un rechazo
+       (``content_filter``) descarta el texto y el razonamiento de esa llamada.
     3. Si hay tool_calls: agrega un ChatMessage(role='assistant') al historial
        con ``tool_calls`` preservado, ejecuta cada tool via
        ``_execute_anywhere``, acumula en ``actions`` y agrega un
        ChatMessage(role='tool') por cada resultado.
     4. Al agotar ``max_iterations`` sin converger, usa el ultimo ``result.text``
-       como texto final; si esta vacio, fuerza UNA completion final SIN tools para
-       que el modelo responda en lenguaje natural (en vez de seguir tool-calleando) y
+       como texto final; si esta vacio, fuerza UNA completion final con las mismas
+       tools y ``tool_choice="none"`` (no puede llamarlas) para que el modelo
+       responda en lenguaje natural (en vez de seguir tool-calleando) y
        el usuario vea una respuesta real, no el ``fallback_text`` generico. Si esa
        completion forzada tambien vuelve vacia: ``_ACTIONS_DONE_TEXT`` (ack) cuando hubo una
        tool EXITOSA y el turno corto limpio, y recien sin eso, ``fallback_text``.
@@ -175,8 +208,12 @@ async def run_tool_loop(
             tools=tool_specs,
             thinking=thinking,
         )
-        last_text = result.text
         last_finish_reason = result.finish_reason
+        if result.finish_reason == _REFUSAL_REASON:
+            # Rechazo: ni el texto parcial ni el razonamiento de esta llamada se usan.
+            last_text = ""
+            break
+        last_text = result.text
         if result.reasoning:
             reasoning_parts.append(result.reasoning)
 
@@ -184,18 +221,19 @@ async def run_tool_loop(
         if not result.tool_calls or result.finish_reason in _TERMINAL_REASONS:
             break
 
-        # Cap defensivo: ejecutar a lo sumo MAX_CALLS_PER_TURN por turno. Las
-        # extra se descartan; el assistant message refleja SOLO las que se van a
-        # ejecutar para mantener la correlacion assistant/tool (``tool_call_id``).
+        # Cap defensivo: ejecutar a lo sumo MAX_CALLS_PER_TURN por turno. El assistant
+        # message lleva TODAS las calls y la respuesta cruda del proveedor sin tocar
+        # (ADR-031 D5: el historial de la vuelta es solo agregado); las que pasan el tope
+        # no se ejecutan, no entran en ``actions`` y reciben un ``tool_error``.
         calls_this_turn = list(result.tool_calls[:MAX_CALLS_PER_TURN])
+        skipped_calls = list(result.tool_calls[MAX_CALLS_PER_TURN:])
 
-        # Agregar turno del assistant al historial CON tool_calls preservado
-        # (Chat Completions lo necesita para el multi-turno con tools).
         messages.append(
             ChatMessage(
                 role="assistant",
                 content=result.text or None,
-                tool_calls=calls_this_turn,
+                tool_calls=list(result.tool_calls),
+                provider_blocks=result.provider_blocks,
             )
         )
 
@@ -212,22 +250,11 @@ async def run_tool_loop(
                 }
             )
             # Cap de bytes ANTES de inyectar al historial del LLM (defensa en profundidad):
-            # un resultado anormalmente grande NO inunda el context window. Si excede el
-            # tope, el modelo recibe un ``tool_error`` (no el payload gigante).
-            content = json.dumps(tool_result, ensure_ascii=False)
-            if len(content.encode("utf-8")) > TOOL_RESULT_MAX_BYTES:
-                too_large = tool_error(
-                    "result_too_large", f"resultado de {tool_call.name} demasiado grande"
-                )
-                content = json.dumps(too_large, ensure_ascii=False)
-            messages.append(
-                ChatMessage(
-                    role="tool",
-                    tool_call_id=tool_call.id,
-                    name=tool_call.name,
-                    content=content,
-                )
-            )
+            # un resultado anormalmente grande NO inunda el context window.
+            messages.append(_tool_message(tool_call, tool_result))
+        for skipped in skipped_calls:
+            not_run = tool_error("call_limit", "no se ejecutó: tope de llamadas por turno")
+            messages.append(_tool_message(skipped, not_run))
     else:
         # Guard agotado sin converger: el modelo nunca produjo una respuesta final en
         # lenguaje natural (tipicamente loopeo llamando tools, p.ej. el modelo reintentando
@@ -241,31 +268,36 @@ async def run_tool_loop(
     # (p.ej. agendar) — o agotar el guard. En ambos casos hay acciones
     # ejecutadas pero NO una confirmacion en lenguaje natural, y el usuario veria el
     # fallback generico (lee como error aunque la accion SI ocurrio). Forzamos UNA
-    # completion final SIN tools (un unico shot, sin tools que llamar -> no loopea) para
+    # completion final sin poder llamar tools (un unico shot -> no loopea) para
     # que el modelo confirme lo accionado. Si la forzada vuelve con texto, su
     # finish_reason real reemplaza al terminal-vacio / al sentinel 'max_iterations'
     # (telemetria honesta); si vuelve vacia, cae al fallback de abajo (no empeora el caso
     # previo). Cualquier LlmError de esta llamada propaga al caller (route), que degrada.
     # Se gatea en ``actions`` (no en ``not last_text`` a secas) para no forzar una segunda
     # vuelta ante una respuesta conversacional normal que legitimamente vino vacia.
-    if not last_text and actions:
+    # Tras un rechazo no se fuerza: el modelo rechazaria igual (ADR-031 D7).
+    if not last_text and actions and last_finish_reason != _REFUSAL_REASON:
         # thinking=False a proposito: la confirmacion no necesita razonar, y un modelo que
         # razona puede volcar el texto al canal de reasoning y dejar el content VACIO. Es
-        # intencion, no un switch: hoy el cliente no manda ``reasoning_effort`` para
-        # ``False`` (el valor que lo apaga cambia de proveedor a proveedor), asi que un
-        # modelo que razona por default puede razonar igual; si su texto queda solo en el
-        # reasoning, el turno cae al ack o al fallback de abajo.
+        # intencion, no un switch: cada cliente la traduce a lo que entiende su proveedor;
+        # si el modelo razona igual y su texto queda solo en el reasoning, el turno cae al
+        # ack o al fallback de abajo. Las tools van IGUALES pero con ``tool_choice="none"``
+        # (ADR-031 D5): sacarlas cambiaria el prefijo que el proveedor controla.
         forced = await llm_client.complete(
             model=model,
             messages=messages,
-            tools=None,
+            tools=tool_specs,
             thinking=False,
+            tool_choice="none",
         )
-        last_text = forced.text
-        if forced.reasoning:
-            reasoning_parts.append(forced.reasoning)
-        if last_text:
-            last_finish_reason = forced.finish_reason
+        if forced.finish_reason == _REFUSAL_REASON:
+            last_finish_reason = _REFUSAL_REASON
+        else:
+            last_text = forced.text
+            if forced.reasoning:
+                reasoning_parts.append(forced.reasoning)
+            if last_text:
+                last_finish_reason = forced.finish_reason
 
     # Texto final: el del modelo si vino. Si no: ack determinista cuando hubo una tool
     # EXITOSA y el turno corto LIMPIO (no se agoto el guard) — no mostrar el fallback-error
