@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 
@@ -25,17 +25,101 @@ LLM_API_KEY_PREFIX = "LLM_API_KEY_"
 # empieza con una letra y sigue con letras, dígitos o ``_``.
 _PROVIDER_NAME = re.compile(r"[a-z][a-z0-9_]{0,39}")
 
+# Protocolo de la API del proveedor (ADR-031 D2): Chat Completions compatible con OpenAI
+# o la Messages API de Anthropic.
+ProviderProtocol = Literal["openai", "anthropic"]
+
+# Modos de razonamiento de la Messages API (ADR-031 D3) y sus esfuerzos.
+ThinkingType = Literal["adaptive", "disabled", "between_tools"]
+ThinkingEffort = Literal["low", "medium", "high", "xhigh", "max"]
+
+# Esfuerzos que la API rechaza con el razonamiento apagado o entre tools.
+_EFFORTS_ONLY_ADAPTIVE = frozenset({"xhigh", "max"})
+
+# Entradas ``anthropic`` admitidas en la lista (ADR-031 D10): una sola hasta que el
+# equipo confirme que los términos comerciales permiten una segunda cuenta.
+_MAX_ANTHROPIC_PROVIDERS = 1
+
+
+class ThinkingMode(BaseModel):
+    """Qué razonamiento manda el cliente de Anthropic para una intención (ADR-031 D3).
+
+    - ``adaptive``: razonamiento adaptativo con resumen; pide un ``effort``.
+    - ``disabled``: razonamiento apagado.
+    - ``between_tools``: razona solo entre llamadas a tools, para los modelos que no
+      se pueden apagar del todo.
+
+    ``effort`` va en ``output_config.effort``. La API rechaza ``xhigh`` y ``max`` si el
+    modo no es ``adaptive``.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    type: ThinkingType
+    effort: ThinkingEffort | None = None
+
+    @model_validator(mode="after")
+    def _check_effort(self) -> ThinkingMode:
+        if self.type == "adaptive" and self.effort is None:
+            raise ValueError("el modo adaptive de razonamiento necesita un effort")
+        if self.type != "adaptive" and self.effort in _EFFORTS_ONLY_ADAPTIVE:
+            raise ValueError(f"el effort {self.effort} solo vale con el modo adaptive")
+        return self
+
+
+class AliasThinking(BaseModel):
+    """Razonamiento de un alias en una entrada ``anthropic`` (ADR-031 D3 y D4).
+
+    - ``on``: el modo para ``thinking=True`` (y para ``None``).
+    - ``off``: el modo para ``thinking=False``. Un modelo que no se puede apagar lleva
+      acá el adaptativo con el esfuerzo más bajo.
+    - ``max_tokens_floor``: el mínimo de ``max_tokens`` cuando el modo que sale es el
+      adaptativo, porque el razonamiento cuenta dentro de ese tope. Obligatorio si
+      alguno de los dos modos es ``adaptive``.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    on: ThinkingMode
+    off: ThinkingMode
+    max_tokens_floor: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def _check_alias(self) -> AliasThinking:
+        adaptive = "adaptive" in (self.on.type, self.off.type)
+        if adaptive and self.max_tokens_floor is None:
+            raise ValueError("un alias con razonamiento adaptive necesita max_tokens_floor")
+        # Con el razonamiento apagado la API rechaza un esfuerzo distinto del que venía
+        # en la conversación. La confirmación forzada del tool loop pide ``False`` en la
+        # misma vuelta que se hizo con ``True``: los dos modos llevan el mismo esfuerzo.
+        if self.off.type != "adaptive" and self.off.effort != self.on.effort:
+            raise ValueError(
+                "con off disabled o between_tools, el effort de off tiene que ser el de on"
+            )
+        return self
+
+    def mode_for(self, thinking: bool | None) -> ThinkingMode:
+        """El modo para la intención del llamador: ``None`` cuenta como ``True``."""
+        return self.off if thinking is False else self.on
+
 
 class LlmProvider(BaseModel):
-    """Un proveedor de IA de ``LLM_PROVIDERS`` (ADR-028 D2).
+    """Un proveedor de IA de ``LLM_PROVIDERS`` (ADR-028 D2, ADR-031 D2).
 
     - ``name``: identifica al proveedor en los logs y nombra su credencial,
       ``LLM_API_KEY_<NAME>`` (el ``name`` en mayúsculas).
-    - ``base_url``: URL base de su API compatible con OpenAI, con el ``/v1``
-      (``https``; ver ``validated_base_url``).
+    - ``protocol``: ``openai`` (Chat Completions, el default) o ``anthropic``
+      (Messages API).
+    - ``base_url``: URL base de su API, con el ``/v1`` (``https``; ver
+      ``validated_base_url``).
     - ``models``: ``{alias: id del modelo en el proveedor}``. Tiene que cubrir los dos
       alias de Ynara (``conversacional`` y ``agente``).
-    - ``supports_reasoning_effort``: si el proveedor acepta ``reasoning_effort``.
+    - ``supports_reasoning_effort``: si el proveedor acepta ``reasoning_effort``. Solo
+      ``openai``.
+    - ``thinking``: ``{alias: AliasThinking}``. Obligatorio con ``anthropic``, para
+      cada alias de ``models``; no va con ``openai``.
+    - ``timeout_s``: timeout de cada request a esta entrada; sin valor, el default del
+      cliente.
 
     La credencial no va acá ni en el JSON: se lee aparte, como secreto
     (``Settings.llm_api_keys``).
@@ -44,9 +128,12 @@ class LlmProvider(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
 
     name: str
+    protocol: ProviderProtocol = "openai"
     base_url: str
     models: dict[str, str]
     supports_reasoning_effort: bool = False
+    thinking: dict[str, AliasThinking] | None = None
+    timeout_s: float | None = Field(default=None, gt=0)
 
     @field_validator("name")
     @classmethod
@@ -73,10 +160,50 @@ class LlmProvider(BaseModel):
             raise ValueError(f"models del proveedor no cubre el alias: {', '.join(missing)}")
         return value
 
+    @model_validator(mode="after")
+    def _check_protocol_fields(self) -> LlmProvider:
+        if self.protocol == "openai":
+            if self.thinking is not None:
+                raise ValueError("thinking es solo para las entradas anthropic")
+            return self
+        # Anthropic: el esfuerzo va por modo en ``thinking``, no por esta bandera.
+        if self.supports_reasoning_effort:
+            raise ValueError("supports_reasoning_effort no aplica a una entrada anthropic")
+        if self.thinking is None:
+            raise ValueError("una entrada anthropic necesita thinking para cada alias")
+        missing = sorted(set(self.models) - set(self.thinking))
+        if missing:
+            raise ValueError(f"thinking no cubre el alias: {', '.join(missing)}")
+        extra = sorted(set(self.thinking) - set(self.models))
+        if extra:
+            raise ValueError(f"thinking nombra un alias que no está en models: {', '.join(extra)}")
+        return self
+
     @property
     def api_key_env(self) -> str:
         """Variable de entorno con la credencial del proveedor."""
         return f"{LLM_API_KEY_PREFIX}{self.name.upper()}"
+
+
+def validate_provider_list(providers: list[LlmProvider]) -> list[LlmProvider]:
+    """Fail-fast sobre la lista entera de ``LLM_PROVIDERS``.
+
+    - Dos proveedores con el mismo ``name`` compartirían credencial.
+    - Más de una entrada ``anthropic`` usaría una segunda cuenta para pasar por encima
+      de los límites de la primera, y eso espera a que se confirmen los términos
+      comerciales (ADR-031 D10).
+    """
+    names = [provider.name for provider in providers]
+    repeated = sorted({name for name in names if names.count(name) > 1})
+    if repeated:
+        raise ValueError(f"LLM_PROVIDERS repite el proveedor: {', '.join(repeated)}")
+    anthropic = sum(provider.protocol == "anthropic" for provider in providers)
+    if anthropic > _MAX_ANTHROPIC_PROVIDERS:
+        raise ValueError(
+            "LLM_PROVIDERS admite una sola entrada anthropic hasta confirmar los "
+            "términos para una segunda cuenta (ADR-031 D10)"
+        )
+    return providers
 
 
 class _LlmApiKeysSource(PydanticBaseSettingsSource):
