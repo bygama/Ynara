@@ -163,7 +163,7 @@ Atajos completos en [`Makefile`](./Makefile).
 | Web | Next.js 16, TypeScript strict, Tailwind v4 (CSS-first), shadcn/ui, GSAP, Lenis, TanStack Query v5, Zustand v5, React Hook Form + Zod, Auth.js v5 |
 | Mobile | Expo SDK 53+, Expo Router (file-based), NativeWind, TanStack Query, Zustand, expo-secure-store, expo-notifications |
 | Backend | Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2 async, Alembic, Celery 5.4+, uv, Ruff |
-| LLM | Inferencia por API con proveedores compatibles con OpenAI y respaldo (ADR-028), cliente HTTP sobre httpx, sin SDK de proveedor |
+| LLM | Inferencia por API con proveedores compatibles con OpenAI o con la Messages API de Anthropic, y respaldo (ADR-028, ADR-031), clientes HTTP sobre httpx, sin SDK de proveedor |
 | DB (MVP) | Supabase como Postgres 16 gestionado + pgvector, Redis (Upstash o Docker) |
 | DB (V2) | Postgres 16 self-hosted + pgvector, Redis self-hosted |
 | Monorepo | pnpm 10+, Turborepo 2.x, Biome 2.x |

@@ -14,8 +14,10 @@ Ver `docs/architecture/diagrams/deploy-topology.md`.
   de login). La auth degrada a fail-open si Redis cae, pero el servicio
   debe estar provisto.
 - **Storage** → Cloudflare R2.
-- **IA** → proveedores externos por API compatible con OpenAI
-  ([ADR-028](../architecture/adrs/ADR-028-inferencia-por-api.md)). El chat,
+- **IA** → proveedores externos por API compatible con OpenAI o por la
+  Messages API de Anthropic
+  ([ADR-028](../architecture/adrs/ADR-028-inferencia-por-api.md),
+  [ADR-031](../architecture/adrs/ADR-031-cliente-nativo-messages-api.md)). El chat,
   el agente y la consolidación de memoria van contra `LLM_PROVIDERS`
   (principal y respaldo) y los embeddings contra `EMBEDDING_BASE_URL`. La
   VPS no sirve modelos: ver [Proveedores de IA](#proveedores-de-ia).
