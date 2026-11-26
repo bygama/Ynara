@@ -30,6 +30,7 @@ from app.llm.clients.factory import (
     check_resilience_budget,
 )
 from app.llm.clients.fakes import FakeLlmClient
+from app.llm.clients.providers.anthropic import AnthropicClient
 from app.llm.clients.providers.embeddings import ApiEmbeddingClient
 from app.llm.clients.providers.openai_compat import OpenAICompatClient
 from app.llm.clients.reranker import RERANKER_PASSTHROUGH, FakeReranker
@@ -300,6 +301,76 @@ def test_resilience_budget_rejects_a_timeout_that_starves_the_backup(
 ) -> None:
     with pytest.raises(ValueError, match="no deja lugar al respaldo"):
         check_resilience_budget(timeout_s=timeout_s, max_attempts=max_attempts)
+
+
+def test_resilience_budget_uses_the_backup_timeout() -> None:
+    """3 x 20 s + 2,5 s + 30 s = 92,5 s: un respaldo más lento no entra."""
+    check_resilience_budget(timeout_s=20.0, backup_timeout_s=20.0)
+    with pytest.raises(ValueError, match="no deja lugar al respaldo"):
+        check_resilience_budget(timeout_s=20.0, backup_timeout_s=30.0)
+
+
+# ---------- entradas anthropic (ADR-031) ----------
+
+_ANTHROPIC_ENTRY: dict[str, object] = {
+    "name": "claude",
+    "protocol": "anthropic",
+    "base_url": "https://api.anthropic.test/v1",
+    "models": {"conversacional": "modelo-chat", "agente": "modelo-agente"},
+    "thinking": {
+        alias: {
+            "on": {"type": "adaptive", "effort": "low"},
+            "off": {"type": "adaptive", "effort": "low"},
+            "max_tokens_floor": 2048,
+        }
+        for alias in ("conversacional", "agente")
+    },
+}
+
+
+def _settings_with(providers: list[dict[str, object]], keys: dict[str, str]) -> Settings:
+    return Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        DATABASE_URL="postgresql://test:test@localhost/test",
+        REDIS_URL="redis://localhost:6379/0",
+        JWT_SECRET="test-secret",
+        LLM_BACKEND="api",
+        LLM_PROVIDERS=json.dumps(providers),
+        llm_api_keys=keys,
+    )
+
+
+def test_llm_client_api_builds_the_client_of_each_protocol() -> None:
+    settings = _settings_with(
+        [_ANTHROPIC_ENTRY, _PROVIDERS[1]],
+        {"claude": "sk-test-claude-0001", "respaldo": "sk-test-respaldo-4567"},
+    )
+    client = build_llm_client(settings, _config())
+    assert isinstance(client, ResilientClient)
+    clients = client._pool.clients
+    assert [type(c) for c in clients] == [AnthropicClient, OpenAICompatClient]
+    assert [c.name for c in clients] == ["claude", "respaldo"]
+
+
+def test_llm_client_api_uses_the_timeout_of_each_entry() -> None:
+    entry = {**_ANTHROPIC_ENTRY, "timeout_s": 15}
+    settings = _settings_with(
+        [entry, _PROVIDERS[1]],
+        {"claude": "sk-test-claude-0001", "respaldo": "sk-test-respaldo-4567"},
+    )
+    client = build_llm_client(settings, _config())
+    assert isinstance(client, ResilientClient)
+    timeouts = [c._default_timeout_s for c in client._pool.clients]
+    assert timeouts == [15, PROVIDER_REQUEST_TIMEOUT_S]
+
+
+def test_llm_client_api_rejects_an_entry_timeout_that_starves_the_backup() -> None:
+    """El chequeo del presupuesto se hace con el timeout de cada entrada (ADR-031 D9)."""
+    settings = _settings_with(
+        [{**_ANTHROPIC_ENTRY, "timeout_s": 30}], {"claude": "sk-test-claude-0001"}
+    )
+    with pytest.raises(ValueError, match="no deja lugar al respaldo"):
+        build_llm_client(settings, _config())
 
 
 # ---------- build_embedder ----------
