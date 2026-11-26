@@ -112,6 +112,16 @@ manda para `True` y cuál para `False`. Hay tres modos:
   para `False`.
 - El validador rechaza `disabled` y `between_tools` junto con un esfuerzo `xhigh` o
   `max` (la API da un 400 en esa combinación).
+- Con `disabled` en `False`, el validador exige el esfuerzo de `True`: la confirmación
+  forzada del tool loop (D5) pasa a `False` en la misma vuelta, y ese cambio no se
+  probó contra la API. Con `between_tools` no lo exige.
+- Verificado contra la API con `scripts/check_anthropic.py` (2026-11-26,
+  `claude-sonnet-5-5`):
+  - el modelo rechaza `disabled` con un 400 que pide `between_tools`;
+  - `between_tools` funciona como modo apagado;
+  - con `between_tools`, la confirmación forzada acepta un esfuerzo distinto del de la
+    primera llamada;
+  - la API acepta los bloques de razonamiento firmados reenviados en la confirmación.
 - `display: "summarized"` hace falta para que `reasoning` (y el evento SSE
   `reasoning` de ADR-028 D9) tenga texto: por defecto la API manda el bloque sin
   texto, solo con su firma.
