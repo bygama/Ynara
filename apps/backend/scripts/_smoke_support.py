@@ -4,10 +4,10 @@ Lo usa ``check_anthropic.py``: el registro de cada request (``Recorder``), el
 resultado de un caso, el formato de la salida, la credencial y el host permitido. Va
 aparte para que el script quede con los casos.
 
-Todo lo que sale de una respuesta del proveedor (tipos de bloque, tipo y mensaje de
-error, ``request-id``) se acota y se limpia de caracteres no imprimibles antes de
-llegar a la terminal. Del cuerpo de una respuesta exitosa solo se guardan los tipos
-de bloque: nunca el texto, el razonamiento ni las firmas.
+Todo lo que sale de una respuesta del proveedor (tipos de bloque, ``finish_reason``,
+tipo y mensaje de error, ``request-id``) se acota y se limpia de caracteres no
+imprimibles antes de llegar a la terminal. Del cuerpo de una respuesta exitosa solo se
+guardan los tipos de bloque: nunca el texto, el razonamiento ni las firmas.
 """
 
 from __future__ import annotations
@@ -38,6 +38,11 @@ def clean(value: object, limit: int = _SHORT_FIELD_MAX) -> str | None:
         return None
     flat = " ".join(value.split())
     return "".join(ch for ch in flat if ch.isprintable())[:limit]
+
+
+def clean_reason(value: object) -> str:
+    """Un ``finish_reason`` para imprimir: los desconocidos pasan del proveedor tal cual."""
+    return clean(value) or "?"
 
 
 @dataclass
@@ -166,9 +171,14 @@ def load_api_key(variable: str, env_file: Path) -> SecretStr:
 
 
 def check_base_url(base_url: str, *, allow_other_host: bool) -> None:
-    """Solo ``api.anthropic.com`` salvo pedido explícito: la credencial viaja a ese host."""
-    host = urlsplit(base_url).hostname
-    if host != ANTHROPIC_HOST and not allow_other_host:
+    """``https`` y solo ``api.anthropic.com`` salvo pedido explícito.
+
+    La credencial viaja a ese host en cada request.
+    """
+    parts = urlsplit(base_url)
+    if parts.scheme != "https":
+        raise SystemExit("la base URL tiene que ser https: la credencial viajaría en claro")
+    if parts.hostname != ANTHROPIC_HOST and not allow_other_host:
         raise SystemExit(
             f"la base URL no es {ANTHROPIC_HOST}: la credencial iría a otro host. "
             "Si es a propósito, sumá --otro-host."
