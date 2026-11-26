@@ -4,6 +4,8 @@
 
 Aceptado
 
+<!-- Aprobado por `bygama` (CODEOWNER) el 2026-11-26. -->
+
 ## Fecha
 
 2026-11-26
