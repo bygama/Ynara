@@ -29,12 +29,14 @@ Flujo de ``route()``:
    tokens (``context_tokens`` - estimacion(prompt + preambulo) -
    ``COMPLETION_RESERVE``). Si fallan los embeddings de esa busqueda, el turno
    degrada sin llamar al modelo (nota (c)).
-4. Arma el system en un STRING NUEVO (NO muta el prompt cacheado) con lo fijo
-   primero y lo variable al final: el prompt del modo, el preambulo de fecha y
-   hora, y el bloque de memoria si no esta vacio. Asi la cache de prefijos del
-   proveedor reusa la parte fija entre turnos.
-5. Arma ``messages = [system, *historial, user]`` y corre ``run_tool_loop`` con el
-   alias del modelo; el cliente de cada proveedor lo traduce a su id de modelo.
+4. Arma el system en dos mensajes (ADR-031 D6), sin mutar el prompt cacheado: el
+   fijo, que es el prompt del modo, y el variable, con el preambulo de fecha y
+   hora y el bloque de memoria si no esta vacio. Asi la cache de prefijos del
+   proveedor reusa la parte fija entre turnos; el cliente compatible con OpenAI
+   los une en uno.
+5. Arma ``messages = [system fijo, system variable, *historial, user]`` y corre
+   ``run_tool_loop`` con el alias del modelo; el cliente de cada proveedor lo
+   traduce a su id de modelo.
 6. Devuelve un ``ChatResponse`` con el texto final, las ``actions`` ejecutadas
    y el ``session_id``. ``route()`` NO encola consolidacion: eso lo hace el
    endpoint despues del commit (M10 Ola 0; ver ``app.api.v1.chat``).
