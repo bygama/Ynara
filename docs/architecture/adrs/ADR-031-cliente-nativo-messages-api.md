@@ -69,7 +69,9 @@ el SDK oficial (ADR-028 D1: un solo cliente HTTP propio, sin dependencias nuevas
 - Autenticación con el header `x-api-key`, en una clase de auth propia que, igual que
   `BearerAuth`, nunca muestra la credencial en `repr`, logs ni errores.
 - `anthropic-version: 2026-10-21`, fijo en una constante del módulo. Subir de versión
-  es un cambio de código con su PR, no una variable de entorno.
+  es un cambio de código con su PR, no una variable de entorno. El header beta que
+  pide D5 (`anthropic-beta: thinking-binding-controls-2026-08-01`) va en otra
+  constante, con el mismo criterio.
 - Reusa lo que ya es común a los proveedores: el mapeo de estados HTTP
   (`_http.py`), el mapeo de nombres de tools con punto a `__` (`_tool_names.py`) y
   la taxonomía `LlmError`.
@@ -147,11 +149,13 @@ produjo y la lista de bloques tal como llegaron.
 - El cliente OpenAI ignora el campo.
 - Dentro de la vuelta, el historial es solo agregado: nada se edita ni se reordena.
 - Con el modo adaptativo, el cliente manda
-  `thinking.block_binding.prefix_mismatch_behavior: "error"` (con el header beta que
-  ese campo pide), así el control del historial se aplica igual sea cual sea la
-  antigüedad de la cuenta, y un 400 por historial editado es un bug nuestro que salta
-  en las pruebas. Con `disabled` y `between_tools` no se manda: la API no lo acepta
-  ahí.
+  `thinking.block_binding.prefix_mismatch_behavior: "error"` y el header beta que ese
+  campo pide (D1). Así, en los requests con modo adaptativo, el control del historial
+  se aplica igual sea cual sea la antigüedad de la cuenta, y un 400 por historial
+  editado es un bug nuestro que salta en las pruebas. Con `disabled` y
+  `between_tools` no se manda, porque la API no lo acepta ahí: en esos requests (por
+  ejemplo, la confirmación forzada con `thinking=False`) el control depende de la
+  cuenta.
 
 Tres ajustes del tool loop salen de esto:
 
@@ -161,8 +165,10 @@ Tres ajustes del tool loop salen de esto:
   loop pasa a responderlas con un `tool_error` («no se ejecutó: tope de llamadas por
   turno») en vez de sacarlas. No entran en `actions`, porque no se ejecutaron.
 - **Errores de tools.** `ChatMessage` suma `is_error: bool` (default `False`) para el
-  rol `tool`. El loop lo prende cuando el resultado tiene la forma de `tool_error`
-  (`{"error": {...}}`), y el cliente de Anthropic lo manda como `tool_result` con
+  rol `tool`. El loop lo prende cuando el contenido que inyecta al historial (después
+  del tope de tamaño, que reemplaza un resultado demasiado grande por un
+  `tool_error`) tiene la forma de `tool_error` (`{"error": {...}}`). Lo que guarda
+  `actions` no cambia. El cliente de Anthropic lo manda como `tool_result` con
   `is_error: true`. El cliente OpenAI lo ignora.
 - **Confirmación forzada.** Cuando el loop termina con acciones y sin texto, hoy llama
   una vez más sin tools. Quitar las tools cambia el prefijo y, con bloques de
@@ -200,19 +206,26 @@ variable.
 
 ### D7 — Errores y motivos de corte
 
-Se reusa `raise_for_provider_status`, con un agregado: **`prompt is too long`** se
-suma a las firmas de contexto excedido, así un 400 por ventana llega como
-`LlmContextOverflowError` y no como request inválido.
+Se reusa `raise_for_provider_status`, con dos cambios en `_http.py`:
+
+- **`prompt is too long`** se suma a las firmas de contexto excedido, así un 400 por
+  ventana llega como `LlmContextOverflowError` y no como request inválido.
+- La lectura del código de error suma la ruta del body de Anthropic
+  (`error.details.error_code`), además de la de OpenAI (`error.code`). Solo se usa
+  para etiquetar logs y alertas (ver el 429 abajo); no cambia la clase de ningún
+  error.
 
 El resto ya cae en la taxonomía de hoy, sin cambiar su clase:
 
 - **El 429 por tope de gasto** sigue siendo `LlmRateLimitError`, como cualquier 429
   sin `Retry-After`: con otra entrada en la lista, el pool pasa a ella; sin otra, hace
   backoff y, si se agota, el error es transitorio. Así la consolidación de memoria
-  sigue reintentando más tarde en vez de descartar el turno. Para distinguirlo en logs
-  y alertas, la lectura del código de error suma la ruta del body de Anthropic
-  (`error.details.error_code`, con el valor `enforced_spend_limit_reached`), además de
-  la de OpenAI (`error.code`), y lo registra con una etiqueta fija, nunca con el body.
+  reintenta con su política de hoy (5 reintentos, con esperas de 30 s a 600 s) en vez
+  de descartar el turno en el primer intento. Un tope que dure más que esa ventana
+  pierde igual esa consolidación, y mientras dura cada llamada del chat agota sus
+  intentos antes de degradar. Por eso el valor `enforced_spend_limit_reached` se
+  registra con una etiqueta fija (nunca con el body) y alimenta las alertas de la
+  compuerta 3 de ADR-028.
 - 401 y 403 son `LlmAuthError`; 402 es `LlmProviderRejectedError`. En los dos casos el
   pool prueba la entrada siguiente.
 - 529 es un 5xx: `LlmUnavailableError`, con backoff y breaker, como cualquier caída.
@@ -229,13 +242,15 @@ El resto ya cae en la taxonomía de hoy, sin cambiar su clase:
 
 El modelo puede rechazar una respuesta (`refusal`), y el contenido de un rechazo
 puede venir cortado. Hoy ningún llamador trata `content_filter` aparte, así que el
-tool loop suma tres reglas:
+tool loop suma estas reglas:
 
 - `content_filter` es un motivo terminal: corta la vuelta.
 - Tras un rechazo no se hace la confirmación forzada, que se rechazaría igual.
-- El texto parcial de un rechazo se descarta. Si antes hubo acciones exitosas, el
-  usuario ve el aviso de acciones hechas, que es cierto; si no, el texto de respaldo
-  genérico.
+- El texto parcial y el razonamiento de la llamada rechazada se descartan. Si antes
+  hubo acciones exitosas, el usuario ve el aviso de acciones hechas, que es cierto;
+  si no, el texto de respaldo genérico.
+- Un turno que termina en rechazo no se encola para consolidar: nada de lo que el
+  modelo rechazó llega a la memoria.
 
 Qué ve el usuario ante un rechazo en Bienestar queda como pendiente explícito de la
 compuerta 2 de ADR-028 (crisis).
@@ -277,12 +292,13 @@ La lista puede tener varias entradas con `protocol: "anthropic"`, cada una con s
 de Anthropic cubriría una credencial revocada o vencida (401) y el saldo agotado
 (402).
 
-- El pool no distingue esos casos de un 429: ante cualquier 429 sin `Retry-After`
-  pasa a la entrada siguiente. Con dos cuentas, eso usaría la segunda para pasar por
-  encima de los límites de uso o de gasto de la primera. Por eso una segunda cuenta
-  de Anthropic recién entra en `LLM_PROVIDERS` cuando el equipo confirme que los
-  términos comerciales de Anthropic lo permiten. Hasta entonces la lista lleva una
-  sola entrada de Anthropic.
+- El pool no distingue esos casos de un 429: pasa a la entrada siguiente ante un 429
+  sin `Retry-After` o con una espera más larga que la que tolera cuando hay respaldo.
+  Con dos cuentas, eso usaría la segunda para pasar por encima de los límites de uso
+  o de gasto de la primera. Por eso una segunda cuenta de Anthropic recién entra en
+  `LLM_PROVIDERS` cuando el equipo confirme que los términos comerciales de Anthropic
+  lo permiten. Hasta entonces, el validador de D2 rechaza más de una entrada
+  `anthropic`; levantar esa regla es un cambio de código con su PR.
 - No cubre una caída de Anthropic: las dos entradas dependen del mismo servicio. Para
   eso, la cadena termina en la respuesta degradada de ADR-028.
 - Cada cuenta es un contrato aparte con Anthropic, así que la compuerta legal de
@@ -297,8 +313,9 @@ cae. Este ADR no la redefine. Las opciones para el equipo son:
 
 1. Mantenerla y sumar un respaldo de otro proveedor (una entrada `openai` ya
    soportada).
-2. Enmendarla en un ADR que lo diga explícitamente: probar el corte de la credencial
-   principal y, ante la caída del proveedor, la respuesta degradada.
+2. Enmendarla en un ADR que lo diga explícitamente: ante la caída del proveedor,
+   probar la respuesta degradada; y, si se confirman los términos y se suma una
+   segunda cuenta (D10), probar también el corte de la credencial principal.
 
 Mientras se decide, el texto de ADR-028 no cambia y la compuerta sigue abierta.
 
@@ -324,7 +341,8 @@ Mientras se decide, el texto de ADR-028 no cambia y la compuerta sigue abierta.
   - `LlmProvider` suma `protocol`, los modos de razonamiento por alias, el piso de
     `max_tokens` y el timeout.
 - El router y la pasada del agente (dos mensajes `system`) y el tool loop (llamadas
-  descartadas, errores de tools, confirmación forzada, rechazos) cambian de forma.
+  descartadas, errores de tools, confirmación forzada, rechazos) cambian de forma, y
+  el encolado de la consolidación deja afuera los turnos rechazados.
 - `temperature` deja de tener efecto con este proveedor.
 - Los modos, los esfuerzos y los pisos de `max_tokens` no se pueden fijar sin correr
   las evals contra el proveedor real, que cuesta tokens.
@@ -352,7 +370,7 @@ Mientras se decide, el texto de ADR-028 no cambia y la compuerta sigue abierta.
   razonamiento.
 - **El respaldo del proveedor ante un rechazo (`fallbacks`).** Reintenta un rechazo
   en otro modelo del lado del proveedor, pero no existe para todos los modelos, cubre
-  solo algunas categorías de rechazo, está en beta y corre sin el razonamiento previo.
+  solo algunas categorías de rechazo y corre sin el razonamiento previo.
   El rechazo se maneja en el cliente (D7).
 - **Apagar siempre el razonamiento.** Simplifica el historial, pero no todos los
   modelos lo permiten y en el agente perdería calidad justo donde más importa.
