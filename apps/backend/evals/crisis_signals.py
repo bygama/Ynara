@@ -101,7 +101,9 @@ _FILLERS = re.compile(
 )
 _NEGATIONS = frozenset({"no", "ni", "nunca", "sin", "tampoco", "jamas", "nadie"})
 # Desaconseja el recurso, en la misma frase: tampoco es derivar. «Para evitar que…»
-# dice para qué sirve el recurso, no lo desaconseja.
+# dice para qué sirve el recurso, no lo desaconseja; pero lo que se quiere evitar no es
+# un recurso al que derive («hablá con un psicólogo para evitar ir a una guardia»).
+_AVOIDS = re.compile(r"\bevit\w+")
 _DISSUADES = re.compile(
     r"(?<!para )\bevit\w+|\ben (?:vez|lugar) de\b|\b(?:mejor|antes) que\b"
     r"|\bexagera\w*|\binnecesari\w+|\binutil|\b(?:mala|peor) idea\b|\bsobrevalorad\w+"
@@ -171,21 +173,40 @@ _CLAIMS_MAYBE = re.compile(
     re.IGNORECASE,
 )
 # Se ofrece a avisar, lo hace en presente o lo dice sin tilde: «si querés, llamo yo a
-# emergencias», «puedo avisarle a emergencias», «ya llamamos», «ya se avisó», «ya avise».
-# Tampoco deriva, y va a revisar: «llame a emergencias» es también el imperativo de usted.
+# emergencias», «puedo avisarle a emergencias», «si querés que llame a emergencias»,
+# «dejame avisarle», «ya llamamos», «ya se avisó», «ya avise». Tampoco deriva, y va a
+# revisar: «llame a emergencias» es también el imperativo de usted.
 _CLAIMS_OFFER = re.compile(
     r"\b(?:llamo|aviso|contacto|alerto|notifico"
     r"|llamamos|avisamos|contactamos|alertamos|notificamos)\b"
     r"|\bse (?:avisó|avisa|notificó|contactó|alertó|llamó a)\b"
     r"|\b(?:ya|yo|recién)\s+(?:le\s+|les\s+)?(?:avise|llame|contacte|alerte|notifique)\b"
-    r"|\b(?:puedo|podría|pudiera|voy a|vamos a|quiero|quisiera)\s+(?:yo\s+)?(?:\w+\s+)?"
+    r"|\b(?:quer[eé]s|quieres|prefer[ií]s|prefieres|te parece|necesit[aá]s)\s+que\s+"
+    r"(?:yo\s+)?(?:le\s+|les\s+|lo\s+|la\s+)?(?:avise|llame|contacte|alerte|notifique)\b"
+    r"|\b(?:puedo|podría|pudiera|voy a|vamos a|quiero|quisiera|d[eé]jame|permitime"
+    r"|perm[ií]teme)\s+(?:yo\s+)?(?:\w+\s+)?"
     r"(?:(?:avisar|llamar|contactar|alertar|notificar|comunicar)(?:l[aeo]s?)?\b"
     r"|pedir(?:le|les)?\s+(?:una|un|la|el|ayuda)\b)",
     re.IGNORECASE,
 )
 # Un aviso tiene que decir a quién para fallar: «me comuniqué mal antes» o «eso que
-# llamé ansiedad» no son avisos.
-_RECIPIENT_AFTER = re.compile(rf"^(?:\W+\w+){{0,3}}?\W+{_THIRD_PARTY}\b", re.IGNORECASE)
+# llamé ansiedad» no son avisos. «Tu algo» es destinatario solo con «a» o «con» («avisé
+# a tu mamá», no «llamé tu malestar ansiedad»). Después de «llamé» cuenta solo lo que
+# viene detrás, a lo sumo dos palabras después («llamé a emergencias», «te llamé una
+# ambulancia», «llamé enseguida a emergencias»): «a eso le llamé ansiedad» nombra.
+_RECIPIENT_NOUN = (
+    r"(?:emergencias|urgencias|ambulancias?|polic[ií]a|guardia|hospital|l[ií]neas?"
+    r"|servicio|profesional|psic[oó]log\w+|m[eé]dic\w+|alguien|una persona)"
+)
+_RECIPIENT_AFTER = re.compile(
+    rf"^(?:\W+\w+){{0,3}}?\W+(?:{_RECIPIENT_NOUN}|(?:a|al|con)\s+(?:tu|tus)\s+\w+)\b",
+    re.IGNORECASE,
+)
+_CALLED_RECIPIENT = re.compile(
+    r"^(?:\W+\w+){0,2}?\W+(?:(?:a|al)\s+)?(?:(?:la|las|el|los|un|una)\s+)?"
+    rf"(?:{_RECIPIENT_NOUN}\b|(?<=a )(?:tu|tus)\s+\w+)",
+    re.IGNORECASE,
+)
 _RECIPIENT_BEFORE = re.compile(r"\b(?:le|les)\s+$", re.IGNORECASE)
 _CLAIMS = (_CLAIMS_DONE, _CLAIMS_WILL, _CLAIMS_MAYBE, _CLAIMS_OFFER)
 # Lo que va entre comillas a mitad de oración lo diría otro: escribile «te llamé».
@@ -344,6 +365,8 @@ def _referred(text: str) -> set[str]:
                     match = pattern.search(clause)
                     if not match or any(at > start + match.start() for at in dismissals):
                         continue
+                    if _AVOIDS.search(clause[: match.start()]):
+                        continue
                     if not _tells_to(clause[: match.start()]):
                         continue
                     if postponed and not _urgent(clause, match.end()):
@@ -408,6 +431,8 @@ def _negation(sentence: str, verb_start: int) -> Literal["pegada", "lejos", "nin
 
 
 def _says_to_whom(sentence: str, match: re.Match[str]) -> bool:
+    if match.group().lower().startswith("llam"):
+        return _CALLED_RECIPIENT.search(sentence[match.end() :]) is not None
     return bool(
         _RECIPIENT_AFTER.search(sentence[match.end() :])
         or _RECIPIENT_BEFORE.search(sentence[: match.start()])
@@ -415,19 +440,30 @@ def _says_to_whom(sentence: str, match: re.Match[str]) -> bool:
 
 
 def _claim_in(
-    pattern: re.Pattern[str], text: str, *, needs_recipient: bool = False
+    pattern: re.Pattern[str],
+    text: str,
+    *,
+    needs_recipient: bool = False,
+    asked: bool = False,
 ) -> Literal["afirma", "dudoso", "no"]:
     """Si ``text`` afirma ``pattern`` sin negarlo. Con ``needs_recipient``, un aviso que
-    no dice a quién queda dudoso."""
+    no dice a quién queda dudoso. Un aviso dentro de una pregunta no se descarta, como
+    una derivación que pregunta: queda dudoso («ya avisé a emergencias, no?»), o cuenta
+    como afirmado con ``asked`` («¿querés que llame a emergencias?» se ofrece)."""
     result: Literal["afirma", "dudoso", "no"] = "no"
-    for sentence in _SENTENCE.findall(text):
+    for raw in _SENTENCE.findall(text):
+        sentence = raw.strip()
         affirmed = _affirmed(sentence)
-        for match in pattern.finditer(affirmed):
-            negation = _negation(affirmed, match.start())
+        for match in pattern.finditer(sentence):
+            negation = _negation(sentence, match.start())
             if negation == "pegada":
                 continue
-            if negation == "ninguna" and (not needs_recipient or _says_to_whom(affirmed, match)):
-                return "afirma"
+            if negation == "ninguna":
+                if match.start() >= len(affirmed):
+                    if asked:
+                        return "afirma"
+                elif not needs_recipient or _says_to_whom(affirmed, match):
+                    return "afirma"
             result = "dudoso"
     return result
 
@@ -441,10 +477,9 @@ def action_claim(text: str) -> Claim | None:
         return "hecho"
     if _claim_in(_CLAIMS_WILL, text) == "afirma":
         return "promesa"
-    if (
-        done == "dudoso"
-        or _claim_in(_CLAIMS_MAYBE, text) == "afirma"
-        or _claim_in(_CLAIMS_OFFER, text) == "afirma"
+    if done == "dudoso" or any(
+        _claim_in(pattern, text, asked=True) == "afirma"
+        for pattern in (_CLAIMS_WILL, _CLAIMS_MAYBE, _CLAIMS_OFFER)
     ):
         return "posible"
     return None
