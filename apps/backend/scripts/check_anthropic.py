@@ -11,7 +11,8 @@ request tal como lo arma el cliente. Un caso por cada punto que quedó sin verif
 - ``confirmacion_forzada``: la confirmación con ``tool_choice="none"`` y
   ``thinking=False`` dentro de la misma vuelta.
 - ``cambio_de_esfuerzo``: la misma confirmación con otro esfuerzo en el modo apagado,
-  que el validador de ``LLM_PROVIDERS`` hoy rechaza. Dice si esa regla hace falta.
+  que el validador de ``LLM_PROVIDERS`` hoy rechaza. Dice si esa regla hace falta;
+  antes corre un control con el mismo esfuerzo y solo concluye si ese pasa.
 - ``streaming``: el modo adaptativo por SSE.
 - ``cache``: dos llamadas con el mismo system fijo; la segunda tiene que leer la caché.
 
@@ -33,10 +34,11 @@ más casos. La credencial sale de ``LLM_API_KEY_<NOMBRE>`` (``--nombre``, por de
 salvo ``--otro-host``, porque la credencial viaja a ese host.
 
 Datos: todos los mensajes son constantes sintéticas de este archivo; no acepta texto
-libre. Salida: el resultado de cada caso, el status, el ``finish_reason``, los tokens y
-los tipos de bloque. Nunca imprime la credencial, el texto del modelo, el
-razonamiento ni las firmas. De un error del proveedor imprime el tipo, el mensaje y el
-request-id: describen el request sintético, no datos de nadie.
+libre. Salida: el resultado de cada caso con su detalle (``finish_reason``, cantidad
+de llamadas), los tokens y los tipos de bloque cuando los hay, y de cada request que
+falló, el status, el tipo y el mensaje del error y el request-id: describen el request
+sintético, no datos de nadie. Nunca imprime la credencial, el texto del modelo, el
+razonamiento ni las firmas.
 
 No corre en la CI. Los tests (``tests/scripts/test_check_anthropic.py``) usan
 ``httpx.MockTransport``, sin red.
@@ -67,6 +69,7 @@ from _smoke_support import (  # noqa: E402
     CaseResult,
     Recorder,
     check_base_url,
+    clean_reason,
     format_exchange,
     format_result,
     load_api_key,
@@ -74,7 +77,7 @@ from _smoke_support import (  # noqa: E402
 
 from app.core.llm_providers import LLM_API_KEY_PREFIX, AliasThinking, ThinkingMode  # noqa: E402
 from app.llm.clients.providers.anthropic import AnthropicClient  # noqa: E402
-from app.llm.errors import LlmBadRequestError, LlmError  # noqa: E402
+from app.llm.errors import LlmBadRequestError, LlmContextOverflowError, LlmError  # noqa: E402
 from app.llm.schemas import ChatMessage, CompletionResult  # noqa: E402
 from app.llm.tool_loop import ToolLoopResult, run_tool_loop  # noqa: E402
 from app.llm.tools.base import to_spec  # noqa: E402
@@ -204,12 +207,13 @@ async def _single_completion(
     )
     if exc is not None or result is None:
         return _failure(name, exc, recorder, hint)
-    outcome = OK if result.finish_reason == "stop" else INCONCLUSIVE
+    reason = clean_reason(result.finish_reason)
+    outcome = OK if reason == "stop" else INCONCLUSIVE
     return CaseResult(
         name,
         outcome,
-        f"finish_reason {result.finish_reason}",
-        finish_reason=result.finish_reason,
+        f"finish_reason {reason}",
+        finish_reason=reason,
         usage=_usage(result),
         block_types=recorder.posts[0].block_types,
         exchanges=recorder.exchanges,
@@ -270,24 +274,29 @@ async def case_tool_round(make: ClientFactory) -> CaseResult:
     unproven = _unproven_round(name, recorder, called_tool=bool(loop.actions))
     if unproven is not None:
         return unproven
-    outcome = OK if loop.finish_reason == "stop" else INCONCLUSIVE
+    reason = clean_reason(loop.finish_reason)
+    outcome = OK if reason == "stop" else INCONCLUSIVE
     calls = len(recorder.posts)
-    detail = f"{len(loop.actions)} tool, {calls} llamadas, finish_reason {loop.finish_reason}"
+    detail = f"{len(loop.actions)} tool, {calls} llamadas, finish_reason {reason}"
     return CaseResult(
         name,
         outcome,
         detail,
-        finish_reason=loop.finish_reason,
+        finish_reason=reason,
         block_types=recorder.posts[0].block_types,
         exchanges=recorder.exchanges,
     )
 
 
 def _rejected_on_confirmation(exc: LlmError, recorder: Recorder) -> bool:
-    """La primera llamada pasó y la confirmación volvió con un 400 de request inválido."""
+    """La primera llamada pasó y la confirmación volvió con un 400 de request inválido.
+
+    El contexto excedido también es un 400, pero no dice nada del esfuerzo.
+    """
     posts = recorder.posts
     return (
         isinstance(exc, LlmBadRequestError)
+        and not isinstance(exc, LlmContextOverflowError)
         and len(posts) >= 2
         and posts[0].status == httpx.codes.OK
         and posts[1].status == httpx.codes.BAD_REQUEST
@@ -305,12 +314,11 @@ async def _forced(
     loop, exc, recorder = await _tool_loop(make, thinking, _TOOL_ONLY_PROMPT, max_iterations=1)
     first = recorder.posts[0].block_types if recorder.posts else []
     if exc is not None or loop is None:
-        if (
-            probe
-            and exc is not None
-            and SIGNED_THINKING in first
-            and _rejected_on_confirmation(exc, recorder)
-        ):
+        if probe and exc is not None and SIGNED_THINKING in first:
+            rejected = _rejected_on_confirmation(exc, recorder)
+        else:
+            rejected = False
+        if rejected:
             detail = "la API rechaza el cambio de esfuerzo (400): la regla queda"
             return CaseResult(name, OK, detail, block_types=first, exchanges=recorder.exchanges)
         return _failure(name, exc, recorder)
@@ -319,21 +327,15 @@ async def _forced(
         return unproven
     if len(recorder.posts) < 2:
         detail = "el modelo escribió texto: no hubo confirmación forzada"
-        return CaseResult(
-            name, INCONCLUSIVE, detail, block_types=first, exchanges=recorder.exchanges
-        )
+        exchanges = recorder.exchanges
+        return CaseResult(name, INCONCLUSIVE, detail, block_types=first, exchanges=exchanges)
+    reason = clean_reason(loop.finish_reason)
     if probe:
         detail = "la API acepta el cambio de esfuerzo: la regla se puede relajar"
     else:
-        detail = f"confirmación forzada aceptada, finish_reason {loop.finish_reason}"
-    return CaseResult(
-        name,
-        OK,
-        detail,
-        finish_reason=loop.finish_reason,
-        block_types=first,
-        exchanges=recorder.exchanges,
-    )
+        detail = f"confirmación forzada aceptada, finish_reason {reason}"
+    exchanges = recorder.exchanges
+    return CaseResult(name, OK, detail, reason, block_types=first, exchanges=exchanges)
 
 
 async def case_forced_confirmation(make: ClientFactory) -> CaseResult:
@@ -341,7 +343,17 @@ async def case_forced_confirmation(make: ClientFactory) -> CaseResult:
 
 
 async def case_effort_change(make: ClientFactory) -> CaseResult:
-    return await _forced(make, "cambio_de_esfuerzo", _EFFORT_CHANGE, probe=True)
+    """Primero un control con el mismo esfuerzo; la sonda solo cuenta si el control pasa.
+
+    Sin el control, un 400 que no tiene que ver con el esfuerzo (por ejemplo, de la
+    confirmación misma) se leería como «la regla queda».
+    """
+    name = "cambio_de_esfuerzo"
+    control = await _forced(make, name, _ADAPTIVE, probe=False)
+    if control.outcome != OK:
+        detail = f"el control con el mismo esfuerzo no pasó ({control.outcome}): no concluye"
+        return CaseResult(name, INCONCLUSIVE, detail, exchanges=control.exchanges)
+    return await _forced(make, name, _EFFORT_CHANGE, probe=True)
 
 
 async def case_streaming(make: ClientFactory) -> CaseResult:
@@ -359,15 +371,11 @@ async def case_streaming(make: ClientFactory) -> CaseResult:
     outcome, exc, recorder = await _with_client(make, _ADAPTIVE, consume)
     if exc is not None or outcome is None:
         return _failure(name, exc, recorder)
-    chunks, finish = outcome
+    chunks, raw_finish = outcome
+    finish = clean_reason(raw_finish)
     result = OK if finish == "stop" else INCONCLUSIVE
-    return CaseResult(
-        name,
-        result,
-        f"{chunks} chunks, finish_reason {finish}",
-        finish_reason=finish,
-        exchanges=recorder.exchanges,
-    )
+    detail = f"{chunks} chunks, finish_reason {finish}"
+    return CaseResult(name, result, detail, finish, exchanges=recorder.exchanges)
 
 
 async def case_cache(make: ClientFactory) -> CaseResult:
@@ -405,14 +413,8 @@ CASES: dict[str, tuple[Case, str]] = {
     "entre_tools": (case_between_tools, "between_tools sin tools, max_tokens 512"),
     "apagado": (case_disabled, "razonamiento disabled"),
     "vuelta_con_tools": (case_tool_round, "tool loop real con los bloques firmados reenviados"),
-    "confirmacion_forzada": (
-        case_forced_confirmation,
-        "tool_choice none con thinking=False en la misma vuelta",
-    ),
-    "cambio_de_esfuerzo": (
-        case_effort_change,
-        "la confirmación con otro esfuerzo en off (prueba la regla del validador)",
-    ),
+    "confirmacion_forzada": (case_forced_confirmation, "tool_choice none con thinking=False"),
+    "cambio_de_esfuerzo": (case_effort_change, "otro esfuerzo en off: la regla del validador"),
     "streaming": (case_streaming, "adaptive por SSE"),
     "cache": (case_cache, "dos llamadas con el mismo system fijo"),
 }

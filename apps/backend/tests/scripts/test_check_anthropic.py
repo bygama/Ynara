@@ -3,12 +3,15 @@
 Sin red: cada caso corre contra un ``httpx.MockTransport`` que contesta con la forma
 de la Messages API y datos sintéticos. Cubren:
 
-- el modo lista (no arma cliente) y los flags (sin abreviaturas, host permitido);
+- el modo lista (no arma cliente) y los flags (sin abreviaturas, https y host
+  permitido);
+- la fábrica real, que cuelga el ``Recorder`` del cliente;
 - el camino de ``--enviar`` de punta a punta, sin ``Settings``;
 - el corte por ``health``;
 - el resultado de cada caso y la forma del request que verifica;
 - cuándo un caso con tools no concluye (sin tool o sin razonamiento firmado);
-- la sonda de esfuerzo: solo un 400 en la confirmación cuenta como respuesta;
+- la sonda de esfuerzo: solo cuenta si pasa el control con el mismo esfuerzo, y solo un
+  400 de request inválido en la confirmación (no un contexto excedido) es respuesta;
 - el detalle de un error del proveedor, acotado y limpio;
 - la credencial, el texto del modelo, el razonamiento y las firmas, que no se imprimen.
 
@@ -87,9 +90,29 @@ def _sse(*events: dict[str, Any]) -> bytes:
 
 _STREAM = _sse(
     {"type": "message_start", "message": {"usage": {"input_tokens": 12, "output_tokens": 0}}},
-    {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
-    {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "listo"}},
+    {
+        "type": "content_block_start",
+        "index": 0,
+        "content_block": {"type": "thinking", "thinking": "", "signature": ""},
+    },
+    {
+        "type": "content_block_delta",
+        "index": 0,
+        "delta": {"type": "thinking_delta", "thinking": _THINKING_TEXT},
+    },
+    {
+        "type": "content_block_delta",
+        "index": 0,
+        "delta": {"type": "signature_delta", "signature": _SIGNATURE},
+    },
     {"type": "content_block_stop", "index": 0},
+    {"type": "content_block_start", "index": 1, "content_block": {"type": "text", "text": ""}},
+    {
+        "type": "content_block_delta",
+        "index": 1,
+        "delta": {"type": "text_delta", "text": _REPLY_TEXT},
+    },
+    {"type": "content_block_stop", "index": 1},
     {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 2}},
     {"type": "message_stop"},
 )
@@ -172,6 +195,19 @@ def _bad_request(message: str) -> httpx.Response:
     return _error(400, "invalid_request_error", message)
 
 
+def _after_control(reply: httpx.Response) -> Callable[[dict[str, Any]], httpx.Response]:
+    """La confirmación del control pasa; la de la sonda recibe ``reply``."""
+    calls: list[int] = []
+
+    def after_tool(_: dict[str, Any]) -> httpx.Response:
+        calls.append(1)
+        if len(calls) == 1:
+            return httpx.Response(200, json=_message([_THINKING_BLOCK, _TEXT_BLOCK]))
+        return reply
+
+    return after_tool
+
+
 async def _run(handler: Handler, names: list[str]) -> tuple[int, list[str]]:
     lines: list[str] = []
     code = await ca.run_checks(_factory(handler), names, out=lines.append)
@@ -194,7 +230,15 @@ def test_without_enviar_it_lists_the_cases_and_sends_nothing(
     assert all(name in out for name in ca.CASES)
 
 
-def test_an_abbreviated_flag_does_not_turn_on_enviar() -> None:
+def test_an_abbreviated_flag_does_not_turn_on_enviar(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def no_client(**_: Any) -> Any:
+        raise AssertionError("una abreviatura no arma un cliente")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LLM_API_KEY_CLAUDE", _API_KEY)
+    monkeypatch.setattr(ca, "api_client_factory", no_client)
     with pytest.raises(SystemExit) as excinfo:
         ca.main(["--modelo", _MODEL_ID, "--env"])
     assert excinfo.value.code == 2
@@ -216,6 +260,7 @@ def test_enviar_runs_the_cases_with_the_key_and_without_settings(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("LLM_API_KEY_CLAUDE", _API_KEY)
     monkeypatch.setattr("app.core.config.Settings.__init__", no_settings)
+    monkeypatch.setattr("app.core.config.get_settings", no_settings)
     monkeypatch.setattr(ca, "api_client_factory", fake_factory)
     code = ca.main(["--modelo", _MODEL_ID, "--enviar", "--caso", "adaptativo"])
     assert code == 0
@@ -241,6 +286,29 @@ def test_another_host_needs_an_explicit_flag(
         ca.main(["--modelo", _MODEL_ID, "--enviar", "--base-url", "https://otro.example/v1"])
     assert "--otro-host" in str(excinfo.value)
     ca.check_base_url("https://otro.example/v1", allow_other_host=True)
+
+
+@pytest.mark.parametrize("allow_other_host", [False, True])
+def test_the_base_url_has_to_be_https(allow_other_host: bool) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        ca.check_base_url("http://api.anthropic.com/v1", allow_other_host=allow_other_host)
+    assert "https" in str(excinfo.value)
+
+
+async def test_the_real_factory_hooks_the_recorder_into_the_client() -> None:
+    make = ca.api_client_factory(
+        base_url=ca.DEFAULT_BASE_URL,
+        api_key=SecretStr(_API_KEY),
+        model_id=_MODEL_ID,
+        name=ca.DEFAULT_NAME,
+    )
+    recorder = ca.Recorder()
+    client = make(ca._ADAPTIVE, recorder)
+    try:
+        assert isinstance(client, ca.AnthropicClient)
+        assert recorder in client._http.event_hooks["response"]
+    finally:
+        await client.aclose()
 
 
 async def test_a_failed_health_check_stops_before_any_message() -> None:
@@ -298,7 +366,7 @@ async def test_a_tool_round_without_a_tool_call_does_not_conclude() -> None:
     assert forced in lines
 
 
-@pytest.mark.parametrize("case", ["vuelta_con_tools", "confirmacion_forzada", "cambio_de_esfuerzo"])
+@pytest.mark.parametrize("case", ["vuelta_con_tools", "confirmacion_forzada"])
 async def test_a_tool_case_without_signed_thinking_does_not_conclude(case: str) -> None:
     handler, _ = _api(tool_use_reply=_message([_TOOL_USE], stop_reason="tool_use"))
     code, lines = await _run(handler, [case])
@@ -320,15 +388,41 @@ async def test_the_forced_confirmation_goes_with_tool_choice_none_and_thinking_o
 
 
 async def test_the_effort_probe_reports_that_the_rule_stays_on_a_400() -> None:
-    handler, payloads = _api(after_tool=lambda _: _bad_request("effort no coincide"))
+    handler, payloads = _api(after_tool=_after_control(_bad_request("effort no coincide")))
     code, lines = await _run(handler, ["cambio_de_esfuerzo"])
     assert code == 0
     assert lines[1] == (
         "[OK] cambio_de_esfuerzo: la API rechaza el cambio de esfuerzo (400): la regla queda"
     )
     assert "effort no coincide" in lines[-1]
-    assert payloads[0]["output_config"] == {"effort": "medium"}
-    assert payloads[1]["output_config"] == {"effort": "low"}
+    # El control (mismo esfuerzo) va primero; la sonda, después.
+    assert [p["output_config"]["effort"] for p in payloads] == ["low", "low", "medium", "low"]
+
+
+async def test_the_effort_probe_does_not_conclude_when_the_control_fails() -> None:
+    handler, payloads = _api(after_tool=lambda _: _bad_request("la confirmación no pasa"))
+    code, lines = await _run(handler, ["cambio_de_esfuerzo"])
+    assert code == 0
+    assert lines[1] == (
+        "[NO CONCLUYE] cambio_de_esfuerzo: el control con el mismo esfuerzo no pasó "
+        "(FALLA): no concluye"
+    )
+    assert len(payloads) == 2
+
+
+async def test_the_effort_probe_does_not_take_a_context_overflow_as_an_answer() -> None:
+    overflow = _bad_request("prompt is too long: exceeds the context window")
+    handler, _ = _api(after_tool=_after_control(overflow))
+    code, lines = await _run(handler, ["cambio_de_esfuerzo"])
+    assert code == 1
+    assert lines[1].startswith("[FALLA] cambio_de_esfuerzo: LlmContextOverflowError")
+
+
+async def test_the_effort_probe_does_not_conclude_without_signed_thinking() -> None:
+    handler, _ = _api(tool_use_reply=_message([_TOOL_USE], stop_reason="tool_use"))
+    code, lines = await _run(handler, ["cambio_de_esfuerzo"])
+    assert code == 0
+    assert lines[1].startswith("[NO CONCLUYE] cambio_de_esfuerzo: el control con el mismo")
 
 
 @pytest.mark.parametrize(
@@ -339,7 +433,7 @@ async def test_the_effort_probe_reports_that_the_rule_stays_on_a_400() -> None:
     ],
 )
 async def test_the_effort_probe_fails_on_any_other_error(reply: httpx.Response) -> None:
-    handler, _ = _api(after_tool=lambda _: reply)
+    handler, _ = _api(after_tool=_after_control(reply))
     code, lines = await _run(handler, ["cambio_de_esfuerzo"])
     assert code == 1
     assert lines[1].startswith("[FALLA] cambio_de_esfuerzo:")
