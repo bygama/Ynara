@@ -19,7 +19,7 @@ from pydantic import SecretStr
 
 from app.llm.clients.providers.openai_compat import OpenAICompatClient
 from app.llm.errors import LlmBadRequestError, LlmError, ToolParsingError
-from app.llm.schemas import ChatMessage, ToolCall, ToolSpec
+from app.llm.schemas import ChatMessage, ProviderBlocks, ToolCall, ToolSpec
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _BASE_URL = "https://proveedor.test/v1"
@@ -346,3 +346,64 @@ async def test_complete_malformed_body_is_llm_error(
         await _complete(client)
     assert type(excinfo.value) is LlmError
     assert str(excinfo.value) == f"error de inferencia LLM: {rendered}"
+
+
+# ---------- tool_choice y system partido (ADR-031) ----------
+
+
+async def test_complete_sends_tool_choice_none_with_the_same_tools() -> None:
+    captured: dict[str, Any] = {}
+    client = _client(_capturing(_load("completion_text.json"), captured))
+    await _complete(client, tools=[_CREATE_EVENT], tool_choice="none")
+    payload = captured["payload"]
+    assert payload["tool_choice"] == "none"
+    assert payload["tools"][0]["function"]["name"] == "calendar__create_event"
+
+
+async def test_complete_without_tools_sends_no_tool_choice() -> None:
+    captured: dict[str, Any] = {}
+    client = _client(_capturing(_load("completion_text.json"), captured))
+    await _complete(client, tool_choice="none")
+    assert "tool_choice" not in captured["payload"]
+    assert "tools" not in captured["payload"]
+
+
+async def test_consecutive_system_messages_are_sent_joined() -> None:
+    captured: dict[str, Any] = {}
+    client = _client(_capturing(_load("completion_text.json"), captured))
+    messages = [
+        ChatMessage(role="system", content="Parte fija."),
+        ChatMessage(role="system", content="Parte variable."),
+        ChatMessage(role="user", content="hola"),
+    ]
+    await client.complete(model=_ALIAS, messages=messages)
+    assert captured["payload"]["messages"] == [
+        {"role": "system", "content": "Parte fija.\n\nParte variable."},
+        {"role": "user", "content": "hola"},
+    ]
+
+
+async def test_provider_blocks_and_is_error_do_not_reach_the_wire() -> None:
+    captured: dict[str, Any] = {}
+    client = _client(_capturing(_load("completion_text.json"), captured))
+    call = ToolCall(id="call_1", name="calendar.create_event", arguments={"title": "x"})
+    messages = [
+        ChatMessage(role="user", content="hola"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=[call],
+            provider_blocks=ProviderBlocks(provider="otro", blocks=[{"type": "thinking"}]),
+        ),
+        ChatMessage(
+            role="tool",
+            tool_call_id="call_1",
+            name="calendar.create_event",
+            content='{"error": {"code": "x", "message": "y"}}',
+            is_error=True,
+        ),
+    ]
+    await client.complete(model=_ALIAS, messages=messages)
+    sent = captured["payload"]["messages"]
+    assert all("provider_blocks" not in m and "is_error" not in m for m in sent)
+    assert "thinking" not in json.dumps(sent)

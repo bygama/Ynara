@@ -732,3 +732,20 @@ async def test_stream_forwards_thinking_to_candidate() -> None:
     async for _ in resilient.stream(model=_MODEL, messages=_messages(), thinking=False):
         pass
     assert client.stream_calls[0]["thinking"] is False
+
+
+# ---------- tool_choice (ADR-031 D5) ----------
+
+
+async def test_complete_passes_tool_choice_to_the_client() -> None:
+    fake = _fake()
+    fake.queue_result(_result())
+    await _resilient([fake]).complete(model=_MODEL, messages=_messages(), tool_choice="none")
+    assert fake.complete_calls[0]["tool_choice"] == "none"
+
+
+async def test_complete_defaults_tool_choice_to_auto() -> None:
+    fake = _fake()
+    fake.queue_result(_result())
+    await _resilient([fake]).complete(model=_MODEL, messages=_messages())
+    assert fake.complete_calls[0]["tool_choice"] == "auto"

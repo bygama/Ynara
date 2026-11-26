@@ -19,6 +19,8 @@ Qué resuelve el cliente:
   Se lee del canal (``reasoning_content`` o ``reasoning``) o del ``<think>`` inline del
   ``content`` (``_think``). La forma de ``CompletionResult`` y ``CompletionChunk`` no
   cambia.
+- System: los mensajes ``system`` seguidos (el fijo y el variable del router, ADR-031
+  D6) se unen con una línea en blanco; el proveedor recibe el mismo texto que antes.
 - Errores: el mapeo de ``_http`` (credencial, límite de tasa con ``Retry-After``,
   contexto excedido, caídas y red), también para el status de un stream.
 
@@ -54,6 +56,7 @@ from app.llm.clients.providers._wire import (
     encode_message,
     encode_tool,
     finish_reason,
+    join_system_messages,
     json_body,
     reasoning_channel,
     token_count,
@@ -64,6 +67,7 @@ from app.llm.schemas import (
     CompletionChunk,
     CompletionResult,
     ModelHealth,
+    ToolChoice,
     ToolSpec,
 )
 
@@ -150,6 +154,7 @@ class OpenAICompatClient:
         max_tokens: int = 1024,
         temperature: float = 0.7,
         thinking: bool | None = None,
+        tool_choice: ToolChoice = "auto",
         timeout_s: float | None = None,
     ) -> CompletionResult:
         model_id = self._model_id(model)
@@ -160,6 +165,7 @@ class OpenAICompatClient:
             max_tokens=max_tokens,
             temperature=temperature,
             thinking=thinking,
+            tool_choice=tool_choice,
             stream=False,
         )
         started = time.perf_counter()
@@ -183,6 +189,7 @@ class OpenAICompatClient:
         max_tokens: int = 1024,
         temperature: float = 0.7,
         thinking: bool | None = None,
+        tool_choice: ToolChoice = "auto",
         timeout_s: float | None = None,
     ) -> AsyncIterator[CompletionChunk]:
         model_id = self._model_id(model)
@@ -193,6 +200,7 @@ class OpenAICompatClient:
             max_tokens=max_tokens,
             temperature=temperature,
             thinking=thinking,
+            tool_choice=tool_choice,
             stream=True,
         )
         decoder = StreamDecoder()
@@ -257,18 +265,19 @@ class OpenAICompatClient:
         max_tokens: int,
         temperature: float,
         thinking: bool | None,
+        tool_choice: ToolChoice,
         stream: bool,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": model_id,
-            "messages": [encode_message(m) for m in messages],
+            "messages": [encode_message(m) for m in join_system_messages(messages)],
             "max_tokens": max_tokens,
             "temperature": temperature,
             "stream": stream,
         }
         if tools:
             payload["tools"] = [encode_tool(t) for t in tools]
-            payload["tool_choice"] = "auto"
+            payload["tool_choice"] = tool_choice
         effort = self._reasoning_effort[thinking] if thinking is not None else None
         if effort is not None:
             payload["reasoning_effort"] = effort

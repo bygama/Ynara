@@ -9,9 +9,10 @@ expone a sus callers — ni más ni menos. Tras esto ``core/deps.py`` no importa
 ``app.llm`` en runtime. Los wrappers de memoria (``app/memory/``) siguen importando
 las clases concretas: eso es ``feature → feature`` (permitido), no ``core → feature``.
 
-Las implementaciones concretas (``OpenAICompatClient``/``FakeLlmClient``, los embedders
-Api/Fake y el ``FakeReranker`` passthrough) y los ``Protocol`` canónicos de
-``app.llm.clients.*`` satisfacen ESTOS protocolos **estructuralmente** (sin herencia):
+Las implementaciones concretas (``OpenAICompatClient``/``AnthropicClient``/
+``FakeLlmClient``, los embedders Api/Fake y el ``FakeReranker`` passthrough) y los
+``Protocol`` canónicos de ``app.llm.clients.*`` satisfacen ESTOS protocolos
+**estructuralmente** (sin herencia):
 mismas firmas, mismos tipos. No se duplica lógica, sólo la forma.
 
 Los DTOs de las firmas (``ChatMessage`` / ``CompletionResult`` / ``CompletionChunk``
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
         CompletionChunk,
         CompletionResult,
         ModelHealth,
+        ToolChoice,
         ToolSpec,
     )
 
@@ -57,6 +59,7 @@ class LLMClientProtocol(Protocol):
         max_tokens: int = 1024,
         temperature: float = 0.7,
         thinking: bool | None = None,
+        tool_choice: ToolChoice = "auto",
         timeout_s: float | None = None,
     ) -> CompletionResult:
         """Genera una completion no-streaming (ver ``app.llm.clients.base``)."""
@@ -71,6 +74,7 @@ class LLMClientProtocol(Protocol):
         max_tokens: int = 1024,
         temperature: float = 0.7,
         thinking: bool | None = None,
+        tool_choice: ToolChoice = "auto",
         timeout_s: float | None = None,
     ) -> AsyncIterator[CompletionChunk]:
         """Genera una completion en streaming (yield de chunks)."""

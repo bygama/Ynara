@@ -20,6 +20,7 @@ from app.llm.schemas import (
     CompletionResult,
     ModelHealth,
     ToolCall,
+    ToolChoice,
     ToolSpec,
 )
 
@@ -55,18 +56,24 @@ class LLMClient(Protocol):
         max_tokens: int = 1024,
         temperature: float = 0.7,
         thinking: bool | None = None,
+        tool_choice: ToolChoice = "auto",
         timeout_s: float | None = None,
     ) -> CompletionResult:
         """Genera una completion no-streaming.
 
-        ``timeout_s=None`` deja que la implementacion use su default (el
-        ``OpenAICompatClient`` usa el ``PROVIDER_REQUEST_TIMEOUT_S`` de la factory).
+        ``timeout_s=None`` deja que la implementacion use su default (los clientes de
+        proveedores usan el ``timeout_s`` de su entrada de ``LLM_PROVIDERS`` o, sin
+        valor, el ``PROVIDER_REQUEST_TIMEOUT_S`` de la factory).
 
         ``thinking`` es la intencion de razonamiento del caller (ADR-028 D3):
         ``True`` = razonar, ``False`` = no razonar, ``None`` = sin preferencia. La
         implementacion la traduce a lo que entienda su proveedor; el cliente por API
         manda ``reasoning_effort`` solo si tiene un valor configurado para ella y, si
         no, no manda nada y el modelo razona segun su default.
+
+        ``tool_choice`` (ADR-031 D5): ``"auto"`` deja que el modelo llame una de
+        ``tools``; ``"none"`` se las manda igual pero no le deja llamarlas. Sin
+        ``tools`` no tiene efecto.
         """
         ...
 
@@ -79,13 +86,14 @@ class LLMClient(Protocol):
         max_tokens: int = 1024,
         temperature: float = 0.7,
         thinking: bool | None = None,
+        tool_choice: ToolChoice = "auto",
         timeout_s: float | None = None,
     ) -> AsyncIterator[CompletionChunk]:
         """Genera una completion en streaming (yield de chunks).
 
         ``timeout_s=None`` -> default de la implementacion (ver ``complete``).
 
-        ``thinking`` es la intencion de razonamiento del caller (ver ``complete``).
+        ``thinking`` y ``tool_choice``: ver ``complete``.
         """
         ...
 

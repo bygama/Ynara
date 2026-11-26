@@ -21,6 +21,11 @@ from app.enums import Mode
 
 Role = Literal["system", "user", "assistant", "tool"]
 
+# ``tool_choice`` que el caller le pide al cliente: ``"auto"`` deja que el modelo decida
+# si llama una tool; ``"none"`` le manda las mismas tools pero no le deja llamarlas (la
+# confirmación forzada del tool loop, ADR-031 D5: sacar las tools cambiaría el prefijo).
+ToolChoice = Literal["auto", "none"]
+
 
 # ---------- Contrato del router ----------
 
@@ -50,11 +55,34 @@ class ChatResponse(BaseModel):
 # ---------- Mensajes y tools ----------
 
 
+class ProviderBlocks(BaseModel):
+    """Contenido crudo de la respuesta de un proveedor, para reenviarlo sin tocar.
+
+    ADR-031 D5: dentro de una vuelta con tools, la Messages API pide que los bloques de
+    razonamiento vuelvan exactamente como llegaron. ``provider`` es el ``name`` de la
+    entrada de ``LLM_PROVIDERS`` que los produjo: un cliente solo los reenvía si es esa
+    misma entrada. ``blocks`` son los dicts del wire tal cual (incluidos los vacíos).
+
+    Lleva el razonamiento del modelo: ``blocks`` queda fuera del ``repr`` y nunca se
+    loguea ni sale en una respuesta de la API (regla #4a).
+    """
+
+    model_config = ConfigDict(strict=True, frozen=True)
+
+    provider: str
+    blocks: list[dict[str, Any]] = Field(repr=False)
+
+
 class ChatMessage(BaseModel):
     """Un turno del historial. ``content`` puede ser ``None`` cuando el
     assistant solo emite tool_calls; ``tool_call_id`` / ``name`` aplican al
     rol ``tool`` (resultado de una tool). ``tool_calls`` preserva las calls
-    del assistant para el multi-turno correcto con la API de Chat Completions."""
+    del assistant para el multi-turno correcto con la API de Chat Completions.
+
+    ``provider_blocks`` (solo ``assistant``) es la respuesta cruda del proveedor que la
+    produjo, para reenviarla sin tocar dentro de la vuelta (ADR-031 D5); el cliente de
+    otro proveedor la ignora. ``is_error`` (solo ``tool``) marca un resultado con la
+    forma de ``tool_error``."""
 
     model_config = ConfigDict(strict=True)
 
@@ -63,6 +91,8 @@ class ChatMessage(BaseModel):
     tool_call_id: str | None = None
     name: str | None = None
     tool_calls: list[ToolCall] | None = None
+    provider_blocks: ProviderBlocks | None = Field(default=None, repr=False)
+    is_error: bool = False
 
 
 class ToolSpec(BaseModel):
@@ -109,6 +139,13 @@ class CompletionResult(BaseModel):
     # razonamiento o thinking estuvo apagado. Aditivo: los consumidores que lo
     # ignoran no cambian.
     reasoning: str | None = None
+    # Respuesta cruda del proveedor (ADR-031 D5): el tool loop la copia al mensaje
+    # ``assistant`` que agrega al historial. ``None`` en los clientes que no la usan.
+    provider_blocks: ProviderBlocks | None = Field(default=None, repr=False)
+    # Desglose de la caché de prompts (ADR-031 D8). ``prompt_tokens`` ya los incluye:
+    # estos dos dicen cuánto de ese contexto se leyó de la caché y cuánto se escribió.
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
 
 
 class CompletionChunk(BaseModel):

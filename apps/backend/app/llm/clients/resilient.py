@@ -38,6 +38,7 @@ from app.llm.schemas import (
     CompletionChunk,
     CompletionResult,
     ModelHealth,
+    ToolChoice,
     ToolSpec,
 )
 
@@ -148,6 +149,7 @@ class ResilientClient:
         max_tokens: int = 1024,
         temperature: float = 0.7,
         thinking: bool | None = None,
+        tool_choice: ToolChoice = "auto",
         timeout_s: float | None = None,
     ) -> CompletionResult:
         """Completa con retry + respaldo; degrada si todo falla.
@@ -185,6 +187,7 @@ class ResilientClient:
                     max_tokens=max_tokens,
                     temperature=temperature,
                     thinking=thinking,
+                    tool_choice=tool_choice,
                     timeout_s=timeout_s,
                 )
         except TimeoutError:
@@ -220,6 +223,7 @@ class ResilientClient:
         max_tokens: int,
         temperature: float,
         thinking: bool | None,
+        tool_choice: ToolChoice,
         timeout_s: float | None,
     ) -> CompletionResult | None:
         """Recorre los candidatos (principal -> respaldo).
@@ -247,6 +251,7 @@ class ResilientClient:
                 max_tokens=max_tokens,
                 temperature=temperature,
                 thinking=thinking,
+                tool_choice=tool_choice,
                 timeout_s=timeout_s,
             )
             if result is not None:
@@ -268,6 +273,7 @@ class ResilientClient:
         max_tokens: int,
         temperature: float,
         thinking: bool | None,
+        tool_choice: ToolChoice,
         timeout_s: float | None,
     ) -> CompletionResult | None:
         """Reintenta un candidato; ``None`` si se agota (toca el respaldo).
@@ -293,6 +299,7 @@ class ResilientClient:
                     max_tokens=max_tokens,
                     temperature=temperature,
                     thinking=thinking,
+                    tool_choice=tool_choice,
                     timeout_s=timeout_s,
                 )
             except REQUEST_ERRORS:
@@ -342,6 +349,7 @@ class ResilientClient:
         max_tokens: int = 1024,
         temperature: float = 0.7,
         thinking: bool | None = None,
+        tool_choice: ToolChoice = "auto",
         timeout_s: float | None = None,
     ) -> AsyncIterator[CompletionChunk]:
         """Streamea desde el primer candidato que responda.
@@ -371,6 +379,7 @@ class ResilientClient:
             max_tokens=max_tokens,
             temperature=temperature,
             thinking=thinking,
+            tool_choice=tool_choice,
             timeout_s=timeout_s,
         )
 
@@ -383,6 +392,7 @@ class ResilientClient:
         max_tokens: int,
         temperature: float,
         thinking: bool | None,
+        tool_choice: ToolChoice,
         timeout_s: float | None,
     ) -> AsyncIterator[CompletionChunk]:
         candidates = self._pool.candidates(model)
@@ -408,6 +418,7 @@ class ResilientClient:
                     max_tokens=max_tokens,
                     temperature=temperature,
                     thinking=thinking,
+                    tool_choice=tool_choice,
                     timeout_s=timeout_s,
                 ):
                     emitted = True
