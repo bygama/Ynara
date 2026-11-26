@@ -106,6 +106,39 @@ EMBEDDING_MODEL=BAAI/bge-m3
   admin (`/playground`) llama al proveedor sin sesión ni memoria; con
   `LLM_BACKEND=fake` responde 409.
 
+### Prueba de humo del cliente de Anthropic
+
+`apps/backend/scripts/check_anthropic.py` verifica contra la API real lo que
+los tests con `MockTransport` no pueden: que la Messages API acepta los
+requests tal como los arma `AnthropicClient` (razonamiento adaptativo con
+`block_binding`, `between_tools`, `disabled`, la vuelta con tools, la
+confirmación forzada, streaming y caché). Manda solo mensajes sintéticos
+fijos del script y **gasta tokens**: corrélo a mano, nunca en la CI.
+
+No usa `LLM_PROVIDERS` ni `Settings`, así que no hace falta tocar la cadena
+de proveedores del backend. Solo lee `LLM_API_KEY_CLAUDE` (o
+`LLM_API_KEY_<NOMBRE>` con `--nombre`), del entorno o del `.env` de la
+carpeta donde lo corrés. Desde `apps/backend`:
+
+```powershell
+# Lista los casos; no manda nada.
+.venv\Scripts\python.exe scripts\check_anthropic.py --modelo <id-del-modelo>
+# Manda todos los casos (o uno, con --caso <nombre>).
+.venv\Scripts\python.exe scripts\check_anthropic.py --modelo <id-del-modelo> --enviar
+```
+
+- Antes de los casos consulta `GET /models`, que no gasta tokens: si la
+  credencial o la versión fallan, no manda nada más.
+- Cada caso termina en `OK`, `FALLA` o `NO CONCLUYE`, cuando el modelo no
+  hizo lo que el caso necesitaba (por ejemplo, contestar sin llamar a la
+  tool). Sale con código 1 si alguno falla.
+- Imprime status, `finish_reason`, tokens y tipos de bloque. Nunca la
+  credencial, el texto del modelo, el razonamiento ni las firmas. De un
+  error del proveedor muestra el tipo, el mensaje y el `request-id`.
+- `cambio_de_esfuerzo` prueba la regla del validador que exige el mismo
+  esfuerzo en `on` y `off` cuando `off` está apagado: dice si la API la
+  hace necesaria.
+
 ## Hot reload
 
 - Web: Next.js auto-reload.
