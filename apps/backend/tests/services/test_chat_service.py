@@ -1,4 +1,4 @@
-"""Tests unit de ``ChatService._load_history``.
+"""Tests unit de ``ChatService``: ``_load_history`` y el encolado de la consolidación.
 
 Foco: mapeo de roles (USER→user, MODEL→assistant) y fallback defensivo para roles
 inesperados. Usa ``ConversationTurnStore`` mockeado para no tocar DB.
@@ -9,6 +9,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from app.enums import TurnRole
 from app.llm.schemas import ChatMessage
@@ -175,3 +177,32 @@ async def test_load_history_preserves_chronological_order() -> None:
         "segunda respuesta",
     ]
     assert [m.role for m in result] == ["user", "assistant", "user", "assistant"]
+
+
+# ---------------------------------------------------------------------------
+# Encolado de la consolidación por turno (ADR-031 D7)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("finish_reason", "enqueued"),
+    [("stop", True), ("max_iterations", True), ("degraded", False), ("content_filter", False)],
+)
+async def test_enqueue_consolidation_skips_degraded_and_refused_turns(
+    finish_reason: str, enqueued: bool
+) -> None:
+    """Un turno rechazado por el proveedor no se consolida, como uno degradado."""
+    from app.enums import Mode
+    from app.llm.schemas import ChatResponse
+    from app.schemas.chat import ChatHttpRequest
+
+    service, _uid = _make_service()
+    chat_session = MagicMock(id=uuid.uuid4())
+    # Productividad usa el alias agente, que escribe memoria.
+    body = ChatHttpRequest(text="agendame el dentista", mode=Mode.PRODUCTIVIDAD)
+    resp = ChatResponse(text="listo", session_id="s", finish_reason=finish_reason)
+    with patch("app.services.chat.consolidate_turn") as mock_task:
+        await service._enqueue_consolidation(  # type: ignore[attr-defined]
+            chat_session, body=body, resp=resp, turn_seq=0
+        )
+    assert mock_task.delay.called is enqueued

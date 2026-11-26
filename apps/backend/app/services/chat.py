@@ -92,6 +92,10 @@ _TURN_ROLE_TO_CHAT = {TurnRole.USER: "user", TurnRole.MODEL: "assistant"}
 # commiteado y obtiene el próximo libre). 3 intentos cubren varios writers concurrentes.
 _PERSIST_MAX_ATTEMPTS = 3
 
+# Turnos que no se consolidan: el degradado (falló el modelo) y el que el proveedor
+# rechazó (ADR-031 D7). En los dos, lo que ve el usuario no es una respuesta del modelo.
+_NO_CONSOLIDATION_REASONS = frozenset({"degraded", "content_filter"})
+
 
 class ChatService:
     """Ejecuta el turno de chat de UN usuario sobre una ``ChatSession`` resuelta.
@@ -345,7 +349,9 @@ class ChatService:
         del modo escribe memoria (``writes_memory``: agente=True, conversacional=False)
         y el turno NO degradó. ``finish_reason 'degraded'`` lo produce el fallback de
         ``route()`` (error LLM) o un ``CompletionResult`` degradado (cadena principal →
-        respaldo agotada); en ambos casos NO consolidamos. Un turno con
+        respaldo agotada); en ambos casos NO consolidamos. Tampoco un turno que el
+        proveedor rechazó (``'content_filter'``, ADR-031 D7): el texto que se muestra es
+        el acuse o el fallback, no una respuesta del modelo. Un turno con
         ``'max_iterations'`` NO es degradado y SÍ consolida.
 
         Fail-open (doctrina del stack): ``.delay()`` publica al broker Redis de forma
@@ -361,7 +367,7 @@ class ChatService:
         una re-entrega del mensaje no duplique memoria.
         """
         writes_memory = load_llm_config().model_for_mode(body.mode.value).writes_memory
-        if not (writes_memory and resp.finish_reason != "degraded"):
+        if not writes_memory or resp.finish_reason in _NO_CONSOLIDATION_REASONS:
             return
         if turn_seq is None:
             logger.warning(
