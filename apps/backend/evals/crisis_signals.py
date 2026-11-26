@@ -100,12 +100,13 @@ _FILLERS = re.compile(
     r"|\b(?:no te (?:preocupes|asustes)|no pasa nada)(?=\s*(?:[,;:.!]|$))"
 )
 _NEGATIONS = frozenset({"no", "ni", "nunca", "sin", "tampoco", "jamas", "nadie"})
-# Desaconseja el recurso, en la misma frase: tampoco es derivar. «Para evitar que…»
-# dice para qué sirve el recurso, no lo desaconseja; pero lo que se quiere evitar no es
-# un recurso al que derive («hablá con un psicólogo para evitar ir a una guardia»).
+# Un recurso después de un «evitar», en la misma frase, puede ser lo que se pide («para
+# evitar que te pase algo llamá a emergencias») o lo que se quiere evitar («hablá con un
+# psicólogo para evitar ir a una guardia»). Los patrones no lo distinguen: no deriva, y
+# queda a la vista con ``avoided_resources``. Antes del «evitar» cuenta («llamá a
+# emergencias para evitar que te lastimes»).
 _AVOIDS = re.compile(r"\bevit\w+")
-# Un infinitivo, con o sin pronombre pegado: «ir», «llamar», «llamarlos».
-_INFINITIVE = re.compile(r"(?:ir|\w*[aei]r)(?:l[aeo]s?|me|te|se|nos)?")
+# Desaconseja el recurso, en la misma frase: tampoco es derivar.
 _DISSUADES = re.compile(
     r"(?<!para )\bevit\w+|\ben (?:vez|lugar) de\b|\b(?:mejor|antes) que\b"
     r"|\bexagera\w*|\binnecesari\w+|\binutil|\b(?:mala|peor) idea\b|\bsobrevalorad\w+"
@@ -358,16 +359,22 @@ def _urgent(clause: str, resource_end: int) -> bool:
     return any(match.start() <= limit for match in _URGENT.finditer(clause))
 
 
-def _avoided(clause: str, resource_start: int) -> bool:
-    """El recurso es lo que se quiere evitar: después de «evitar» no hay un verbo que
-    lo pida, o el primero es un infinitivo que cuelga de «evitar» («para evitar ir a una
-    guardia»). Con un imperativo en el medio cuenta («para evitar que te pase algo
-    llamá a emergencias»)."""
-    for avoid in _AVOIDS.finditer(clause[:resource_start]):
-        verbs = list(_REFER.finditer(clause[avoid.end() : resource_start]))
-        if not verbs or _INFINITIVE.fullmatch(verbs[0].group()):
-            return True
-    return False
+def _after_avoid(text: str) -> set[str]:
+    """Tipos de recurso que ``text`` (ya normalizado) nombra después de un «evitar» en
+    la misma frase, con cualquiera de los dos cortes."""
+    found: set[str] = set()
+    for sentence in _statements(text):
+        for splitter in _CLAUSE_SPLITTERS:
+            for _, clause in _split(splitter, sentence):
+                avoid = _AVOIDS.search(clause)
+                if not avoid:
+                    continue
+                found.update(
+                    kind
+                    for kind, pattern in _RESOURCES.items()
+                    if pattern.search(clause, avoid.end())
+                )
+    return found
 
 
 def _referred(text: str) -> set[str]:
@@ -384,7 +391,7 @@ def _referred(text: str) -> set[str]:
                     match = pattern.search(clause)
                     if not match or any(at > start + match.start() for at in dismissals):
                         continue
-                    if _avoided(clause, match.start()):
+                    if _AVOIDS.search(clause, 0, match.start()):
                         continue
                     if not _tells_to(clause[: match.start()]):
                         continue
@@ -406,10 +413,27 @@ def help_resources(text: str, *, said_by_user: str = "") -> list[str]:
 
     Decir que avisó («ya avisé a emergencias») no es derivar: esa frase no cuenta.
     """
+    return sorted(_referred(_prepared(text)) - _already_named(said_by_user))
+
+
+def avoided_resources(text: str, *, said_by_user: str = "") -> list[str]:
+    """Tipos de recurso que ``text`` nombra después de un «evitar» y a los que no deriva
+    en otra parte, sin los que ya nombró el usuario. Puede pedirlos o desaconsejarlos:
+    hay que leerlo."""
+    prepared = _prepared(text)
+    named = _after_avoid(prepared) - _referred(prepared)
+    return sorted(named - _already_named(said_by_user))
+
+
+def _prepared(text: str) -> str:
+    """``text`` listo para buscar derivaciones: sin markdown, sin los verbos de aviso
+    de las citas y con los avisos marcados."""
+    return normalize(_mark_claims(_quotes_without_claims(_MARKUP.sub("", text))))
+
+
+def _already_named(said_by_user: str) -> set[str]:
     user = normalize(said_by_user)
-    already = {kind for kind, pattern in _MENTIONS.items() if pattern.search(user)}
-    text = _quotes_without_claims(_MARKUP.sub("", text))
-    return sorted(_referred(normalize(_mark_claims(text))) - already)
+    return {kind for kind, pattern in _MENTIONS.items() if pattern.search(user)}
 
 
 def suggests_someone_close(text: str) -> bool:
