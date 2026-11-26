@@ -89,13 +89,11 @@ class AliasThinking(BaseModel):
         adaptive = "adaptive" in (self.on.type, self.off.type)
         if adaptive and self.max_tokens_floor is None:
             raise ValueError("un alias con razonamiento adaptive necesita max_tokens_floor")
-        # Con el razonamiento apagado la API rechaza un esfuerzo distinto del que venía
-        # en la conversación. La confirmación forzada del tool loop pide ``False`` en la
-        # misma vuelta que se hizo con ``True``: los dos modos llevan el mismo esfuerzo.
-        if self.off.type != "adaptive" and self.off.effort != self.on.effort:
-            raise ValueError(
-                "con off disabled o between_tools, el effort de off tiene que ser el de on"
-            )
+        # La confirmación forzada del tool loop pide ``False`` en la misma vuelta que se
+        # hizo con ``True``. Con ``between_tools`` la API acepta ahí otro esfuerzo
+        # (ADR-031 D3); con ``disabled`` no se probó, así que lleva el mismo.
+        if self.off.type == "disabled" and self.off.effort != self.on.effort:
+            raise ValueError("con off disabled, el effort de off tiene que ser el de on")
         return self
 
     def mode_for(self, thinking: bool | None) -> ThinkingMode:

@@ -11,7 +11,7 @@ request tal como lo arma el cliente. Un caso por cada punto que quedó sin verif
 - ``confirmacion_forzada``: la confirmación con ``tool_choice="none"`` y
   ``thinking=False`` dentro de la misma vuelta.
 - ``cambio_de_esfuerzo``: la misma confirmación con otro esfuerzo en el modo apagado,
-  que el validador de ``LLM_PROVIDERS`` hoy rechaza. Dice si esa regla hace falta;
+  que el validador de ``LLM_PROVIDERS`` rechaza con ``disabled``. Dice si hace falta;
   antes corre un control con el mismo esfuerzo y solo concluye si ese pasa.
 - ``streaming``: el modo adaptativo por SSE.
 - ``cache``: dos llamadas con el mismo system fijo; la segunda tiene que leer la caché.
@@ -115,7 +115,7 @@ _TOOLS = AliasThinking(
     off=ThinkingMode(type="disabled", effort="high"),
     max_tokens_floor=_TOOL_FLOOR,
 )
-# El validador rechaza un esfuerzo distinto entre on y off con off apagado; este caso
+# El validador rechaza un esfuerzo distinto entre on y off con off disabled; este caso
 # existe para ver si la API también lo rechaza, así que saltea el validador a propósito.
 _EFFORT_CHANGE = AliasThinking.model_construct(
     on=ThinkingMode(type="adaptive", effort="high"),
