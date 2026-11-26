@@ -88,7 +88,7 @@ auth cruce el umbral de peso (ver ADR-011 D5).
 llm/
 ├── config.py          # LlmRuntimeConfig + load_llm_config(): alias de modelo (role, writes_memory, context_tokens) y modos de ynara.config.json, fail-fast
 ├── schemas.py         # ChatRequest/Response, ChatMessage, ToolSpec/ToolCall, CompletionResult/Chunk, ModelHealth
-├── errors.py          # taxonomía LlmError (transient/permanent/semantic, con LlmAuthError, LlmProviderRejectedError, LlmRateLimitError y EmbeddingDimensionError) + degraded_response(); NUNCA filtra texto de usuario
+├── errors.py          # taxonomía LlmError (transient/permanent/semantic, con LlmAuthError, LlmProviderRejectedError, LlmRateLimitError, su subclase LlmSpendLimitError y EmbeddingDimensionError) + degraded_response(); NUNCA filtra texto de usuario
 ├── context.py         # build_memory_context() + render_context_block(): recupera capas, formatea en Markdown, aplica presupuesto de tokens
 ├── memory_engine.py   # AgentMemoryEngine: extrae MemoryOp del turno con el alias agente, aplica contra los stores vía apply_ops(); el módulo más grande de llm/
 ├── tool_loop.py       # run_tool_loop(): itera LLM call + ejecución de tools (guard MAX_TOOL_ITERATIONS=5) hasta finish_reason stop/length/degraded/content_filter; copia los bloques crudos del proveedor al historial de la vuelta, responde con tool_error las llamadas que pasan el tope y confirma con las mismas tools y tool_choice="none" (ADR-031 D5)
