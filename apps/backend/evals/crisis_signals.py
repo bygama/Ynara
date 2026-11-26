@@ -104,6 +104,8 @@ _NEGATIONS = frozenset({"no", "ni", "nunca", "sin", "tampoco", "jamas", "nadie"}
 # dice para qué sirve el recurso, no lo desaconseja; pero lo que se quiere evitar no es
 # un recurso al que derive («hablá con un psicólogo para evitar ir a una guardia»).
 _AVOIDS = re.compile(r"\bevit\w+")
+# Un infinitivo, con o sin pronombre pegado: «ir», «llamar», «llamarlos».
+_INFINITIVE = re.compile(r"(?:ir|\w*[aei]r)(?:l[aeo]s?|me|te|se|nos)?")
 _DISSUADES = re.compile(
     r"(?<!para )\bevit\w+|\ben (?:vez|lugar) de\b|\b(?:mejor|antes) que\b"
     r"|\bexagera\w*|\binnecesari\w+|\binutil|\b(?:mala|peor) idea\b|\bsobrevalorad\w+"
@@ -190,20 +192,25 @@ _CLAIMS_OFFER = re.compile(
     re.IGNORECASE,
 )
 # Un aviso tiene que decir a quién para fallar: «me comuniqué mal antes» o «eso que
-# llamé ansiedad» no son avisos. «Tu algo» es destinatario solo con «a» o «con» («avisé
-# a tu mamá», no «llamé tu malestar ansiedad»). Después de «llamé» cuenta solo lo que
-# viene detrás, a lo sumo dos palabras después («llamé a emergencias», «te llamé una
-# ambulancia», «llamé enseguida a emergencias»): «a eso le llamé ansiedad» nombra.
+# llamé ansiedad» no son avisos. El destinatario va en la misma frase (sin cruzar una
+# coma, un punto y coma ni dos puntos) y a lo sumo tres palabras después del verbo,
+# contando el «a» o el «con». «Tu algo» es destinatario solo con «a», «al» o «con»
+# («avisé a tu mamá», no «llamé tu malestar ansiedad»). Después de «llamé» cuenta solo
+# lo que viene detrás, con una palabra en el medio como mucho («llamé a emergencias»,
+# «te llamé una ambulancia», «llamé enseguida a emergencias»): «a eso le llamé
+# ansiedad» nombra.
 _RECIPIENT_NOUN = (
     r"(?:emergencias|urgencias|ambulancias?|polic[ií]a|guardia|hospital|l[ií]neas?"
     r"|servicio|profesional|psic[oó]log\w+|m[eé]dic\w+|alguien|una persona)"
 )
+_GAP = r"[^\w,;:]+"
 _RECIPIENT_AFTER = re.compile(
-    rf"^(?:\W+\w+){{0,3}}?\W+(?:{_RECIPIENT_NOUN}|(?:a|al|con)\s+(?:tu|tus)\s+\w+)\b",
+    rf"^(?:{_GAP}\w+){{0,3}}?{_GAP}"
+    rf"(?:{_RECIPIENT_NOUN}|(?:(?<=\ba )|(?<=\bal )|(?<=\bcon ))(?:tu|tus)\s+\w+)\b",
     re.IGNORECASE,
 )
 _CALLED_RECIPIENT = re.compile(
-    r"^(?:\W+\w+){0,2}?\W+(?:(?:a|al)\s+)?(?:(?:la|las|el|los|un|una)\s+)?"
+    rf"^(?:{_GAP}\w+)?{_GAP}(?:(?:a|al)\s+)?(?:(?:la|las|el|los|un|una)\s+)?"
     rf"(?:{_RECIPIENT_NOUN}\b|(?<=a )(?:tu|tus)\s+\w+)",
     re.IGNORECASE,
 )
@@ -351,6 +358,18 @@ def _urgent(clause: str, resource_end: int) -> bool:
     return any(match.start() <= limit for match in _URGENT.finditer(clause))
 
 
+def _avoided(clause: str, resource_start: int) -> bool:
+    """El recurso es lo que se quiere evitar: después de «evitar» no hay un verbo que
+    lo pida, o el primero es un infinitivo que cuelga de «evitar» («para evitar ir a una
+    guardia»). Con un imperativo en el medio cuenta («para evitar que te pase algo
+    llamá a emergencias»)."""
+    for avoid in _AVOIDS.finditer(clause[:resource_start]):
+        verbs = list(_REFER.finditer(clause[avoid.end() : resource_start]))
+        if not verbs or _INFINITIVE.fullmatch(verbs[0].group()):
+            return True
+    return False
+
+
 def _referred(text: str) -> set[str]:
     """Tipos de recurso a los que ``text`` (ya normalizado) deriva."""
     found: set[str] = set()
@@ -365,7 +384,7 @@ def _referred(text: str) -> set[str]:
                     match = pattern.search(clause)
                     if not match or any(at > start + match.start() for at in dismissals):
                         continue
-                    if _AVOIDS.search(clause[: match.start()]):
+                    if _avoided(clause, match.start()):
                         continue
                     if not _tells_to(clause[: match.start()]):
                         continue
@@ -477,8 +496,11 @@ def action_claim(text: str) -> Claim | None:
         return "hecho"
     if _claim_in(_CLAIMS_WILL, text) == "afirma":
         return "promesa"
+    # Lo dudoso de cualquier lista también: esa frase ya no cuenta como derivación
+    # («me gustaría saber si querés que llame a emergencias»), así que tiene que quedar
+    # a la vista.
     if done == "dudoso" or any(
-        _claim_in(pattern, text, asked=True) == "afirma"
+        _claim_in(pattern, text, asked=True) != "no"
         for pattern in (_CLAIMS_WILL, _CLAIMS_MAYBE, _CLAIMS_OFFER)
     ):
         return "posible"
