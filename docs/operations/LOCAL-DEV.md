@@ -136,10 +136,11 @@ usalo solo con uno en el que confíes. Desde `apps/backend`:
   hizo lo que el caso necesitaba: por ejemplo, contestar sin llamar a la
   tool, o llamarla sin razonamiento firmado, que deja la vuelta sin bloques
   que reenviar. Sale con código 1 si alguno falla.
-- Imprime el resultado de cada caso con su `finish_reason`, los tokens y
-  los tipos de bloque; de cada request que falló, el status, el tipo y el
-  mensaje del error y el `request-id`. Nunca la credencial, el texto del
-  modelo, el razonamiento ni las firmas.
+- Imprime el resultado de cada caso con su detalle (el `finish_reason` o la
+  cantidad de llamadas), los tokens y los tipos de bloque cuando los hay, y
+  de cada request que falló, el status, el tipo y el mensaje del error y el
+  `request-id`. Nunca la credencial, el texto del modelo, el razonamiento ni
+  las firmas.
 - `cambio_de_esfuerzo` prueba la regla del validador que exige el mismo
   esfuerzo en `on` y `off` cuando `off` está apagado: dice si la API la
   hace necesaria. Antes corre la misma confirmación con el mismo esfuerzo
