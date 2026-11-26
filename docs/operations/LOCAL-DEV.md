@@ -118,9 +118,10 @@ fijos del script y **gasta tokens**: corrélo a mano, nunca en la CI.
 No usa `LLM_PROVIDERS` ni `Settings`, así que no hace falta tocar la cadena
 de proveedores del backend. Solo lee `LLM_API_KEY_CLAUDE` (o
 `LLM_API_KEY_<NOMBRE>` con `--nombre`), del entorno o del `.env` de la
-carpeta donde lo corrés. La base URL tiene que ser `api.anthropic.com`,
-porque la credencial viaja a ese host: otra solo pasa con `--otro-host`.
-Desde `apps/backend`:
+carpeta donde lo corrés. La base URL tiene que ser https y
+`api.anthropic.com`, porque la credencial viaja a ese host: otra solo pasa
+con `--otro-host`, y entonces la credencial va al host que pongas, así que
+usalo solo con uno en el que confíes. Desde `apps/backend`:
 
 ```powershell
 # Lista los casos; no manda nada.
@@ -135,13 +136,16 @@ Desde `apps/backend`:
   hizo lo que el caso necesitaba: por ejemplo, contestar sin llamar a la
   tool, o llamarla sin razonamiento firmado, que deja la vuelta sin bloques
   que reenviar. Sale con código 1 si alguno falla.
-- Imprime status, `finish_reason`, tokens y tipos de bloque. Nunca la
-  credencial, el texto del modelo, el razonamiento ni las firmas. De un
-  error del proveedor muestra el tipo, el mensaje y el `request-id`.
+- Imprime el resultado de cada caso con su `finish_reason`, los tokens y
+  los tipos de bloque; de cada request que falló, el status, el tipo y el
+  mensaje del error y el `request-id`. Nunca la credencial, el texto del
+  modelo, el razonamiento ni las firmas.
 - `cambio_de_esfuerzo` prueba la regla del validador que exige el mismo
   esfuerzo en `on` y `off` cuando `off` está apagado: dice si la API la
-  hace necesaria. Solo un 400 en la confirmación cuenta como «la regla
-  queda»; cualquier otro error es una falla.
+  hace necesaria. Antes corre la misma confirmación con el mismo esfuerzo
+  como control; si el control no pasa, no concluye. Solo un 400 de request
+  inválido en la confirmación cuenta como «la regla queda» (un contexto
+  excedido, no); cualquier otro error es una falla.
 
 ## Hot reload
 
