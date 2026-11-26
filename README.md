@@ -48,7 +48,7 @@ proveedores reciben solo datos sintéticos.
 | Tools del alias `agente` | 8 (calendar×2, reminder×2, memory×4) |
 | Apps | 3 (web Next.js 16, mobile Expo 53+, backend FastAPI) |
 | Packages compartidos | 5 (shared-types, shared-schemas, ui, config, core) |
-| ADRs aprobados | 15 (ADR-001 a ADR-015) |
+| ADRs | índice y estados en [`docs/architecture/README.md`](./docs/architecture/README.md) |
 | Skills reutilizables | 6 |
 | Archivos tracked | ~500 |
 | CODEOWNERS | 3 (@MateoGs013, @bygama, @querques20) |
@@ -251,7 +251,7 @@ ynara/
 │   └── config/              # tsconfig.base + biome + eslint
 │
 ├── docs/
-│   ├── architecture/        # 15 ADRs (ADR-001..015) + 3 diagramas Mermaid
+│   ├── architecture/        # ADRs (índice en su README) + 3 diagramas Mermaid
 │   ├── product/             # VISION, MODES, MEMORY, TONE-OF-VOICE
 │   ├── operations/          # INSTALL, LOCAL-DEV, DEPLOY, RUNBOOK, MIGRATION
 │   └── conventions/         # COMMITS, GLOSSARY, AI-GUIDELINES, CODE-STYLE
