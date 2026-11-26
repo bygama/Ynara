@@ -1,7 +1,10 @@
 # ADR-023: Modelo de evento de calendario (recurrencia, timezone, all-day, multi-día)
 
 ## Estado
-Propuesto
+Aceptado
+
+<!-- Aprobado por `bygama` (CODEOWNER); el índice lo registra como aceptado
+     desde la renumeración del 2026-06-24. -->
 
 ## Fecha
 2026-06-19
