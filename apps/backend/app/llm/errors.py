@@ -108,6 +108,17 @@ class LlmRateLimitError(LlmOverloadedError):
         self.retry_after_s = retry_after_s
 
 
+class LlmSpendLimitError(LlmRateLimitError):
+    """El 429 es por el tope de gasto de la cuenta, no por la tasa (ADR-031 D7).
+
+    Se trata igual que cualquier 429: es un ``LlmRateLimitError`` y lo maneja el mismo
+    código. Existe para que el nombre de la clase, que es lo único que se loguea de un
+    error del proveedor, diga qué pasó y alimente las alertas de gasto.
+    """
+
+    message = "tope de gasto del proveedor LLM"
+
+
 # ---------- Permanentes (no reintentar) ----------
 
 

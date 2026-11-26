@@ -33,6 +33,7 @@ from app.llm.errors import (
     LlmContextOverflowError,
     LlmProviderRejectedError,
     LlmRateLimitError,
+    LlmSpendLimitError,
     LlmTimeoutError,
     LlmTransientError,
     LlmUnavailableError,
@@ -49,7 +50,12 @@ _CONTEXT_OVERFLOW_SIGNATURES: tuple[str, ...] = (
     "context length",
     "context window",
     "reduce the length of the messages",
+    # Anthropic (ADR-031 D7).
+    "prompt is too long",
 )
+
+# Código de error del 429 de Anthropic cuando la cuenta llegó a su tope de gasto.
+SPEND_LIMIT_CODE = "enforced_spend_limit_reached"
 
 # 4xx que piden repetir el mismo request más tarde (408 Request Timeout, 425 Too Early):
 # son ``LlmTransientError`` pelado. El ``ResilientClient`` los reintenta con backoff (no
@@ -82,6 +88,7 @@ def raise_for_provider_status(response: httpx.Response) -> None:
 
     - 401 / 403                 -> ``LlmAuthError`` (credencial del proveedor)
     - 429                       -> ``LlmRateLimitError``, con la espera de ``Retry-After``
+                                   (``LlmSpendLimitError`` si es el tope de gasto)
     - 400 con contexto excedido -> ``LlmContextOverflowError``
     - otro 400, o 422           -> ``LlmBadRequestError``
     - >= 500                    -> ``LlmUnavailableError``
@@ -92,8 +99,9 @@ def raise_for_provider_status(response: httpx.Response) -> None:
     4xx dependen del proveedor (un id de modelo que no tiene, su límite de tamaño, su
     crédito), así que otro de la lista puede aceptar el mismo request.
 
-    Para detectar el contexto excedido mira el body: en streaming hay que leerlo antes
-    (``await response.aread()``); si no está leído, el 400 queda como request inválido.
+    Para detectar el contexto excedido y el tope de gasto mira el body: en streaming hay
+    que leerlo antes (``await response.aread()``); si no está leído, el 400 queda como
+    request inválido y el 429 como límite de tasa.
     """
     status = response.status_code
     if status < httpx.codes.BAD_REQUEST:
@@ -103,6 +111,8 @@ def raise_for_provider_status(response: httpx.Response) -> None:
         raise LlmAuthError(label)
     if status == httpx.codes.TOO_MANY_REQUESTS:
         retry_after_s = parse_retry_after(response.headers.get("retry-after"))
+        if _error_code(_body_text(response)) == SPEND_LIMIT_CODE:
+            raise LlmSpendLimitError(label, retry_after_s=retry_after_s)
         raise LlmRateLimitError(label, retry_after_s=retry_after_s)
     if status == httpx.codes.BAD_REQUEST:
         if _is_context_overflow(_body_text(response)):
@@ -183,13 +193,23 @@ def _is_context_overflow(body_text: str) -> bool:
 
 
 def _error_code(body_text: str) -> str | None:
-    """``error.code`` del body JSON con la forma de OpenAI, o ``None`` si no hay."""
+    """Código de error del body JSON, o ``None`` si no hay.
+
+    Lee ``error.code`` (forma de OpenAI) y, si no está, ``error.details.error_code``
+    (forma de Anthropic).
+    """
     try:
         body = json.loads(body_text)
     except ValueError:
         return None
     error = body.get("error") if isinstance(body, dict) else None
-    code = error.get("code") if isinstance(error, dict) else None
+    if not isinstance(error, dict):
+        return None
+    code = error.get("code")
+    if isinstance(code, str):
+        return code
+    details = error.get("details")
+    code = details.get("error_code") if isinstance(details, dict) else None
     return code if isinstance(code, str) else None
 
 
