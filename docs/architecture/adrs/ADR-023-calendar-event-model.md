@@ -3,8 +3,7 @@
 ## Estado
 Aceptado
 
-<!-- Aprobado por `bygama` (CODEOWNER); el índice lo registra como aceptado
-     desde la renumeración del 2026-06-24. -->
+<!-- Aprobado por `bygama` (CODEOWNER) el 2026-06-24. -->
 
 ## Fecha
 2026-06-19
