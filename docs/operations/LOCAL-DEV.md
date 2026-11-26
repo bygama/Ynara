@@ -135,7 +135,14 @@ usalo solo con uno en el que confíes. Desde `apps/backend`:
 - Cada caso termina en `OK`, `FALLA` o `NO CONCLUYE`, cuando el modelo no
   hizo lo que el caso necesitaba: por ejemplo, contestar sin llamar a la
   tool, o llamarla sin razonamiento firmado, que deja la vuelta sin bloques
-  que reenviar. Sale con código 1 si alguno falla.
+  que reenviar. Sale con código 1 si alguno falla. Los casos con tools
+  piden esfuerzo alto y una cuenta antes de la tool, para que el modelo
+  razone.
+- `--apagado` elige cómo se apaga el razonamiento en todos los casos:
+  `disabled` (el default) o `between_tools`. Hay modelos que rechazan
+  `disabled` con un 400 que dice cuál aceptan: en ese caso, repetí con
+  `--apagado between_tools` y usá ese mismo modo en el `off` de
+  `LLM_PROVIDERS`.
 - Imprime el resultado de cada caso con su detalle (el `finish_reason` o la
   cantidad de llamadas), los tokens y los tipos de bloque cuando los hay, y
   de cada request que falló, el status, el tipo y el mensaje del error y el
