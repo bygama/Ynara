@@ -24,6 +24,7 @@ from app.llm.errors import LlmTimeoutError
 from app.llm.schemas import (
     ChatMessage,
     CompletionResult,
+    ProviderBlocks,
     ToolCall,
     ToolSpec,
 )
@@ -175,8 +176,9 @@ async def test_tool_call_luego_stop_vacio_fuerza_confirmacion() -> None:
     cualquier modelo): tras EJECUTAR una tool, el modelo corta con
     finish_reason terminal ('stop') y content VACIO. El loop NO debe devolver el
     fallback generico (lee como error aunque la accion SI ocurrio): fuerza UNA completion
-    final SIN tools para que el modelo confirme lo accionado. El finish_reason real de la
-    forzada reemplaza al terminal-vacio."""
+    final con las mismas tools y ``tool_choice="none"`` para que el modelo confirme lo
+    accionado (ADR-031 D5: sacar las tools cambiaria el prefijo). El finish_reason real
+    de la forzada reemplaza al terminal-vacio."""
     fake = FakeLlmClient(models=frozenset({"agente"}))
 
     tc = _make_tool_call("calendar.create_event", "tc-x")
@@ -184,7 +186,7 @@ async def test_tool_call_luego_stop_vacio_fuerza_confirmacion() -> None:
     fake.queue_result(_make_result(text="", finish_reason="tool_calls", tool_calls=[tc]))
     # 2) corte terminal 'stop' con content VACIO (el gotcha)
     fake.queue_result(_make_result(text="", finish_reason="stop"))
-    # 3) completion forzada SIN tools: el modelo confirma en lenguaje natural
+    # 3) completion forzada sin poder llamar tools: el modelo confirma en lenguaje natural
     fake.queue_result(_make_result(text="Listo, te agende Gimnasio.", finish_reason="stop"))
 
     reg = ToolRegistry()
@@ -224,10 +226,12 @@ async def test_tool_call_luego_stop_vacio_fuerza_confirmacion() -> None:
     assert finish_reason == "stop"
     assert len(actions) == 1
     assert actions[0]["result"] == {"id": "ev-9", "status": "confirmed"}
-    # 3 llamadas: tool_call + stop-vacio + forzada-sin-tools.
+    # 3 llamadas: tool_call + stop-vacio + forzada.
     assert len(fake.complete_calls) == 3
-    # La 3ra (forzada) va SIN tools y con thinking=False (la confirmacion no razona).
-    assert fake.complete_calls[2]["tools"] is None
+    # La 3ra (forzada) lleva las MISMAS tools con tool_choice="none" y thinking=False
+    # (la confirmacion no razona ni llama tools).
+    assert fake.complete_calls[2]["tools"] == [spec]
+    assert fake.complete_calls[2]["tool_choice"] == "none"
     assert fake.complete_calls[2]["thinking"] is False
 
 
@@ -284,9 +288,11 @@ async def test_tool_call_forzada_tambien_vacia_usa_ack_no_fallback() -> None:
     assert result.text != "FALLBACK-no-deberia-verse"
     assert len(result.actions) == 1
     assert result.actions[0]["result"] == {"status": "ok"}
-    # 3 llamadas; la forzada (3ra) SIN tools y con thinking=False.
+    # 3 llamadas; la forzada (3ra) con las mismas tools, tool_choice="none" y
+    # thinking=False.
     assert len(fake.complete_calls) == 3
-    assert fake.complete_calls[2]["tools"] is None
+    assert fake.complete_calls[2]["tools"] == fake.complete_calls[0]["tools"]
+    assert fake.complete_calls[2]["tool_choice"] == "none"
     assert fake.complete_calls[2]["thinking"] is False
 
 
@@ -446,20 +452,20 @@ def _looping_registry_and_spec() -> tuple[ToolRegistry, ToolSpec]:
 
 @pytest.mark.asyncio
 async def test_guard_max_iteraciones_fuerza_respuesta_final() -> None:
-    """Al agotar MAX_TOOL_ITERATIONS con texto vacío, una completion final SIN tools.
+    """Al agotar MAX_TOOL_ITERATIONS con texto vacío, una completion final sin tools.
 
     Regresión (#260): un modelo que loopea llamando tools (p.ej. el agente reintentando el
     stub memory.add) agotaba las iteraciones sin dar un texto final -> el usuario veía
     el ``fallback_text`` ("no pude procesar...") AUNQUE las tools sí se ejecutaron. Ahora
-    se fuerza UNA completion sin tools: sin tools que llamar, el modelo responde en
-    lenguaje natural y el usuario ve una respuesta real (no el fallback)."""
+    se fuerza UNA completion sin poder llamar tools (``tool_choice="none"``): el modelo
+    responde en lenguaje natural y el usuario ve una respuesta real (no el fallback)."""
     fake = FakeLlmClient(models=frozenset({"agente"}))
 
     tc = _make_tool_call("calendar.create_event", "tc-x")
     # Las MAX iteraciones devuelven tool_calls con texto vacío (nunca converge).
     for _i in range(MAX_TOOL_ITERATIONS):
         fake.queue_result(_make_result(text="", finish_reason="tool_calls", tool_calls=[tc]))
-    # La completion FORZADA (sin tools) devuelve la respuesta final real.
+    # La completion FORZADA (sin poder llamar tools) devuelve la respuesta final real.
     fake.queue_result(_make_result(text="Listo, lo anoté en tu memoria.", finish_reason="stop"))
 
     reg, spec = _looping_registry_and_spec()
@@ -483,8 +489,10 @@ async def test_guard_max_iteraciones_fuerza_respuesta_final() -> None:
     # 5 tool calls ejecutadas en el loop + 1 completion forzada al final = 6 complete().
     assert len(actions) == MAX_TOOL_ITERATIONS
     assert len(fake.complete_calls) == MAX_TOOL_ITERATIONS + 1
-    # La completion FORZADA va SIN tools (para que el modelo responda, no tool-callee).
-    assert fake.complete_calls[-1]["tools"] is None
+    # La completion FORZADA no puede llamar tools (para que el modelo responda, no
+    # tool-callee), pero las manda iguales para no cambiar el prefijo (ADR-031 D5).
+    assert fake.complete_calls[-1]["tools"] == [spec]
+    assert fake.complete_calls[-1]["tool_choice"] == "none"
 
 
 @pytest.mark.asyncio
@@ -515,7 +523,8 @@ async def test_guard_max_iteraciones_usa_fallback_si_forzada_vacia() -> None:
     assert finish_reason == "max_iterations"
     assert len(actions) == MAX_TOOL_ITERATIONS
     assert len(fake.complete_calls) == MAX_TOOL_ITERATIONS + 1
-    assert fake.complete_calls[-1]["tools"] is None
+    assert fake.complete_calls[-1]["tools"] == [spec]
+    assert fake.complete_calls[-1]["tool_choice"] == "none"
 
 
 @pytest.mark.asyncio
@@ -667,7 +676,12 @@ async def test_degraded_termina_inmediatamente() -> None:
 
 @pytest.mark.asyncio
 async def test_cap_tool_calls_por_turno() -> None:
-    """Si el modelo emite mas de MAX_CALLS_PER_TURN, solo se ejecutan cap."""
+    """Si el modelo emite mas de MAX_CALLS_PER_TURN, solo se ejecutan cap.
+
+    ADR-031 D5: el assistant message conserva TODAS las calls (el historial de la vuelta
+    es solo agregado) y las que pasan el tope reciben un ``tool_error`` con
+    ``is_error``, sin entrar en ``actions``.
+    """
     fake = FakeLlmClient(models=frozenset({"agente"}))
 
     extra = 3
@@ -716,15 +730,18 @@ async def test_cap_tool_calls_por_turno() -> None:
     assert len(actions) == MAX_CALLS_PER_TURN
     assert [a["id"] for a in actions] == [f"tc-{i}" for i in range(MAX_CALLS_PER_TURN)]
 
-    # El assistant message del historial preserva SOLO las calls ejecutadas
-    # (correlacion assistant/tool consistente para el parser hermes).
+    # El assistant message del historial conserva TODAS las calls del modelo.
     assistant_msgs = [m for m in msgs if m.role == "assistant"]
     assert len(assistant_msgs) == 1
-    assert assistant_msgs[0].tool_calls is not None
-    assert len(assistant_msgs[0].tool_calls) == MAX_CALLS_PER_TURN
-    # Hay un ChatMessage 'tool' por cada call ejecutada, no por las extra.
+    assert assistant_msgs[0].tool_calls == many
+    # Cada call tiene su ChatMessage 'tool', en el mismo orden: las ejecutadas con su
+    # resultado y las extra con un tool_error de tope.
     tool_msgs = [m for m in msgs if m.role == "tool"]
-    assert len(tool_msgs) == MAX_CALLS_PER_TURN
+    assert [m.tool_call_id for m in tool_msgs] == [c.id for c in many]
+    assert all(not m.is_error for m in tool_msgs[:MAX_CALLS_PER_TURN])
+    for skipped in tool_msgs[MAX_CALLS_PER_TURN:]:
+        assert skipped.is_error
+        assert json.loads(skipped.content or "")["error"]["code"] == "call_limit"
 
 
 @pytest.mark.asyncio
@@ -976,7 +993,8 @@ def test_registry_has_en_registry_vacio() -> None:
 async def test_guard_forzada_con_texto_usa_finish_reason_real() -> None:
     """La completion forzada con texto usa su finish_reason real, no 'max_iterations'.
 
-    FIX 3 (telemetria): cuando el guard se agota y la completion forzada (tools=None)
+    FIX 3 (telemetria): cuando el guard se agota y la completion forzada (sin poder
+    llamar tools)
     produce texto, el finish_reason retornado es el de esa completion (p.ej. 'stop' o
     'length'). El sentinel 'max_iterations' se reserva para cuando la forzada TAMBIEN
     vuelve vacia (sin texto util).
@@ -1085,3 +1103,186 @@ async def test_reasoning_se_acumula_y_concatena_entre_iteraciones() -> None:
     assert len(result.actions) == 1
     # Reasoning de ambas iteraciones, concatenado en orden.
     assert result.reasoning == "pienso paso 1 pienso paso 2"
+
+
+# ---------- razonamiento preservado y rechazos (ADR-031 D5 y D7) ----------
+
+
+def _blocks(provider: str = "principal") -> ProviderBlocks:
+    return ProviderBlocks(
+        provider=provider,
+        blocks=[{"type": "thinking", "thinking": "", "signature": "firma-sintetica"}],
+    )
+
+
+async def test_assistant_message_keeps_provider_blocks_untouched() -> None:
+    fake = FakeLlmClient(models=frozenset({"agente"}))
+    tc = _make_tool_call("calendar.create_event", "tc-1")
+    blocks = _blocks()
+    first = _make_result(text="", finish_reason="tool_calls", tool_calls=[tc])
+    fake.queue_result(first.model_copy(update={"provider_blocks": blocks}))
+    fake.queue_result(_make_result(text="listo", finish_reason="stop"))
+    reg, spec = _looping_registry_and_spec()
+    msgs = _messages()
+
+    await run_tool_loop(
+        llm_client=fake,
+        model="agente",
+        messages=msgs,
+        specs=[spec],
+        registries=(reg, None),
+        fallback_text="fallback",
+    )
+
+    assistant = next(m for m in msgs if m.role == "assistant")
+    assert assistant.provider_blocks is blocks
+
+
+async def test_tool_error_result_is_marked_is_error() -> None:
+    fake = FakeLlmClient(models=frozenset({"agente"}))
+    unknown = _make_tool_call("calendar.no_existe", "tc-1")
+    fake.queue_result(_make_result(text="", finish_reason="tool_calls", tool_calls=[unknown]))
+    fake.queue_result(_make_result(text="listo", finish_reason="stop"))
+    reg, spec = _looping_registry_and_spec()
+    msgs = _messages()
+
+    await run_tool_loop(
+        llm_client=fake,
+        model="agente",
+        messages=msgs,
+        specs=[spec],
+        registries=(reg, None),
+        fallback_text="fallback",
+    )
+
+    tool_msg = next(m for m in msgs if m.role == "tool")
+    assert tool_msg.is_error is True
+
+
+async def test_successful_tool_result_is_not_marked_is_error() -> None:
+    fake = FakeLlmClient(models=frozenset({"agente"}))
+    tc = _make_tool_call("calendar.create_event", "tc-1")
+    fake.queue_result(_make_result(text="", finish_reason="tool_calls", tool_calls=[tc]))
+    fake.queue_result(_make_result(text="listo", finish_reason="stop"))
+    reg, spec = _looping_registry_and_spec()
+    msgs = _messages()
+
+    await run_tool_loop(
+        llm_client=fake,
+        model="agente",
+        messages=msgs,
+        specs=[spec],
+        registries=(reg, None),
+        fallback_text="fallback",
+    )
+
+    tool_msg = next(m for m in msgs if m.role == "tool")
+    assert tool_msg.is_error is False
+
+
+async def test_result_with_a_null_error_key_is_not_marked_is_error() -> None:
+    """``is_error`` mira la forma de ``tool_error`` (``{"error": {...}}``), no la clave."""
+    fake = FakeLlmClient(models=frozenset({"agente"}))
+    tc = _make_tool_call("task.create", "tc-1")
+    fake.queue_result(_make_result(text="", finish_reason="tool_calls", tool_calls=[tc]))
+    fake.queue_result(_make_result(text="listo", finish_reason="stop"))
+
+    class NullErrorTool:
+        name = "task.create"
+        namespace = "task"
+        description = "crea una tarea"
+        parameters: dict = {"type": "object", "properties": {}}  # noqa: RUF012
+
+        async def execute(self, arguments: dict) -> dict:
+            return {"status": "ok", "error": None}
+
+    reg = ToolRegistry()
+    reg.register(NullErrorTool())  # type: ignore[arg-type]
+    spec = ToolSpec(name="task.create", description="crea una tarea", parameters={})
+    msgs = _messages()
+
+    await run_tool_loop(
+        llm_client=fake,
+        model="agente",
+        messages=msgs,
+        specs=[spec],
+        registries=(reg, None),
+        fallback_text="fallback",
+    )
+
+    tool_msg = next(m for m in msgs if m.role == "tool")
+    assert tool_msg.is_error is False
+
+
+async def test_refusal_without_actions_discards_text_and_reasoning() -> None:
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
+    fake.queue_result(
+        _make_result(text="Texto parcial", finish_reason="content_filter", reasoning="pensé")
+    )
+
+    result = await run_tool_loop(
+        llm_client=fake,
+        model="conversacional",
+        messages=_messages(),
+        specs=[],
+        registries=_empty_registries(),
+        fallback_text="fallback",
+    )
+
+    assert result.text == "fallback"
+    assert result.finish_reason == "content_filter"
+    assert result.reasoning is None
+    assert len(fake.complete_calls) == 1
+
+
+async def test_refusal_after_actions_uses_ack_and_skips_forced_confirmation() -> None:
+    fake = FakeLlmClient(models=frozenset({"agente"}))
+    tc = _make_tool_call("calendar.create_event", "tc-1")
+    fake.queue_result(
+        _make_result(text="", finish_reason="tool_calls", tool_calls=[tc], reasoning="uno ")
+    )
+    fake.queue_result(
+        _make_result(text="Texto parcial", finish_reason="content_filter", reasoning="dos")
+    )
+    reg, spec = _looping_registry_and_spec()
+
+    result = await run_tool_loop(
+        llm_client=fake,
+        model="agente",
+        messages=_messages(),
+        specs=[spec],
+        registries=(reg, None),
+        fallback_text="fallback",
+    )
+
+    # Sin confirmacion forzada: solo las dos llamadas del loop.
+    assert len(fake.complete_calls) == 2
+    assert result.text == _ACTIONS_DONE_TEXT
+    assert result.finish_reason == "content_filter"
+    # El razonamiento de la llamada rechazada no se suma.
+    assert result.reasoning == "uno "
+
+
+async def test_forced_confirmation_refused_falls_back_to_ack() -> None:
+    fake = FakeLlmClient(models=frozenset({"agente"}))
+    tc = _make_tool_call("calendar.create_event", "tc-1")
+    fake.queue_result(_make_result(text="", finish_reason="tool_calls", tool_calls=[tc]))
+    fake.queue_result(_make_result(text="", finish_reason="stop"))
+    fake.queue_result(
+        _make_result(text="Texto parcial", finish_reason="content_filter", reasoning="no")
+    )
+    reg, spec = _looping_registry_and_spec()
+
+    result = await run_tool_loop(
+        llm_client=fake,
+        model="agente",
+        messages=_messages(),
+        specs=[spec],
+        registries=(reg, None),
+        fallback_text="fallback",
+    )
+
+    assert len(fake.complete_calls) == 3
+    assert result.text == _ACTIONS_DONE_TEXT
+    assert result.finish_reason == "content_filter"
+    assert result.reasoning is None
