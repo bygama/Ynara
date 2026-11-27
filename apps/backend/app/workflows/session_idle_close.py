@@ -29,6 +29,11 @@ Reglas:
    broker está caído la sesión queda cerrada igual y se loguea solo el tipo de error
    (regla #4: sin contenido de usuario). Igual que en el cierre manual, un encolado
    perdido deja esa sesión sin episodio.
+7. Solo se encola si la sesión tiene turnos (sin turnos no hay nada que resumir) y si
+   terminó hace menos de ``CONSOLIDATION_MAX_AGE``. El episodio nace con fecha de hoy y
+   su retención se cuenta desde que se crea: consolidar una conversación de hace meses
+   la haría volver como reciente y vivir otra ventana de retención entera. Las más
+   viejas se cierran sin episodio y sus turnos quedan como estaban.
 
 CADENCIA (beat): cada 5 minutos (ver ``celery_app.py``). Con el umbral por default, una
 sesión se cierra entre 45 y 50 minutos después de su último turno.
@@ -39,13 +44,21 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, datetime
+from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import Row, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
+from app.enums import Mode
 from app.models.session import ChatSession
-from app.services.session_idle import CLOSE_GRACE, idle_threshold, last_activity_expr
+from app.services.session_idle import (
+    CLOSE_GRACE,
+    CONSOLIDATION_MAX_AGE,
+    has_turns_expr,
+    idle_threshold,
+    last_activity_expr,
+)
 from app.workers.celery_app import celery_app
 from app.workflows._engine import worker_session
 from app.workflows.consolidation import consolidate_session
@@ -54,6 +67,36 @@ logger = logging.getLogger(__name__)
 
 # Sesiones cerradas como máximo por corrida (ver regla 4 del docstring).
 CLOSE_BATCH_SIZE = 100
+
+
+async def _close_sessions(
+    db: AsyncSession, *, ids: list[UUID], cutoff: datetime
+) -> list[Row[tuple[UUID, UUID, Mode, datetime, bool]]]:
+    """Cierra las sesiones de ``ids`` que SIGUEN abiertas e inactivas al ``cutoff``.
+
+    ``UPDATE`` condicional: entre el ``SELECT`` de candidatas y acá pudo llegar un
+    cierre manual o un turno nuevo, y esas filas no matchean (ni se cierran ni se
+    encolan). ``ended_at`` queda en la última actividad. Devuelve, por sesión cerrada,
+    ``(id, user_id, mode, ended_at, has_turns)``.
+    """
+    stmt = (
+        update(ChatSession)
+        .where(
+            ChatSession.id.in_(ids),
+            ChatSession.ended_at.is_(None),
+            last_activity_expr() <= cutoff,
+        )
+        .values(ended_at=last_activity_expr())
+        .returning(
+            ChatSession.id,
+            ChatSession.user_id,
+            ChatSession.mode,
+            ChatSession.ended_at,
+            has_turns_expr(),
+        )
+        .execution_options(synchronize_session=False)
+    )
+    return list((await db.execute(stmt)).all())
 
 
 async def _async_close_idle_sessions(
@@ -76,10 +119,9 @@ async def _async_close_idle_sessions(
     cutoff = current - idle_threshold(cfg.session_idle_close_minutes) - CLOSE_GRACE
 
     async def _run(db: AsyncSession, *, commit: bool) -> int:
-        idle = last_activity_expr() <= cutoff
         candidates = (
             select(ChatSession.id)
-            .where(ChatSession.ended_at.is_(None), idle)
+            .where(ChatSession.ended_at.is_(None), last_activity_expr() <= cutoff)
             .order_by(ChatSession.started_at.asc())
             .limit(batch_size)
         )
@@ -87,20 +129,14 @@ async def _async_close_idle_sessions(
         if not ids:
             return 0
 
-        # Re-chequeo en el UPDATE: entre el SELECT y acá pudo llegar un cierre manual o
-        # un turno nuevo; esas filas no matchean y no se cierran ni se encolan.
-        stmt = (
-            update(ChatSession)
-            .where(ChatSession.id.in_(ids), ChatSession.ended_at.is_(None), idle)
-            .values(ended_at=last_activity_expr())
-            .returning(ChatSession.id, ChatSession.user_id, ChatSession.mode, ChatSession.ended_at)
-            .execution_options(synchronize_session=False)
-        )
-        closed = list((await db.execute(stmt)).all())
+        closed = await _close_sessions(db, ids=ids, cutoff=cutoff)
         if commit:
             await db.commit()
 
-        for session_id, user_id, mode, ended_at in closed:
+        oldest_to_consolidate = current - CONSOLIDATION_MAX_AGE
+        for session_id, user_id, mode, ended_at, has_turns in closed:
+            if not has_turns or ended_at < oldest_to_consolidate:
+                continue
             try:
                 # Mismos kwargs que close_session: enqueued_at = ended_at. El guard de
                 # borrado (was_wiped_after) descarta el episodio si el usuario borró su
