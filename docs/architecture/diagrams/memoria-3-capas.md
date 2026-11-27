@@ -60,6 +60,9 @@ capa sagrada** y es distinta de las 3 capas y del `audit_log`.
 - **Operativa, no sagrada:** append-only mientras la sesión está abierta;
   el worker episódico (`consolidate_session`) la lee al cerrar la sesión
   y luego la **purga** (`purge_session`, hard-delete).
+- **Retención de los que no se consolidan:** si la sesión se cerró con
+  más de 7 días o su consolidación falló, el beat diario
+  `purge_stale_turns` borra sus turnos 8 días después de su `ended_at`.
 - **Cifrada igual que las capas:** el `content` viaja cifrado
   AES-256-GCM per-user (regla #4), igual que `semantic.content` /
   `episodic.summary`. Store: `conversation_turns` (Postgres + BYTEA).
