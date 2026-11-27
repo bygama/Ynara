@@ -5,12 +5,12 @@ import { AppState } from "react-native";
 import { startTodayWatch } from "./todayWatch";
 
 /**
- * `now` de la pantalla Hoy: un `Date` que se mantiene fijo dentro del día (sin
- * drift en el header ni en el día de cada prioridad) y avanza cuando cambia el
- * día local. Las tabs quedan montadas, así que Hoy puede seguir viva días
- * enteros: lo refrescan la medianoche (`watchLocalDay`), la vuelta de la app a
- * primer plano (`AppState`, cubre el timer frenado en segundo plano) y el foco
- * de la tab.
+ * `now` de las pantallas Hoy y Agenda: un `Date` que se mantiene fijo dentro
+ * del día (sin drift en el header, el día de cada prioridad o el día resaltado)
+ * y avanza cuando cambia el día local. Las tabs quedan montadas, así que pueden
+ * seguir vivas días enteros: lo refrescan la medianoche (`watchLocalDay`), la
+ * vuelta de la app a primer plano (`AppState`, cubre el timer frenado en segundo
+ * plano) y el foco de la tab.
  *
  * Mientras el día no cambia devuelve la misma referencia, así que un chequeo
  * no re-renderiza la pantalla. La lógica de fechas y timers vive en

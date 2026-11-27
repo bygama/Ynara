@@ -1,4 +1,5 @@
 import { useEvents } from "@ynara/core/features/agenda";
+import { followToday } from "@ynara/core/features/today";
 import { useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -6,6 +7,7 @@ import { ChipGroup } from "@/components/ui/ChipGroup";
 import { ErrorCard } from "@/components/ui/ErrorCard";
 import { LivingField } from "@/components/ui/LivingField";
 import { Text } from "@/components/ui/Text";
+import { useToday } from "@/features/today/useToday";
 import { cn } from "@/lib/cn";
 import { AgendaSkeleton } from "./components/AgendaSkeleton";
 import { DayView } from "./components/DayView";
@@ -24,13 +26,24 @@ const VIEW_OPTIONS = [
  * toggle día↔semana + navegación anterior/hoy/siguiente + 4 estados
  * (cargando/error/vacío/datos). Default semana para no arrancar en un día vacío.
  *
- * `now` se fija una vez por montaje para anclar "hoy" sin drift; `anchor` es
- * el día/semana en foco, que la navegación desplaza.
+ * `now` sale de `useToday`, igual que en Hoy: fijo dentro del día (sin drift) y
+ * al día nuevo pasada la medianoche, porque la tab queda montada. `anchor` es
+ * el día/semana en foco, que la navegación desplaza; si estaba en «hoy» cuando
+ * cambia el día, lo sigue (`followToday`).
  */
 export function AgendaScreen() {
-  const [now] = useState(() => new Date());
+  const now = useToday();
   const [view, setView] = useState<ViewMode>("semana");
-  const [anchor, setAnchor] = useState<Date>(() => new Date());
+  const [anchor, setAnchor] = useState<Date>(now);
+
+  // Cambio de día con la tab abierta: se ajusta el foco en el mismo render, sin
+  // un efecto que pinte primero el día viejo. `useToday` solo cambia de
+  // referencia cuando cambia el día.
+  const [prevNow, setPrevNow] = useState(now);
+  if (prevNow !== now) {
+    setPrevNow(now);
+    setAnchor(followToday(anchor, prevNow, now));
+  }
 
   const { data, isPending, isError, refetch, isFetching } = useEvents();
 
