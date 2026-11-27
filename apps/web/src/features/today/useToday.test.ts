@@ -1,4 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
+import { createElement, Fragment, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { greet } from "./format";
 import { useToday } from "./useToday";
@@ -97,6 +98,21 @@ describe("useToday", () => {
     vi.setSystemTime(at(8, 9));
     setVisibility("hidden");
     expect(result.current.getDate()).toBe(7);
+  });
+
+  it("si el día cambia entre el render y el efecto, lo toma al montar", () => {
+    vi.setSystemTime(new Date(2026, 4, 7, 23, 59, 59, 999));
+    // Un hermano que se renderiza después del hook adelanta el reloj: el
+    // useState inicial ve el día 7 y el efecto ya corre en el día 8.
+    function AdvanceClock() {
+      vi.setSystemTime(new Date(2026, 4, 8, 0, 0, 0, 1));
+      return null;
+    }
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(Fragment, null, children, createElement(AdvanceClock));
+    const { result } = renderHook(() => useToday(), { wrapper });
+
+    expect(result.current.getDate()).toBe(8);
   });
 
   it("al desmontar no deja timers ni listeners", () => {

@@ -12,7 +12,8 @@ import { GREETING_HOURS } from "./format";
  * timer que el browser frenó en segundo plano.
  *
  * Mientras no se cruza un corte devuelve la misma referencia, así que un
- * chequeo no re-renderiza la vista.
+ * chequeo no re-renderiza la vista. Al montar chequea una vez: si entre el
+ * render y el efecto se cruzó un corte, el estado lo toma en el momento.
  */
 export function useToday(): Date {
   const [today, setToday] = useState(() => new Date());
@@ -23,6 +24,7 @@ export function useToday(): Date {
       undefined,
       GREETING_HOURS,
     );
+    watcher.sync();
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") watcher.sync();
     };
