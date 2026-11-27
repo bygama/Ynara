@@ -14,7 +14,7 @@ de pooling de los workers ahora toca un solo lugar.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
@@ -42,6 +42,7 @@ async def delete_in_batches(
     *,
     batch_size: int = DELETE_BATCH_SIZE,
     commit: bool,
+    on_batch: Callable[[int], None] | None = None,
 ) -> int:
     """Borra en lotes las filas de ``model`` que matchean ``where``. Devuelve el total.
 
@@ -56,6 +57,10 @@ async def delete_in_batches(
     todo, pero el loop igual TERMINA (los deletes flusheados ya no matchean dentro de la
     misma transacción). ``synchronize_session=False``: bulk delete sin sincronizar el
     estado ORM en memoria (igual que los DELETE originales de los workers).
+
+    ``on_batch`` (opcional) recibe las filas de cada lote después de su commit (o
+    ``flush``): así un caller puede loguear el progreso real aunque un time limit
+    corte la corrida antes del ``return``.
 
     Borra por PK (``model.id``, UUIDPKMixin) vía subquery ``id IN (SELECT id ... LIMIT
     n)``: el ``LIMIT`` acota el lote; ``where`` se reevalúa una vez por lote sobre el
@@ -74,6 +79,8 @@ async def delete_in_batches(
             await session.commit()
         else:
             await session.flush()
+        if on_batch is not None:
+            on_batch(deleted)
         if deleted < batch_size:
             break
     return total
