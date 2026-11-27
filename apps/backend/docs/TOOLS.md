@@ -67,7 +67,8 @@
 - **Parámetros (tool real, espejan `EventCreate`)**:
   - `title: str` (no vacío)
   - `start_at: datetime` (ISO 8601 con timezone; rechaza epoch numérico)
-  - `duration_min: int` (entero positivo; el fin del bloque es derivado)
+  - `duration_min: int` (entero positivo; el fin del bloque es derivado; opcional:
+    si no viene, 60, así el modelo no frena el turno para preguntarla)
   - `mode: str | None` (uno de los modos; opcional)
   - `location: str | None`
   - `time_zone: str | None`

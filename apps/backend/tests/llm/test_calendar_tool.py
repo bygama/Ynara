@@ -24,6 +24,7 @@ from typing import Any
 
 from app.enums import Mode
 from app.llm.tools.calendar import (
+    DEFAULT_EVENT_DURATION_MIN,
     AgentCreateEventTool,
     AgentListEventsTool,
     CreateEventTool,
@@ -89,6 +90,22 @@ class TestAgentCreateEvent:
         assert payload.title == "Reunión"
         assert payload.duration_min == 45
         assert payload.location == "Oficina"
+
+    async def test_missing_duration_defaults_to_an_hour(self) -> None:
+        store = FakeCalendarStore()
+        tool = AgentCreateEventTool(store)  # type: ignore[arg-type]
+
+        result = await tool.execute({"title": "Clase de yoga", "start_at": _VALID_START})
+
+        assert "error" not in result
+        assert store.create_calls[0].duration_min == DEFAULT_EVENT_DURATION_MIN == 60
+
+    def test_schema_leaves_duration_optional_and_says_its_default(self) -> None:
+        schema = AgentCreateEventTool(FakeCalendarStore()).parameters  # type: ignore[arg-type]
+        assert schema["required"] == ["title", "start_at"]
+        duration = schema["properties"]["duration_min"]  # type: ignore[index]
+        assert duration["default"] == 60
+        assert "60" in duration["description"]
 
     async def test_minimal_args_ok(self) -> None:
         store = FakeCalendarStore()
