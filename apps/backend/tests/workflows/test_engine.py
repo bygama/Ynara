@@ -10,12 +10,15 @@ dependen de este context manager y nunca se probaba con un engine real.
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
 from app.core.config import Settings
+from app.models.conversation_turn import ConversationTurn
 from app.models.user import User
-from app.workflows._engine import normalize_db_url, worker_session
+from app.workflows._engine import delete_in_batches, normalize_db_url, worker_session
 
 
 def _settings(db_url: str) -> Settings:
@@ -33,6 +36,29 @@ def test_normalize_db_url_converts_sync_to_asyncpg() -> None:
 
 def test_normalize_db_url_leaves_asyncpg_intact() -> None:
     assert normalize_db_url("postgresql+asyncpg://u:p@h/d") == "postgresql+asyncpg://u:p@h/d"
+
+
+async def test_delete_in_batches_reports_each_batch_after_its_commit() -> None:
+    """``on_batch`` llega después del commit de su lote: el conteo nunca sobreestima.
+
+    Sesión mockeada, sin DB: lo que importa es el orden de las llamadas.
+    """
+    events: list[str] = []
+    session = AsyncMock()
+    session.execute.side_effect = [SimpleNamespace(rowcount=2), SimpleNamespace(rowcount=1)]
+    session.commit.side_effect = lambda: events.append("commit")
+
+    total = await delete_in_batches(
+        session,
+        ConversationTurn,
+        ConversationTurn.seq >= 0,
+        batch_size=2,
+        commit=True,
+        on_batch=lambda deleted: events.append(f"batch:{deleted}"),
+    )
+
+    assert total == 3
+    assert events == ["commit", "batch:2", "commit", "batch:1"]
 
 
 @pytest.mark.integration
