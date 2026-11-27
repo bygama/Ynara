@@ -119,6 +119,28 @@ describe("watchLocalDay", () => {
     watcher.stop();
   });
 
+  it("lee la hora una sola vez por chequeo", () => {
+    // El primer chequeo lee 23:59:59.999 y el siguiente ya es del día 8. Leer
+    // la hora dos veces avisaba con el día 7 y reprogramaba desde el 8, a
+    // MAX_DAY_CHECK_MS: el cambio de día llegaba 5 minutos tarde.
+    vi.setSystemTime(at(7, 23, 59, 59));
+    const getNow = vi
+      .fn<() => Date>()
+      .mockReturnValueOnce(at(7, 23, 59, 59))
+      .mockReturnValueOnce(new Date(2026, 4, 7, 23, 59, 59, 999))
+      .mockReturnValue(new Date(2026, 4, 8, 0, 0, 0, 1));
+    const days: number[] = [];
+    const watcher = watchLocalDay((now) => days.push(now.getDate()), getNow);
+
+    vi.advanceTimersByTime(1000);
+    expect(days).toEqual([7]);
+    expect(getNow).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(1);
+    expect(days).toEqual([7, 8]);
+    expect(getNow).toHaveBeenCalledTimes(3);
+    watcher.stop();
+  });
+
   it("sync avisa en el momento y reprograma desde la hora real", () => {
     vi.setSystemTime(at(7, 10));
     const onTick = vi.fn();
