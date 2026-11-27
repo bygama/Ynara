@@ -238,3 +238,73 @@ async def test_chat_degraded_persists_no_turns(db_session: AsyncSession) -> None
     finally:
         app.dependency_overrides.clear()
         await _delete_user(db_session, user.id)
+
+
+# ---------------------------------------------------------------------------
+# Sesion inactiva: el turno siguiente abre una sesion nueva
+# ---------------------------------------------------------------------------
+
+
+async def test_chat_on_idle_session_opens_a_new_one(db_session: AsyncSession) -> None:
+    """Un turno con el session_id de una sesion inactiva devuelve OTRO session_id.
+
+    La conversacion anterior ya termino (sus turnos tienen mas de
+    ``SESSION_IDLE_CLOSE_MINUTES``): el turno abre una sesion nueva, el cliente adopta el
+    id de la respuesta y la vieja conserva sus turnos para que el beat la consolide.
+    """
+    user = await _seed_user(db_session)
+    fake = FakeLlmClient(models=frozenset({"conversacional"}))
+    fake.queue_result(_completion(text="primera respuesta", model_name="org/chat"))
+    fake.queue_result(_completion(text="segunda respuesta", model_name="org/chat"))
+
+    client = await _client(db_session, llm_client=fake)
+    try:
+        # El encolado de consolidate_turn va mockeado: nunca llega a un broker real.
+        with patch("app.services.chat.consolidate_turn"):
+            async with client:
+                first = await client.post(
+                    "/v1/chat",
+                    json={"text": "hola Ynara", "mode": "vida"},
+                    headers=_bearer(user.id),
+                )
+                assert first.status_code == 200
+                old_id = first.json()["session_id"]
+
+                # Envejecer la sesion: sus turnos y su inicio quedan 2 horas atras.
+                await db_session.execute(
+                    text(
+                        "UPDATE conversation_turns SET created_at = now() - interval '2 hours' "
+                        "WHERE session_id = :sid"
+                    ),
+                    {"sid": old_id},
+                )
+                await db_session.execute(
+                    text(
+                        "UPDATE sessions SET started_at = now() - interval '2 hours' "
+                        "WHERE id = :sid"
+                    ),
+                    {"sid": old_id},
+                )
+                await db_session.commit()
+
+                second = await client.post(
+                    "/v1/chat",
+                    json={"text": "volvi", "mode": "vida", "session_id": old_id},
+                    headers=_bearer(user.id),
+                )
+
+        assert second.status_code == 200
+        new_id = second.json()["session_id"]
+        assert new_id != old_id
+
+        old_turns = await ConversationTurnStore(db_session, user.id).list_for_session(
+            uuid.UUID(old_id)
+        )
+        new_turns = await ConversationTurnStore(db_session, user.id).list_for_session(
+            uuid.UUID(new_id)
+        )
+        assert [t.content for t in old_turns] == ["hola Ynara", "primera respuesta"]
+        assert [t.content for t in new_turns] == ["volvi", "segunda respuesta"]
+    finally:
+        app.dependency_overrides.clear()
+        await _delete_user(db_session, user.id)
