@@ -77,4 +77,16 @@ describe("AgendaView con la pestaña abierta pasada la medianoche", () => {
     expect(period()).toMatch(/6 de mayo/);
     expect(todayButton()).toBeEnabled();
   });
+
+  it("«Hoy» lleva al día de `now` aunque el reloj no se haya enterado del cambio", () => {
+    vi.setSystemTime(at(7, 23, 59, 30));
+    const { period, todayButton } = renderDayView();
+    fireEvent.click(screen.getByRole("button", { name: "Día anterior" }));
+
+    // Pasó la medianoche pero el timer no corrió (máquina suspendida).
+    vi.setSystemTime(at(8, 9));
+    fireEvent.click(todayButton());
+    expect(period()).toMatch(/7 de mayo/);
+    expect(todayButton()).toBeDisabled();
+  });
 });

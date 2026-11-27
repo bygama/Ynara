@@ -88,9 +88,9 @@ export function AgendaView() {
     });
   };
 
-  // Ancla la vista a "ahora". Vive en un handler (corre solo en el browser al
-  // interactuar), por eso `new Date()` acá no puede causar hydration mismatch.
-  const goToNow = () => setAnchor(new Date());
+  // Ancla la vista a `now` y no a la hora del momento: si el reloj todavía no
+  // se enteró del día nuevo, «Hoy» lleva al mismo día que se resalta como hoy.
+  const goToNow = () => setAnchor(now);
 
   // Etiqueta de la unidad navegable (para los aria-label de prev/next).
   const unitLabel = effectiveView === "dia" ? "Día" : effectiveView === "mes" ? "Mes" : "Semana";
