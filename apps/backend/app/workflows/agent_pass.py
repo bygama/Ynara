@@ -38,7 +38,8 @@ futuras, más namespaces. Espejo EXACTO de ``consolidate_turn``
 5. IDEMPOTENCIA (ADR-021): la pasada NO debe duplicar acciones ante un reintento de
    Celery. La estrategia es **idempotencia de la tool**: cada tool real deduplica por
    su tupla natural (``calendar.create_event`` por ``(user_id, title, start_at,
-   duration_min)``; ``task.create_task`` por ``(user_id, title, scheduled_at)``), así
+   duration_min)``; ``task.create_task`` por ``(user_id, title, scheduled_at,
+   duration_min)``), así
    re-correr el mismo turno → la misma tool call → no crea la acción dos veces. Sumado
    al at-most-once del broker (``task_acks_late=False``), un pendiente/evento
    conversado se acciona una sola vez. ``MAX_TOOL_ITERATIONS`` (5) acota el loop.
@@ -104,7 +105,8 @@ _AGENT_PASS_SYSTEM_BODY = (
     "si el turno implica un evento concreto (con fecha/hora), usá la tool "
     "calendar.create_event con título, start_at (ISO 8601 con huso) y duración en "
     "minutos. Si el turno implica una tarea o pendiente concreto, usá la tool "
-    "task.create_task con título (y scheduled_at en ISO 8601 con huso si tiene horario). "
+    "task.create_task con título (y scheduled_at en ISO 8601 con huso si tiene día; "
+    "el día va ahí y no en el título). "
     "Si no hay nada para accionar, no llames ninguna tool y respondé vacío. "
     "No inventes acciones que no estén en lo conversado. No converses con el usuario: "
     "solo accionás las tools."

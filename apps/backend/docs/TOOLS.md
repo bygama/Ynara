@@ -118,8 +118,9 @@
   - `title: str` (no vacío, máx 200 — cota LLM-fed)
   - `scheduled_at: datetime | None` (ISO 8601 con timezone; rechaza epoch numérico; opcional).
     Si el usuario dice un día, va acá y no en el título; con el día sin hora, a las
-    09:00 de ese día
-  - `duration_min: int | None` (entero positivo, máx 43200 — cota LLM-fed; opcional)
+    09:00 de ese día, o a la próxima hora en punto si es hoy y ya pasaron las 09:00
+  - `duration_min: int | None` (entero positivo, máx 43200 — cota LLM-fed; opcional).
+    Solo si el usuario dice cuánto lleva
 - **Habilitada en modos**: productividad (los modos con `task` en `tools_enabled`).
 - **Ejemplo**:
   ```json
@@ -135,9 +136,9 @@
 - **Efecto (tool real)**: INSERTA en `tasks` (status `pending`), atado al `user_id` del
   store. Desde ADR-022 corre **síncrona en el chat** (productividad): la escritura
   commitea atómica con el turno. **Idempotente**: deduplica por la tupla natural
-  `(user_id, title, scheduled_at)` (con `IS NULL` si no hay horario) → un reintento
-  (loop o futura pasada async) NO crea el to-do dos veces. Devuelve la tarea serializada
-  (`id` + campos del wire, sin `user_id`/timestamps).
+  `(user_id, title, scheduled_at, duration_min)` (con `IS NULL` si falta alguno) → un
+  reintento (loop o futura pasada async) NO crea el to-do dos veces. Devuelve la tarea
+  serializada (`id` + campos del wire, sin `user_id`/timestamps).
 - **Errores**: `invalid_arguments` (args malformados: título vacío o > 200,
   `duration_min` no positivo o > 43200, fecha no-ISO/epoch, `user_id` u otro extra).
 - **Stub (playground observado)**: la versión del `default_registry()` valida args y

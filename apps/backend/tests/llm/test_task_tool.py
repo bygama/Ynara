@@ -102,7 +102,22 @@ class TestAgentCreateTask:
         scheduled = schema["properties"]["scheduled_at"]  # type: ignore[index]
         assert "título" in scheduled["description"]
         assert "09:00" in scheduled["description"]
+        assert "hoy" in scheduled["description"]
+        duration = schema["properties"]["duration_min"]  # type: ignore[index]
+        assert "omití este campo" in duration["description"]
         assert "scheduled_at" in tool.description
+
+    async def test_explicit_null_dates_are_accepted(self) -> None:
+        store = FakeTaskStore()
+        tool = AgentCreateTaskTool(store)  # type: ignore[arg-type]
+
+        result = await tool.execute(
+            {"title": "Pendiente", "scheduled_at": None, "duration_min": None}
+        )
+
+        assert "error" not in result
+        assert store.create_calls[0].scheduled_at is None
+        assert store.create_calls[0].duration_min is None
 
     async def test_missing_title_returns_invalid_arguments(self) -> None:
         store = FakeTaskStore()
