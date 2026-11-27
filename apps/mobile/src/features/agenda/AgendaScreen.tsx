@@ -87,7 +87,7 @@ export function AgendaScreen() {
               </Pressable>
 
               <Pressable
-                onPress={() => setAnchor(new Date())}
+                onPress={() => setAnchor(now)}
                 disabled={onNow}
                 hitSlop={8}
                 className={cn("rounded-pill px-4 py-2", onNow && "opacity-40")}
