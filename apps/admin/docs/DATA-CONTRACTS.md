@@ -130,7 +130,9 @@ export const AdminMoatOut = z.object({
 Backend: COUNT por tabla de memoria (**NUNCA** descifra `content`/`summary`);
 growth = COUNT por `created_at`/día por capa; procedural = COUNT `stale` +
 histograma de `confidence`; backlog = sesiones cerradas sin episodic
-consolidado; recentEpisodic = LIMIT por `occurred_at`, solo metadata.
+consolidado que todavía tienen turnos por resumir y terminaron en los últimos
+7 días (las vacías y las más viejas se cierran sin episodio a propósito);
+recentEpisodic = LIMIT por `occurred_at`, solo metadata.
 
 ## `GET /v1/admin/audit?range=7d&operation=&target_layer=&origin_mode=&origin_model_id=&sensitive=&limit=50&offset=0`
 
