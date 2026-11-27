@@ -13,6 +13,50 @@ import {
 // runner. Jueves 7 de mayo de 2026, sin cambio de horario cerca en ninguna TZ.
 const at = (d: number, h: number, min = 0, s = 0) => new Date(2026, 4, d, h, min, s);
 
+// Zonas con cambio de horario. CI corre en UTC, que no tiene: sin fijar la
+// zona, sumar 24 h fijas a la medianoche pasaría los tests igual. Node toma
+// `process.env.TZ` en caliente.
+const DST_ZONES = ["America/Santiago", "America/New_York", "Europe/London", "Pacific/Auckland"];
+
+function withTimeZone(tz: string, fn: () => void) {
+  const prev = process.env.TZ;
+  const runnerZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  process.env.TZ = tz;
+  try {
+    // Si la zona no se aplicó, el test no probaría nada: que falle.
+    expect(new Date(2026, 0, 1).getTimezoneOffset()).not.toBe(
+      new Date(2026, 6, 1).getTimezoneOffset(),
+    );
+    fn();
+  } finally {
+    process.env.TZ = prev ?? runnerZone;
+  }
+}
+
+// Recorre 2026 al mediodía: el próximo corte de cada día tiene que caer en el
+// primer instante del día siguiente (o de la hora de corte), aunque ese día
+// dure 23 o 25 h. No se asume que el día arranque a las 00:00: en Chile el
+// cambio es a medianoche y ese día empieza a la 01:00.
+function expectMidnightAllYear() {
+  for (let day = 0; day < 366; day++) {
+    const noon = new Date(2026, 0, 1 + day, 12, 0);
+    const next = new Date(noon.getTime() + msUntilNextLocalMidnight(noon));
+    const tomorrow = new Date(2026, 0, 2 + day, 12, 0);
+    expect(isSameLocalDay(next, tomorrow)).toBe(true);
+    expect(isSameLocalDay(new Date(next.getTime() - 1), noon)).toBe(true);
+  }
+}
+
+function expectCutsAllYear() {
+  for (let day = 0; day < 366; day++) {
+    const morning = new Date(2026, 0, 1 + day, 11, 0);
+    const cut = new Date(morning.getTime() + msUntilNextLocalCut(morning, [12, 20]));
+    expect(isSameLocalDay(cut, morning)).toBe(true);
+    expect(cut.getHours()).toBe(12);
+    expect(cut.getMinutes()).toBe(0);
+  }
+}
+
 describe("isSameLocalDay / pickToday", () => {
   it("mismo día de punta a punta; la medianoche ya es otro", () => {
     expect(isSameLocalDay(at(7, 0, 0), at(7, 23, 59, 59))).toBe(true);
@@ -51,16 +95,11 @@ describe("msUntilNextLocalMidnight", () => {
   });
 
   it("cae en el primer instante del día siguiente todos los días del año", () => {
-    // Si la TZ del runner tiene horario de verano, alguno de estos días dura
-    // 23 o 25 h y sumar 24 h fijo fallaría. No se asume que el día arranque a
-    // las 00:00: en Chile el cambio es a medianoche y ese día empieza a la 01:00.
-    for (let day = 0; day < 366; day++) {
-      const noon = new Date(2026, 0, 1 + day, 12, 0);
-      const next = new Date(noon.getTime() + msUntilNextLocalMidnight(noon));
-      const tomorrow = new Date(2026, 0, 2 + day, 12, 0);
-      expect(isSameLocalDay(next, tomorrow)).toBe(true);
-      expect(isSameLocalDay(new Date(next.getTime() - 1), noon)).toBe(true);
-    }
+    expectMidnightAllYear();
+  });
+
+  it.each(DST_ZONES)("también con cambio de horario (%s)", (tz) => {
+    withTimeZone(tz, expectMidnightAllYear);
   });
 });
 
@@ -74,6 +113,10 @@ describe("msUntilNextLocalCut", () => {
     expect(msUntilNextLocalCut(at(7, 11, 59, 30), cuts)).toBe(30_000);
     expect(msUntilNextLocalCut(at(7, 12), cuts)).toBe(8 * 60 * 60 * 1000);
     expect(msUntilNextLocalCut(at(7, 23, 59, 30), cuts)).toBe(30_000);
+  });
+
+  it.each(DST_ZONES)("cae a la hora del corte todo el año (%s)", (tz) => {
+    withTimeZone(tz, expectCutsAllYear);
   });
 });
 
