@@ -56,7 +56,10 @@ function startOfDay(date: Date): number {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 }
 
-/** "Mañana", "Ayer", "Viernes 27" o "Viernes 4 de diciembre"; `null` si es el día de `now`. */
+/**
+ * "Mañana", "Ayer", "Viernes 27", "Viernes 4 de diciembre" o, de otro año,
+ * "Viernes 31 de diciembre de 2027"; `null` si es el día de `now`.
+ */
 export function formatTaskDay(date: Date, now: Date): string | null {
   // `round`: un día con cambio de horario no mide 24 h exactas.
   const diff = Math.round((startOfDay(date) - startOfDay(now)) / DAY_MS);
@@ -64,8 +67,10 @@ export function formatTaskDay(date: Date, now: Date): string | null {
   if (diff === 1) return "Mañana";
   if (diff === -1) return "Ayer";
   const day = `${capitalize(WEEKDAY_FMT.format(date))} ${date.getDate()}`;
-  const sameMonth = date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
-  return sameMonth ? day : `${day} de ${MONTH_FMT.format(date)}`;
+  if (date.getFullYear() !== now.getFullYear()) {
+    return `${day} de ${MONTH_FMT.format(date)} de ${date.getFullYear()}`;
+  }
+  return date.getMonth() === now.getMonth() ? day : `${day} de ${MONTH_FMT.format(date)}`;
 }
 
 /**

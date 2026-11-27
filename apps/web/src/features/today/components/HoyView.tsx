@@ -33,7 +33,8 @@ const getWelcomeServerSnapshot = () => false;
  * §2.2), teñido por el modo activo del usuario.
  *
  * El modo y el nombre salen del onboarding (`useUserStore`); `now` se fija una
- * vez por montaje para anclar la fecha del header sin drift.
+ * vez por montaje para anclar sin drift la fecha del header y el día de cada
+ * prioridad.
  */
 export function HoyView() {
   const displayName = useUserStore((s) => s.displayName);
