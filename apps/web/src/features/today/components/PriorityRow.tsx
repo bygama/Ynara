@@ -5,6 +5,8 @@ import { formatTaskMeta } from "../format";
 
 type Props = {
   task: Task;
+  /** Para decir el día cuando la tarea no es de hoy. */
+  now: Date;
   onToggle: (task: Task) => void;
   /** Índice en la lista, para el stagger de entrada (§8.2). */
   index: number;
@@ -16,9 +18,9 @@ type Props = {
  * Hecha → título atenuado. El check es un `checkbox` accesible; el toggle es
  * optimista (lo maneja el hook en la sección).
  */
-export function PriorityRow({ task, onToggle, index }: Props) {
+export function PriorityRow({ task, now, onToggle, index }: Props) {
   const done = task.status === "done";
-  const meta = formatTaskMeta(task);
+  const meta = formatTaskMeta(task, now);
   return (
     <li
       className="anim-stagger-up flex min-h-[44px] items-start gap-3 px-2 py-3.5"

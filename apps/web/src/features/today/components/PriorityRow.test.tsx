@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { PriorityRow } from "./PriorityRow";
 
 const at = (h: number, m: number) => new Date(2026, 4, 7, h, m).toISOString();
+const NOW = new Date(2026, 4, 7, 10, 0);
 
 const pending: Task = {
   id: "0193c001-0000-4000-8000-000000000002",
@@ -18,7 +19,7 @@ const done: Task = { ...pending, status: "done", scheduled_at: at(9, 15), durati
 function renderRow(task: Task, onToggle = vi.fn()) {
   render(
     <ul>
-      <PriorityRow task={task} index={0} onToggle={onToggle} />
+      <PriorityRow task={task} now={NOW} index={0} onToggle={onToggle} />
     </ul>,
   );
   return onToggle;
@@ -36,6 +37,11 @@ describe("PriorityRow", () => {
     renderRow(done);
     expect(screen.getByText("09:15 · completada")).toBeInTheDocument();
     expect(screen.getByRole("checkbox")).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("una tarea de otro día dice el día", () => {
+    renderRow({ ...pending, scheduled_at: new Date(2026, 4, 8, 9, 0).toISOString() });
+    expect(screen.getByText("Mañana · 09:00 · 45 min")).toBeInTheDocument();
   });
 
   it("clickear el check dispara onToggle con la tarea", () => {
