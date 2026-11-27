@@ -165,6 +165,10 @@ class Settings(BaseSettings):
     # polling legitimo y solo cortar scripting abusivo. fail-OPEN si Redis cae.
     sessions_max_requests: int = Field(120, alias="SESSIONS_MAX_REQUESTS")
     sessions_window_seconds: int = Field(60, alias="SESSIONS_WINDOW_SECONDS")
+    # Cierre por inactividad de las sesiones de chat: tras estos minutos sin turnos, la
+    # conversacion se da por terminada. Un turno nuevo abre otra sesion y el beat
+    # (``close_idle_sessions``) cierra la vieja y encola su memoria episodica.
+    session_idle_close_minutes: int = Field(30, gt=0, alias="SESSION_IDLE_CLOSE_MINUTES")
     # Rate-limit de /v1/events (dominio Agenda, ADR-023), por user_id. UN bucket
     # compartido por las 4 rutas (list/create/patch/delete): default amplio para
     # cubrir el uso interactivo de la agenda y solo cortar scripting abusivo.

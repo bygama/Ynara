@@ -145,6 +145,11 @@ Dos endpoints: uno no-streaming (JSON) y uno SSE. Contrato + justificación en
 
 - **POST** `/v1/chat` (no-streaming):
   - Request: `{ text: string (1..4000 chars), mode: Mode, session_id?: UUID }`. Un `text` vacío o de más de 4000 caracteres → 422.
+  - `session_id`: sin él, el turno abre una sesión nueva. Con él, sigue esa sesión,
+    salvo que ya haya terminado: si está cerrada o lleva `SESSION_IDLE_CLOSE_MINUTES`
+    (30) sin turnos, el turno abre otra en el `mode` pedido. El cliente siempre adopta
+    el `session_id` de la respuesta (o del evento `done`), que puede no ser el que
+    mandó. Una sesión ajena o inexistente da 404, y una abierta en otro modo, 409.
     - El tope es `CHAT_TEXT_MAX_LENGTH`, con el mismo valor en `app/schemas/chat.py` y en `packages/shared-schemas/src/chat.ts` (ADR-028 D9: no cambia). No sale de un modelo concreto: el presupuesto de contexto es por alias (`context_tokens` de `ynara.config.json[models]`) y el router recorta el historial para que entren el system, el mensaje y la reserva de la respuesta. 4000 caracteres (unos 1.333 tokens con la estimación `len // 3`) entran holgados en el alias más chico (`conversacional`, 8192).
   - Response: `{ text: string, actions: Action[], session_id: UUID, finish_reason: string | null }`
     - `actions` **siempre presente** (lista vacía si no hubo acciones; los modos
