@@ -130,7 +130,11 @@ consolidación fallida) los borra el beat diario `purge_stale_turns`
 no se puede reencolar. **En el primer deploy**, eso significa que las
 conversaciones cuya última actividad tiene más de 8 días pierden sus
 turnos crudos sin episodio en la primera corrida. En los logs de
-`worker` queda `purge_stale_turns: deleted=<n>`.
+`worker` queda `purge_stale_turns: deleted=<n>`. Si un backlog grande
+corta la corrida por el soft time limit, el error dice cuántos alcanzó
+a borrar como mínimo (`al menos <n> borrados antes del corte`). Si
+llega al hard limit, el worker la mata sin log. En los dos casos lo
+borrado queda y la corrida del día siguiente sigue desde ahí.
 
 ### Cuota del proveedor agotada (429)
 
