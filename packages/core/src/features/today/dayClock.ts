@@ -58,8 +58,10 @@ export interface LocalDayWatcher {
  * Llama a `onTick` con la hora actual en cada medianoche local y, como mucho,
  * cada `MAX_DAY_CHECK_MS`. Quien lo usa decide con `pickToday` si el día cambió.
  *
- * El timer se reprograma dentro del propio tick: si dispara unos ms antes de la
- * medianoche, el próximo queda a esos ms y el cambio de día no se pierde.
+ * Cada chequeo lee la hora una sola vez y reprograma con esa misma lectura antes
+ * de avisar. Si el timer dispara unos ms antes de la medianoche, el próximo queda
+ * a esos ms y el cambio de día no se pierde; leerla dos veces podía avisar con el
+ * día anterior y reprogramar desde el nuevo, a `MAX_DAY_CHECK_MS`.
  */
 export function watchLocalDay(
   onTick: (now: Date) => void,
@@ -67,18 +69,19 @@ export function watchLocalDay(
 ): LocalDayWatcher {
   let timer: ReturnType<typeof setTimeout> | undefined;
 
-  const arm = () => {
+  const arm = (now: Date) => {
     clearTimeout(timer);
-    const wait = Math.min(msUntilNextLocalMidnight(getNow()), MAX_DAY_CHECK_MS);
+    const wait = Math.min(msUntilNextLocalMidnight(now), MAX_DAY_CHECK_MS);
     timer = setTimeout(sync, wait);
   };
 
   function sync() {
-    onTick(getNow());
-    arm();
+    const now = getNow();
+    arm(now);
+    onTick(now);
   }
 
-  arm();
+  arm(getNow());
   return {
     sync,
     stop: () => {
