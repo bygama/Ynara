@@ -153,7 +153,8 @@ celery_app.conf.beat_schedule = {
     },
 }
 
-# Autodiscovery de tasks en app.workflows.*. Hoy registra consolidation.py
-# (consolidate_turn) y decay.py (decay_procedural); ambos ya existen. Los
-# nuevos workflows que se agreguen al paquete se descubren solos.
+# Autodiscovery de tasks en app.workflows. Busca un app.workflows.tasks que no
+# existe, pero antes importa el paquete, y su __init__ importa cada módulo de
+# tasks. Un workflow nuevo NO se descubre solo: hay que sumarlo al import y al
+# __all__ de app/workflows/__init__.py (lo cubre test_task_registration.py).
 celery_app.autodiscover_tasks(packages=["app.workflows"])
