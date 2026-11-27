@@ -85,7 +85,8 @@ async def _async_purge_stale_turns(
     Con ``session`` inyectada (tests de integración) la usa y NO commitea (el fixture
     hace rollback). Sin ella (worker en prod) arma el engine ``NullPool`` y commitea por
     lote, igual que ``episodic_retention.py``. ``on_batch`` recibe las filas de cada
-    lote ya commiteado (ver ``delete_in_batches``).
+    lote después de su commit (o de su ``flush`` con la sesión inyectada; ver
+    ``delete_in_batches``).
     """
     stale = _stale_predicate(now or datetime.now(UTC))
 
@@ -118,9 +119,9 @@ def purge_stale_turns(self) -> None:  # bind=True, self no se usa (sin retry)
     Job GLOBAL sin argumentos. Fail-open: un fallo no tumba el worker y se loguea solo
     el conteo o el tipo de error, sin datos de usuario (regla #4).
 
-    Si la corrida se corta (por ejemplo, el soft time limit con un backlog grande), los
+    Si la corrida falla (por ejemplo, el soft time limit con un backlog grande), los
     lotes ya commiteados quedan borrados y el log de error dice cuántos fueron, como
-    mínimo: si el corte cae entre el commit de un lote y su conteo, ese lote no suma.
+    mínimo: si el fallo cae entre el commit de un lote y su conteo, ese lote no suma.
     """
     committed = 0
 
@@ -135,7 +136,7 @@ def purge_stale_turns(self) -> None:  # bind=True, self no se usa (sin retry)
         # logger.error (NO logger.exception): el traceback podría arrastrar contenido.
         logger.error(
             "purge_stale_turns: fallo al purgar conversation_turns: %s, al menos %d "
-            "borrados antes del corte (sin datos de usuario)",
+            "borrados antes del fallo (sin datos de usuario)",
             type(exc).__name__,
             committed,
         )
