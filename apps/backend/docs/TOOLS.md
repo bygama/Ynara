@@ -116,7 +116,9 @@
 - **Descripción**: crear una tarea o pendiente del usuario (la prioridad del día).
 - **Parámetros (tool real, espejan `TaskCreate`)**:
   - `title: str` (no vacío, máx 200 — cota LLM-fed)
-  - `scheduled_at: datetime | None` (ISO 8601 con timezone; rechaza epoch numérico; opcional)
+  - `scheduled_at: datetime | None` (ISO 8601 con timezone; rechaza epoch numérico; opcional).
+    Si el usuario dice un día, va acá y no en el título; con el día sin hora, a las
+    09:00 de ese día
   - `duration_min: int | None` (entero positivo, máx 43200 — cota LLM-fed; opcional)
 - **Habilitada en modos**: productividad (los modos con `task` en `tools_enabled`).
 - **Ejemplo**:

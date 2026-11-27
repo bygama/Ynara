@@ -95,6 +95,15 @@ class TestAgentCreateTask:
         assert payload.scheduled_at is None
         assert payload.duration_min is None
 
+    def test_schema_says_where_the_date_goes(self) -> None:
+        tool = AgentCreateTaskTool(FakeTaskStore())  # type: ignore[arg-type]
+        schema = tool.parameters
+        assert schema["required"] == ["title"]
+        scheduled = schema["properties"]["scheduled_at"]  # type: ignore[index]
+        assert "título" in scheduled["description"]
+        assert "09:00" in scheduled["description"]
+        assert "scheduled_at" in tool.description
+
     async def test_missing_title_returns_invalid_arguments(self) -> None:
         store = FakeTaskStore()
         tool = AgentCreateTaskTool(store)  # type: ignore[arg-type]
