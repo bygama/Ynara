@@ -27,6 +27,7 @@ from app.workflows import (
     decay,
     episodic_retention,
     reminder_dispatch,
+    session_idle_close,
 )
 
 __all__ = [
@@ -36,4 +37,5 @@ __all__ = [
     "decay",
     "episodic_retention",
     "reminder_dispatch",
+    "session_idle_close",
 ]

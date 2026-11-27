@@ -110,6 +110,13 @@ session=<id>` y la task termina sin error:
     -k '{"user_id": "<uuid>", "session_id": "<uuid>", "mode": "<modo>"}'
   ```
 
+Las sesiones de chat se cierran solas: el beat `close_idle_sessions` corre
+cada 5 minutos y cierra las que llevan `SESSION_IDLE_CLOSE_MINUTES` (30)
+más 15 minutos sin turnos. Cada cierre encola un `consolidate_session`, o
+sea una llamada al modelo. Cierra como mucho 100 por corrida, así que la
+primera corrida tras el deploy drena de a poco las sesiones abiertas
+viejas. En los logs de `worker` queda `close_idle_sessions: closed=<n>`.
+
 ### Cuota del proveedor agotada (429)
 
 **Síntomas.** `llm: candidato <name> descartado (LlmRateLimitError)` en

@@ -135,6 +135,13 @@ celery_app.conf.beat_schedule = {
         "task": "workflows.dispatch_due_reminders",
         "schedule": timedelta(minutes=1),
     },
+    # Cierre de sesiones de chat inactivas: cada 5 minutos cierra las que llevan
+    # SESSION_IDLE_CLOSE_MINUTES (+ un margen) sin turnos y encola su consolidacion
+    # episodica. Sin este cierre la memoria episodica no se generaba nunca.
+    "close-idle-sessions-every-5-minutes": {
+        "task": "workflows.close_idle_sessions",
+        "schedule": timedelta(minutes=5),
+    },
 }
 
 # Autodiscovery de tasks en app.workflows.*. Hoy registra consolidation.py
