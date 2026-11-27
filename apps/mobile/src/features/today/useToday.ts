@@ -1,7 +1,8 @@
-import { pickToday, watchLocalDay } from "@ynara/core/features/today";
+import { pickToday } from "@ynara/core/features/today";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { AppState } from "react-native";
+import { startTodayWatch } from "./todayWatch";
 
 /**
  * `now` de la pantalla Hoy: un `Date` que se mantiene fijo dentro del día (sin
@@ -13,23 +14,15 @@ import { AppState } from "react-native";
  *
  * Mientras el día no cambia devuelve la misma referencia, así que un chequeo
  * no re-renderiza la pantalla. La lógica de fechas y timers vive en
- * `@ynara/core` y tiene tests; este hook solo la conecta con RN.
+ * `@ynara/core` y la conexión con `AppState` en `startTodayWatch`, las dos con
+ * tests; este hook solo las monta con React.
  */
 export function useToday(): Date {
   const [today, setToday] = useState(() => new Date());
 
   const refresh = useCallback((now: Date) => setToday((prev) => pickToday(prev, now)), []);
 
-  useEffect(() => {
-    const watcher = watchLocalDay(refresh);
-    const app = AppState.addEventListener("change", (state) => {
-      if (state === "active") watcher.sync();
-    });
-    return () => {
-      app.remove();
-      watcher.stop();
-    };
-  }, [refresh]);
+  useEffect(() => startTodayWatch(refresh, AppState), [refresh]);
 
   useFocusEffect(
     useCallback(() => {
