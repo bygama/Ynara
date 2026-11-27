@@ -187,7 +187,7 @@ Para tareas con un solo archivo, va inline. Para tareas con múltiples pasos, ca
 | `apps/backend/app/memory/` | Wrappers de las 3 capas. **Tablas sagradas** (regla #3). Incluye `conversation_turns` (tabla **operativa**, no sagrada: buffer append-only cifrado, purgado al consolidar, o 8 días después del `ended_at` de su sesión si no se consolida) |
 | `apps/backend/app/services/` | Lógica de negocio — no importa de FastAPI ni de ORM directo |
 | `apps/backend/app/workers/` | Instancia Celery (`celery_app.py`): config, autodiscovery de workflows y el beat schedule de los jobs periódicos |
-| `apps/backend/app/workflows/` | Tasks Celery: consolidación de memoria (por turno y episódica al cerrar sesión), cierre de sesiones inactivas, decay procedural, retenciones (episódica, `audit_log` y turnos crudos) y envío de recordatorios. Mapa completo en `apps/backend/AGENTS.md` |
+| `apps/backend/app/workflows/` | Tasks Celery: consolidación de memoria (por turno y episódica al cerrar sesión), cierre de sesiones inactivas, decay procedural, retenciones (episódica, `audit_log` y turnos crudos) y despacho de recordatorios. Mapa completo en `apps/backend/AGENTS.md` |
 | `apps/backend/alembic/` | Migraciones — naming `YYYYMMDD_HHMM_slug`, env async |
 | `apps/backend/docs/` | Catálogos vivos: MODELS, ENDPOINTS, TOOLS, MIGRATIONS |
 | `packages/shared-types/` | Types TS compartidos web+mobile (mirror manual de Pydantic) |
