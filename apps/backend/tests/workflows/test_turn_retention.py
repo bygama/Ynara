@@ -18,10 +18,12 @@ conteos globales se asiertan con ``>=`` y lo que importa se chequea por sesión.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,6 +73,28 @@ class TestPurgeStaleTurnsTaskWrapper:
             assert purge_stale_turns() is None
             # logger.error (NO .exception): regla #4, sin traceback con posible contenido.
             mock_log.assert_called_once()
+            # Solo el tipo de error: el mensaje de la excepción no llega al log.
+            assert "RuntimeError" in mock_log.call_args.args
+            assert "DB caida" not in str(mock_log.call_args)
+
+    def test_logs_batches_committed_before_a_cut(self) -> None:
+        """Un corte a mitad de camino loguea cuántos turnos alcanzó a borrar."""
+
+        async def _cut_after_two_batches(*, on_batch: Callable[[int], None]) -> int:
+            on_batch(1000)
+            on_batch(1000)
+            raise SoftTimeLimitExceeded()
+
+        with (
+            patch(
+                "app.workflows.turn_retention._async_purge_stale_turns",
+                side_effect=_cut_after_two_batches,
+            ),
+            patch("app.workflows.turn_retention.logger.error") as mock_log,
+        ):
+            assert purge_stale_turns() is None
+            mock_log.assert_called_once()
+            assert mock_log.call_args.args[1:] == ("SoftTimeLimitExceeded", 2000)
 
 
 def test_beat_schedule_runs_daily() -> None:
@@ -173,9 +197,15 @@ async def test_batches_converge(db_session: AsyncSession) -> None:
         db_session, user_id=user.id, ended_at=_NOW - timedelta(days=30), turns=5
     )
 
-    deleted = await _async_purge_stale_turns(session=db_session, now=_NOW, batch_size=2)
+    batches: list[int] = []
+    deleted = await _async_purge_stale_turns(
+        session=db_session, now=_NOW, batch_size=2, on_batch=batches.append
+    )
 
     assert deleted >= 5
+    # Cada lote reporta sus filas y la suma coincide con el total devuelto.
+    assert len(batches) >= 3
+    assert sum(batches) == deleted
     assert await _turns_of(db_session, stale) == 0
 
 
