@@ -1,5 +1,6 @@
 export * from "./api";
 export {
+  followToday,
   isSameLocalDay,
   type LocalDayWatcher,
   MAX_DAY_CHECK_MS,
