@@ -396,6 +396,11 @@ una inexistente (sin oráculo de existencia ajena). Todas las read surfaces son
     `consolidate_session.delay()` (consolidación episódica) best-effort
     fail-open: si el broker está caído el close devuelve 200 igual. Un segundo
     cierre (idempotente) **no** re-encola.
+  - Ningún cliente lo llama hoy: las sesiones se cierran solas por inactividad. El
+    beat `close_idle_sessions` corre cada 5 minutos, cierra las que llevan
+    `SESSION_IDLE_CLOSE_MINUTES` más un margen de 15 minutos sin turnos (como mucho
+    100 por corrida), pone `ended_at` en su última actividad y encola la misma
+    consolidación episódica.
 - Response 401 (todas las rutas): sin token / token inválido (`get_current_user`).
 - Response 429 (todas las rutas): supera el rate-limit por `user_id` —
   `detail: "demasiados intentos, intente mas tarde"` (neutro) + header
