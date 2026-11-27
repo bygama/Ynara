@@ -304,3 +304,23 @@ async def test_closed_session_of_other_user_still_raises_404(db_session: AsyncSe
         await _resolve(db_session, user_id=intruder.id, cs=closed, mode=Mode.VIDA, now=now)
 
     assert exc_info.value.status_code == 404
+
+
+@pytest.mark.integration
+async def test_idle_session_with_other_mode_opens_new_instead_of_409(
+    db_session: AsyncSession,
+) -> None:
+    user = await _seed_user(db_session)
+    now = datetime.now(UTC)
+    idle = await _seed_session(
+        db_session,
+        user_id=user.id,
+        mode=Mode.ESTUDIO,
+        started_at=now - timedelta(hours=2),
+        last_turn_at=now - timedelta(hours=1),
+    )
+
+    cs = await _resolve(db_session, user_id=user.id, cs=idle, mode=Mode.VIDA, now=now)
+
+    assert cs.id != idle.id
+    assert cs.mode == Mode.VIDA
