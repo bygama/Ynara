@@ -142,6 +142,14 @@ celery_app.conf.beat_schedule = {
         "task": "workflows.close_idle_sessions",
         "schedule": timedelta(minutes=5),
     },
+    # Retención de turnos crudos: una vez por día borra los turnos de las sesiones
+    # cerradas con ended_at (su última actividad) de hace más de 8 días, que ya no se
+    # van a consolidar (las consolidadas los purgan solas). Sin este job quedaban para
+    # siempre.
+    "purge-stale-turns-daily": {
+        "task": "workflows.purge_stale_turns",
+        "schedule": timedelta(days=1),
+    },
 }
 
 # Autodiscovery de tasks en app.workflows.*. Hoy registra consolidation.py

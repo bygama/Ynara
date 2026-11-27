@@ -28,6 +28,7 @@ from app.workflows import (
     episodic_retention,
     reminder_dispatch,
     session_idle_close,
+    turn_retention,
 )
 
 __all__ = [
@@ -38,4 +39,5 @@ __all__ = [
     "episodic_retention",
     "reminder_dispatch",
     "session_idle_close",
+    "turn_retention",
 ]

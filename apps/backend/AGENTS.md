@@ -61,7 +61,7 @@ app/
 ├── llm/               # capa de inferencia — ver §3
 ├── memory/            # 🔴 wrappers de las 3 capas sagradas (M7, implementado); audit.py: AuditStore (único punto de inserción en audit_log — sagrado, no editar). Módulos neutrales (no sagrados, siblings de COMPORTAMIENTO, no tocan columnas): hashing.py (digests de audit_log: compute_record_hash + procedural_hash_payload), embedding.py (embed_one compartido), config.py (loader de thresholds de `[memory]`: decay + retention, #211), conversation_turns.py (store del buffer operativo)
 ├── workers/           # Celery (celery_app.py + beat_schedule de los jobs periódicos) — autodiscovery en app.workflows
-└── workflows/         # jobs async: consolidation, decay procedural, episodic_retention, audit_retention (purge_audit_log), reminder_dispatch, session_idle_close (cierra las sesiones inactivas y encola su consolidación episódica), agent_pass (DORMANT, ADR-022), _engine.py (worker_session NullPool compartido), _turn_marker.py (marca de turno consolidado: idempotencia de consolidate_turn)
+└── workflows/         # jobs async: consolidation, decay procedural, episodic_retention, audit_retention (purge_audit_log), reminder_dispatch, session_idle_close (cierra las sesiones inactivas y encola su consolidación episódica), turn_retention (purge_stale_turns: borra los turnos crudos de sesiones con ended_at de hace más de 8 días), agent_pass (DORMANT, ADR-022), _engine.py (worker_session NullPool compartido), _turn_marker.py (marca de turno consolidado: idempotencia de consolidate_turn)
 ```
 
 **Auth está layer-split a propósito (ADR-011).** Su superficie se reparte por capa —
