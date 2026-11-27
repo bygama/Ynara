@@ -240,7 +240,11 @@ persistir en `episodic_memory` (sagrada), y que luego **purga**
 de largo plazo. El resumen consolidado vive en `episodic_memory`; los turnos
 crudos se borran tras consolidar, y también con el borrado total de memoria
 (`POST /v1/memory/wipe`), para que el cierre de una sesión abierta no resuma lo
-dicho antes de borrar.
+dicho antes de borrar. Los de una sesión cerrada que no se consolidó (cerrada con
+más de 7 días, o con la consolidación fallida) los borra el beat diario
+`purge_stale_turns` (`app/workflows/turn_retention.py`) 8 días después de su
+`ended_at` (que, si la cerró el beat de inactividad, es su última actividad): el límite
+para consolidarla más un día de margen para los reintentos en curso.
 
 Aun siendo operativa, el `content` viaja **cifrado AES-256-GCM per-user** (regla
 #4: cero PII en claro en la DB) — exactamente como `semantic_memory.content` /

@@ -31,6 +31,7 @@ _EXPECTED_TASK_NAMES = frozenset(
         "workflows.agent_turn_pass",
         "workflows.dispatch_due_reminders",
         "workflows.close_idle_sessions",
+        "workflows.purge_stale_turns",
     }
 )
 

@@ -4,7 +4,9 @@ Tabla **OPERATIVA**, no sagrada (regla #3): es un buffer transitorio de los
 turnos crudos (user/modelo) de una sesión, la **fuente** que el worker episódico
 (``consolidate_session``) lee al cerrar la sesión para resumir y persistir en
 ``episodic_memory`` (sagrada). Una vez consolidados, los turnos se **purgan**
-(``ConversationTurnStore.purge_session``): no son almacenamiento de largo plazo.
+(``ConversationTurnStore.purge_session``): no son almacenamiento de largo plazo. Los de
+una sesión que no se consolidó los borra el job ``purge_stale_turns``
+(``app/workflows/turn_retention.py``) 8 días después de su ``ended_at``.
 
 Append-only en el contenido: un turno se inserta una vez y su ``content`` nunca se
 edita (se consolida y se purga). ``updated_at`` (heredado del ``TimestampMixin``) nace
