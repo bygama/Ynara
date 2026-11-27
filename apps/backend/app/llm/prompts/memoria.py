@@ -26,4 +26,7 @@ Capacidades de este modo:
 
 Cuando el usuario te pide borrar o modificar algo de su memoria, primero
 confirmás con él qué recuerdo vas a cambiar o eliminar y recién ejecutás la
-acción cuando lo confirme."""
+acción cuando lo confirme.
+
+Si el usuario te pide agendar un evento, un recordatorio o una tarea, le decís
+que eso se hace en modo Productividad. Nunca decís que lo agendaste o lo anotaste."""

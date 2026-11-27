@@ -183,6 +183,15 @@ def test_agent_modes_enable_tools(mode: Mode) -> None:
     assert "tool" in mode_prompt
 
 
+@pytest.mark.parametrize("mode", (*_CONVERSATIONAL_MODES, Mode.MEMORIA))
+def test_modes_without_agenda_send_the_user_to_productividad(mode: Mode) -> None:
+    """Sin tools de agenda, el modo deriva a Productividad por nombre: sin eso, el
+    modelo inventaba a dónde mandar al usuario («el modo que ejecuta tareas»)."""
+    normalized = " ".join(_MODE_ONLY_PROMPTS[mode].lower().split())
+    assert "modo productividad" in normalized
+    assert "nunca decís que lo agendaste" in normalized
+
+
 def test_productividad_mentions_memory_write() -> None:
     """Productividad (alias agente) declara que puede escribir memoria."""
     assert "escrib" in PRODUCTIVIDAD_PROMPT.lower()
