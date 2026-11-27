@@ -113,9 +113,13 @@ session=<id>` y la task termina sin error:
 Las sesiones de chat se cierran solas: el beat `close_idle_sessions` corre
 cada 5 minutos y cierra las que llevan `SESSION_IDLE_CLOSE_MINUTES` (30)
 más 15 minutos sin turnos. Cada cierre encola un `consolidate_session`, o
-sea una llamada al modelo. Cierra como mucho 100 por corrida, así que la
-primera corrida tras el deploy drena de a poco las sesiones abiertas
-viejas. En los logs de `worker` queda `close_idle_sessions: closed=<n>`.
+sea una llamada al modelo, salvo las sesiones sin turnos y las que
+terminaron hace más de 7 días, que se cierran sin episodio: no cuentan
+en el `backlog` y no se reencolan, porque el episodio se fecharía hoy y
+volvería como un recuerdo reciente. Cierra como mucho 100 por corrida,
+así que la primera corrida tras el deploy drena de a poco las sesiones
+abiertas viejas. En los logs de `worker` queda
+`close_idle_sessions: closed=<n>`.
 
 ### Cuota del proveedor agotada (429)
 

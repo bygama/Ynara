@@ -400,7 +400,9 @@ una inexistente (sin oráculo de existencia ajena). Todas las read surfaces son
     beat `close_idle_sessions` corre cada 5 minutos, cierra las que llevan
     `SESSION_IDLE_CLOSE_MINUTES` más un margen de 15 minutos sin turnos (como mucho
     100 por corrida), pone `ended_at` en su última actividad y encola la misma
-    consolidación episódica.
+    consolidación episódica. No la encola si la sesión no tiene turnos (no hay nada que
+    resumir) ni si terminó hace más de 7 días: el episodio se fecharía hoy y volvería
+    como reciente con una ventana de retención entera.
 - Response 401 (todas las rutas): sin token / token inválido (`get_current_user`).
 - Response 429 (todas las rutas): supera el rate-limit por `user_id` —
   `detail: "demasiados intentos, intente mas tarde"` (neutro) + header

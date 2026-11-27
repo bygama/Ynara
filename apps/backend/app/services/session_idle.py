@@ -21,21 +21,32 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.llm.clients.factory import PROVIDER_TOTAL_BUDGET_S
+from app.llm.tool_loop import MAX_TOOL_ITERATIONS
 from app.models.conversation_turn import ConversationTurn
 from app.models.session import ChatSession
 
 # Margen del beat por encima del umbral de inactividad. ``resolve_chat_session`` deja de
 # usar una sesión apenas vence el umbral, pero un turno aceptado justo antes puede tardar
 # en commitear sus filas (llamada al modelo + tools). El beat espera este margen extra para
-# no cerrar, y consolidar, una sesión cuyo último turno todavía no se escribió. Cubre el
-# peor caso de un turno: 6 llamadas al modelo (MAX_TOOL_ITERATIONS + la final), cada una
-# con 3 intentos de 20 s (PROVIDER_REQUEST_TIMEOUT_S), y el fallback a un segundo
-# proveedor: unos 12 minutos.
-CLOSE_GRACE = timedelta(minutes=15)
+# no cerrar, y consolidar, una sesión cuyo último turno todavía no se escribió.
+#
+# El peor caso de un turno son MAX_TOOL_ITERATIONS + 1 llamadas al modelo (las vueltas de
+# tools más la respuesta final), cada una acotada por PROVIDER_TOTAL_BUDGET_S con
+# reintentos y fallback incluidos: 6 x 90 s = 9 minutos. La holgura cubre la recuperación
+# de memoria (embeddings) y la escritura del turno.
+WORST_TURN = timedelta(seconds=(MAX_TOOL_ITERATIONS + 1) * PROVIDER_TOTAL_BUDGET_S)
+CLOSE_GRACE = WORST_TURN + timedelta(minutes=6)
+
+# Antigüedad máxima de una sesión cerrada para consolidarla. El episodio nace con fecha de
+# hoy y su retención se cuenta desde que se crea: resumir una conversación de hace meses
+# la haría volver como reciente y vivir otra ventana de retención entera. El beat no
+# encola las más viejas y el backlog de admin no las cuenta (no hay que reencolarlas).
+CONSOLIDATION_MAX_AGE = timedelta(days=7)
 
 
 def idle_threshold(idle_minutes: int | None = None) -> timedelta:
@@ -65,6 +76,18 @@ def last_activity_expr() -> ColumnElement[datetime]:
     return func.coalesce(latest_turn, ChatSession.started_at)
 
 
+def has_turns_expr() -> ColumnElement[bool]:
+    """``EXISTS`` correlacionado: la fila de ``sessions`` tiene turnos sin consolidar."""
+    return (
+        exists()
+        .where(
+            ConversationTurn.user_id == ChatSession.user_id,
+            ConversationTurn.session_id == ChatSession.id,
+        )
+        .correlate(ChatSession)
+    )
+
+
 async def last_activity(session: AsyncSession, chat_session: ChatSession) -> datetime:
     """Última actividad de ``chat_session``: su turno más reciente o su ``started_at``.
 
@@ -88,6 +111,9 @@ async def is_idle(
 
 __all__ = [
     "CLOSE_GRACE",
+    "CONSOLIDATION_MAX_AGE",
+    "WORST_TURN",
+    "has_turns_expr",
     "idle_threshold",
     "is_idle",
     "last_activity",
