@@ -16,7 +16,9 @@
       "!**/.turbo",
       "!**/.expo",
       "!**/public",
-      "!apps/backend"
+      "!apps/backend",
+      "!.claude/skills/impeccable",
+      "!docs/prototypes/demo"
     ]
   },
   "formatter": {
