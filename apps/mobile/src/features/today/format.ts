@@ -48,19 +48,41 @@ export function formatClock(date: Date): string {
   return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 }
 
+const DAY_MS = 86_400_000;
+
+function startOfDay(date: Date): number {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
+
+/** "Mañana", "Ayer", "Viernes 27" o "Viernes 4 de diciembre"; `null` si es el día de `now`. */
+export function formatTaskDay(date: Date, now: Date): string | null {
+  // `round`: un día con cambio de horario no mide 24 h exactas.
+  const diff = Math.round((startOfDay(date) - startOfDay(now)) / DAY_MS);
+  if (diff === 0) return null;
+  if (diff === 1) return "Mañana";
+  if (diff === -1) return "Ayer";
+  const day = `${WEEKDAYS[date.getDay()]} ${date.getDate()}`;
+  const sameMonth = date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+  return sameMonth ? day : `${day} de ${MONTHS[date.getMonth()]}`;
+}
+
 /**
  * Meta de una prioridad bajo el título:
  *  - hecha → "09:15 · completada" (o sólo "completada" si no tiene horario).
  *  - pendiente → "14:00 · 45 min" (horario y/o duración, lo que haya).
+ *  - con horario en otro día → el día adelante: "Mañana · 09:00", "Viernes 27 ·
+ *    09:00". Hoy lista todas las tareas, no solo las de hoy, y sin el día una
+ *    tarea del viernes parecía de hoy.
  *
  * Devuelve `""` si no hay nada que mostrar (pendiente sin horario ni duración):
  * el caller decide no renderizar la meta.
  */
-export function formatTaskMeta(task: Task): string {
-  const clock = task.scheduled_at ? formatClock(new Date(task.scheduled_at)) : null;
+export function formatTaskMeta(task: Task, now: Date): string {
+  const at = task.scheduled_at ? new Date(task.scheduled_at) : null;
+  const when = at ? [formatTaskDay(at, now), formatClock(at)] : [];
   if (task.status === "done") {
-    return clock ? `${clock} · completada` : "completada";
+    return [...when, "completada"].filter(Boolean).join(" · ");
   }
   const duration = task.duration_min !== null ? `${task.duration_min} min` : null;
-  return [clock, duration].filter(Boolean).join(" · ");
+  return [...when, duration].filter(Boolean).join(" · ");
 }

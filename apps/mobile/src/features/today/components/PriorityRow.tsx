@@ -6,6 +6,8 @@ import { formatTaskMeta } from "../format";
 
 type Props = {
   task: Task;
+  /** Para decir el día cuando la tarea no es de hoy. */
+  now: Date;
   onToggle: (task: Task) => void;
   /** La primera fila no lleva borde superior (el separador va entre filas). */
   first: boolean;
@@ -18,9 +20,9 @@ type Props = {
  * toggle es optimista (lo maneja el hook en la sección). RN no soporta
  * `divide-y`, así que el separador es un `border-t` por fila salvo la primera.
  */
-export function PriorityRow({ task, onToggle, first }: Props) {
+export function PriorityRow({ task, now, onToggle, first }: Props) {
   const done = task.status === "done";
-  const meta = formatTaskMeta(task);
+  const meta = formatTaskMeta(task, now);
   return (
     <View className={cn("flex-row items-start gap-3 py-3.5", !first && "border-t border-border")}>
       <Pressable

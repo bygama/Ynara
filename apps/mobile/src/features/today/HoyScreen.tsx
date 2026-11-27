@@ -38,7 +38,7 @@ export function HoyScreen() {
             onPressMode={() => setModePickerOpen(true)}
             now={now}
           />
-          <PrioritiesSection />
+          <PrioritiesSection now={now} />
           <SuggestionsSection />
           <RecapSection />
         </ScrollView>
