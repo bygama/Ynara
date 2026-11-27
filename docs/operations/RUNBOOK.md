@@ -98,7 +98,8 @@ session=<id>` y la task termina sin error:
   hechos ni preferencias, pero el resumen episódico de la sesión lo
   cubre.
 - `consolidate_session` sí: lleva solo ids, es idempotente (un episodio por
-  sesión) y los turnos crudos no se purgan hasta que el episodio se crea.
+  sesión) y los turnos crudos no se purgan hasta que el episodio se crea o
+  pasan 8 días desde el `ended_at` de la sesión (ver abajo).
   Las sesiones cerradas sin episodio se cuentan en el `backlog` de
   consolidación (panel admin → Salud del Moat). Cuando el proveedor
   vuelva, reencolar cada una con el `mode` de su fila en `sessions` (de él
@@ -120,6 +121,16 @@ volvería como un recuerdo reciente. Cierra como mucho 100 por corrida,
 así que la primera corrida tras el deploy drena de a poco las sesiones
 abiertas viejas. En los logs de `worker` queda
 `close_idle_sessions: closed=<n>`.
+
+Los turnos crudos de una sesión se borran al consolidarla. Los de las
+que no se consolidaron (más de 7 días al cerrarse, o con la
+consolidación fallida) los borra el beat diario `purge_stale_turns`
+8 días después del `ended_at`, que en un cierre por inactividad es la
+última actividad, no la hora del cierre: pasado ese plazo la sesión ya
+no se puede reencolar. **En el primer deploy**, eso significa que las
+conversaciones cuya última actividad tiene más de 8 días pierden sus
+turnos crudos sin episodio en la primera corrida. En los logs de
+`worker` queda `purge_stale_turns: deleted=<n>`.
 
 ### Cuota del proveedor agotada (429)
 
