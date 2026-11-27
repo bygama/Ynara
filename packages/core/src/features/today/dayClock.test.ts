@@ -1,0 +1,147 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  isSameLocalDay,
+  MAX_DAY_CHECK_MS,
+  msUntilNextLocalMidnight,
+  pickToday,
+  watchLocalDay,
+} from "./dayClock";
+
+// Fechas armadas con el constructor local (new Date(y, m, d, h, min)) y
+// aserciones sobre getDate()/getHours(): el resultado no depende de la TZ del
+// runner. Jueves 7 de mayo de 2026, sin cambio de horario cerca en ninguna TZ.
+const at = (d: number, h: number, min = 0, s = 0) => new Date(2026, 4, d, h, min, s);
+
+describe("isSameLocalDay / pickToday", () => {
+  it("mismo día de punta a punta; la medianoche ya es otro", () => {
+    expect(isSameLocalDay(at(7, 0, 0), at(7, 23, 59, 59))).toBe(true);
+    expect(isSameLocalDay(at(7, 23, 59, 59), at(8, 0, 0))).toBe(false);
+    // Mismo número de día en otro mes u otro año no es el mismo día.
+    expect(isSameLocalDay(at(7, 10), new Date(2026, 5, 7, 10))).toBe(false);
+    expect(isSameLocalDay(at(7, 10), new Date(2027, 4, 7, 10))).toBe(false);
+  });
+
+  it("pickToday devuelve la misma referencia en el mismo día y la nueva si cambió", () => {
+    const prev = at(7, 9);
+    expect(pickToday(prev, at(7, 22))).toBe(prev);
+    const fresh = at(8, 0, 0, 1);
+    expect(pickToday(prev, fresh)).toBe(fresh);
+  });
+});
+
+describe("msUntilNextLocalMidnight", () => {
+  it("cuenta lo que falta para las 00:00 del día siguiente", () => {
+    expect(msUntilNextLocalMidnight(at(7, 23, 59, 30))).toBe(30_000);
+    expect(msUntilNextLocalMidnight(at(7, 23, 0))).toBe(60 * 60 * 1000);
+  });
+
+  it("cae en el primer instante del día siguiente todos los días del año", () => {
+    // Si la TZ del runner tiene horario de verano, alguno de estos días dura
+    // 23 o 25 h y sumar 24 h fijo fallaría. No se asume que el día arranque a
+    // las 00:00: en Chile el cambio es a medianoche y ese día empieza a la 01:00.
+    for (let day = 0; day < 366; day++) {
+      const noon = new Date(2026, 0, 1 + day, 12, 0);
+      const next = new Date(noon.getTime() + msUntilNextLocalMidnight(noon));
+      const tomorrow = new Date(2026, 0, 2 + day, 12, 0);
+      expect(isSameLocalDay(next, tomorrow)).toBe(true);
+      expect(isSameLocalDay(new Date(next.getTime() - 1), noon)).toBe(true);
+    }
+  });
+});
+
+describe("watchLocalDay", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("avisa justo al cruzar la medianoche, no antes", () => {
+    vi.setSystemTime(at(7, 23, 59, 30));
+    const onTick = vi.fn();
+    const watcher = watchLocalDay(onTick);
+
+    vi.advanceTimersByTime(29_999);
+    expect(onTick).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    expect(onTick).toHaveBeenCalledTimes(1);
+    const now = onTick.mock.calls[0]?.[0] as Date;
+    expect(now.getDate()).toBe(8);
+    expect(now.getHours()).toBe(0);
+    watcher.stop();
+  });
+
+  it("se reprograma solo: también cruza la medianoche siguiente", () => {
+    vi.setSystemTime(at(7, 23, 59, 30));
+    const days: number[] = [];
+    const watcher = watchLocalDay((now) => days.push(now.getDate()));
+
+    vi.advanceTimersByTime(30_000 + 24 * 60 * 60 * 1000);
+    expect(days[0]).toBe(8);
+    expect(days.at(-1)).toBe(9);
+    watcher.stop();
+  });
+
+  it("lejos de la medianoche chequea cada MAX_DAY_CHECK_MS", () => {
+    vi.setSystemTime(at(7, 10));
+    const onTick = vi.fn();
+    const watcher = watchLocalDay(onTick);
+
+    vi.advanceTimersByTime(MAX_DAY_CHECK_MS - 1);
+    expect(onTick).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onTick).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(MAX_DAY_CHECK_MS);
+    expect(onTick).toHaveBeenCalledTimes(2);
+    watcher.stop();
+  });
+
+  it("si el timer dispara antes de la medianoche, reprograma lo que falta", () => {
+    // El timer se programa con el reloj en hora y después el reloj se atrasa
+    // 5 ms: cuando el timer llega a la medianoche, `getNow` todavía dice
+    // 23:59:59.995.
+    vi.setSystemTime(at(7, 23, 59, 30));
+    let lagMs = 0;
+    const days: number[] = [];
+    const watcher = watchLocalDay(
+      (now) => days.push(now.getDate()),
+      () => new Date(Date.now() - lagMs),
+    );
+    lagMs = 5;
+
+    vi.advanceTimersByTime(30_000);
+    expect(days).toEqual([7]);
+    vi.advanceTimersByTime(5);
+    expect(days).toEqual([7, 8]);
+    watcher.stop();
+  });
+
+  it("sync avisa en el momento y reprograma desde la hora real", () => {
+    vi.setSystemTime(at(7, 10));
+    const onTick = vi.fn();
+    const watcher = watchLocalDay(onTick);
+
+    // El reloj saltó (la máquina estuvo suspendida) sin que corrieran timers.
+    vi.setSystemTime(at(8, 7));
+    watcher.sync();
+    expect(onTick).toHaveBeenCalledTimes(1);
+    expect((onTick.mock.calls[0]?.[0] as Date).getDate()).toBe(8);
+    expect(vi.getTimerCount()).toBe(1);
+    watcher.stop();
+  });
+
+  it("stop cancela el timer pendiente", () => {
+    vi.setSystemTime(at(7, 23, 59, 30));
+    const onTick = vi.fn();
+    const watcher = watchLocalDay(onTick);
+    expect(vi.getTimerCount()).toBe(1);
+
+    watcher.stop();
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(60_000);
+    expect(onTick).not.toHaveBeenCalled();
+  });
+});
