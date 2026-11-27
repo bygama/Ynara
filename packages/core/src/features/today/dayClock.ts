@@ -1,7 +1,8 @@
 /**
- * Reloj de día local de la pantalla Hoy. El header (`formatHoyDate`) y el día
- * de cada prioridad (`formatTaskDay`: «Mañana», «Ayer») se calculan contra un
- * `now`; si la pantalla queda abierta pasada la medianoche, ese `now` tiene que
+ * Reloj de día local de las vistas que muestran «hoy» (Hoy y Agenda). El
+ * header de Hoy (`formatHoyDate`), el día de cada prioridad (`formatTaskDay`:
+ * «Mañana», «Ayer») y el día resaltado de Agenda se calculan contra un `now`;
+ * si la vista queda abierta pasada la medianoche, ese `now` tiene que
  * avanzar al día nuevo. Dentro del mismo día no cambia, así los textos no se
  * recalculan ni se mueven sin motivo, salvo en las horas de corte que pida quien
  * lo usa (`cutHours`: el saludo de web cambia a las 12 y a las 20).
@@ -69,6 +70,18 @@ export function pickToday(prev: Date, fresh: Date, cutHours: readonly number[] =
   const sameSpan =
     isSameLocalDay(prev, fresh) && cutsPassed(prev, cutHours) === cutsPassed(fresh, cutHours);
   return sameSpan ? prev : fresh;
+}
+
+/**
+ * El día en foco de una vista navegable (Agenda) cuando su `now` pasa de
+ * `prevToday` a `today`. Si el foco estaba en el «hoy» viejo, sigue al día
+ * nuevo: la vista que nadie tocó no se queda mostrando ayer. Si la persona había
+ * navegado a otro día, se respeta. Sin cambio de día devuelve `anchor` (misma
+ * referencia).
+ */
+export function followToday(anchor: Date, prevToday: Date, today: Date): Date {
+  if (isSameLocalDay(prevToday, today)) return anchor;
+  return isSameLocalDay(anchor, prevToday) ? today : anchor;
 }
 
 export interface LocalDayWatcher {

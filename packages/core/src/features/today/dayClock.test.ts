@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  followToday,
   isSameLocalDay,
   MAX_DAY_CHECK_MS,
   msUntilNextLocalCut,
@@ -85,6 +86,29 @@ describe("isSameLocalDay / pickToday", () => {
     // Mismo tramo pero otro día: cambia igual.
     const nextMorning = at(8, 9);
     expect(pickToday(morning, nextMorning, cuts)).toBe(nextMorning);
+  });
+});
+
+describe("followToday", () => {
+  it("si el foco estaba en el hoy viejo, pasa al día nuevo", () => {
+    const prevToday = at(7, 9);
+    const today = at(8, 0, 0, 1);
+    expect(followToday(at(7, 15), prevToday, today)).toBe(today);
+  });
+
+  it("si la persona navegó a otro día, lo respeta", () => {
+    const prevToday = at(7, 9);
+    const today = at(8, 0, 0, 1);
+    const yesterday = at(6, 9);
+    const nextWeek = at(14, 9);
+    expect(followToday(yesterday, prevToday, today)).toBe(yesterday);
+    expect(followToday(nextWeek, prevToday, today)).toBe(nextWeek);
+  });
+
+  it("sin cambio de día deja el foco igual, aunque sea el de hoy", () => {
+    const anchor = at(7, 9);
+    // Un corte dentro del día (el saludo de web) cambia `now` pero no el día.
+    expect(followToday(anchor, at(7, 9), at(7, 12))).toBe(anchor);
   });
 });
 
