@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   isSameLocalDay,
   MAX_DAY_CHECK_MS,
+  msUntilNextLocalCut,
   msUntilNextLocalMidnight,
   pickToday,
   watchLocalDay,
@@ -27,6 +28,20 @@ describe("isSameLocalDay / pickToday", () => {
     const fresh = at(8, 0, 0, 1);
     expect(pickToday(prev, fresh)).toBe(fresh);
   });
+
+  it("con horas de corte, cambia al cruzar un corte y no dentro del tramo", () => {
+    const cuts = [12, 20];
+    const morning = at(7, 9);
+    expect(pickToday(morning, at(7, 11, 59, 59), cuts)).toBe(morning);
+    const noon = at(7, 12);
+    expect(pickToday(morning, noon, cuts)).toBe(noon);
+    expect(pickToday(noon, at(7, 19, 59, 59), cuts)).toBe(noon);
+    const evening = at(7, 20);
+    expect(pickToday(noon, evening, cuts)).toBe(evening);
+    // Mismo tramo pero otro día: cambia igual.
+    const nextMorning = at(8, 9);
+    expect(pickToday(morning, nextMorning, cuts)).toBe(nextMorning);
+  });
 });
 
 describe("msUntilNextLocalMidnight", () => {
@@ -46,6 +61,19 @@ describe("msUntilNextLocalMidnight", () => {
       expect(isSameLocalDay(next, tomorrow)).toBe(true);
       expect(isSameLocalDay(new Date(next.getTime() - 1), noon)).toBe(true);
     }
+  });
+});
+
+describe("msUntilNextLocalCut", () => {
+  it("sin horas de corte es la medianoche", () => {
+    expect(msUntilNextLocalCut(at(7, 10))).toBe(msUntilNextLocalMidnight(at(7, 10)));
+  });
+
+  it("toma el corte más cercano que todavía no pasó", () => {
+    const cuts = [12, 20];
+    expect(msUntilNextLocalCut(at(7, 11, 59, 30), cuts)).toBe(30_000);
+    expect(msUntilNextLocalCut(at(7, 12), cuts)).toBe(8 * 60 * 60 * 1000);
+    expect(msUntilNextLocalCut(at(7, 23, 59, 30), cuts)).toBe(30_000);
   });
 });
 
@@ -138,6 +166,18 @@ describe("watchLocalDay", () => {
     vi.advanceTimersByTime(1);
     expect(days).toEqual([7, 8]);
     expect(getNow).toHaveBeenCalledTimes(3);
+    watcher.stop();
+  });
+
+  it("con horas de corte, avisa justo en cada corte", () => {
+    vi.setSystemTime(at(7, 11, 59, 30));
+    const hours: number[] = [];
+    const watcher = watchLocalDay((now) => hours.push(now.getHours()), undefined, [12]);
+
+    vi.advanceTimersByTime(29_999);
+    expect(hours).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(hours).toEqual([12]);
     watcher.stop();
   });
 
