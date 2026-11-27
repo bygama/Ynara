@@ -9,6 +9,7 @@ import { HoyHeader } from "./components/HoyHeader";
 import { PrioritiesSection } from "./components/PrioritiesSection";
 import { RecapSection } from "./components/RecapSection";
 import { SuggestionsSection } from "./components/SuggestionsSection";
+import { useToday } from "./useToday";
 
 /**
  * Pantalla **Hoy** (mobile) — la home real post-onboarding (wireframe 06):
@@ -18,14 +19,16 @@ import { SuggestionsSection } from "./components/SuggestionsSection";
  *
  * El modo activo tinta el header y sale del store de modo global
  * (`useActiveMode`): el override del selector, o el primer modo del onboarding.
- * Tocar el chip de modo abre el selector. `now` se fija una vez por montaje
- * para anclar sin drift la fecha del header y el día de cada prioridad.
+ * Tocar el chip de modo abre el selector. `now` sale de `useToday`: fijo dentro
+ * del día (sin drift en la fecha del header ni en el día de cada prioridad) y
+ * al día siguiente si la pantalla queda montada pasada la medianoche, que en
+ * mobile es lo normal porque las tabs no se desmontan.
  */
 export function HoyScreen() {
   const displayName = useUserStore((s) => s.displayName);
   const activeMode = useActiveMode();
   const [modePickerOpen, setModePickerOpen] = useState(false);
-  const [now] = useState(() => new Date());
+  const now = useToday();
 
   return (
     <View className="flex-1 bg-bg-canvas">

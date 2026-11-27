@@ -1,0 +1,41 @@
+import { pickToday, watchLocalDay } from "@ynara/core/features/today";
+import { useFocusEffect } from "expo-router";
+import { useCallback, useEffect, useState } from "react";
+import { AppState } from "react-native";
+
+/**
+ * `now` de la pantalla Hoy: un `Date` que se mantiene fijo dentro del día (sin
+ * drift en el header ni en el día de cada prioridad) y avanza cuando cambia el
+ * día local. Las tabs quedan montadas, así que Hoy puede seguir viva días
+ * enteros: lo refrescan la medianoche (`watchLocalDay`), la vuelta de la app a
+ * primer plano (`AppState`, cubre el timer frenado en segundo plano) y el foco
+ * de la tab.
+ *
+ * Mientras el día no cambia devuelve la misma referencia, así que un chequeo
+ * no re-renderiza la pantalla. La lógica de fechas y timers vive en
+ * `@ynara/core` y tiene tests; este hook solo la conecta con RN.
+ */
+export function useToday(): Date {
+  const [today, setToday] = useState(() => new Date());
+
+  const refresh = useCallback((now: Date) => setToday((prev) => pickToday(prev, now)), []);
+
+  useEffect(() => {
+    const watcher = watchLocalDay(refresh);
+    const app = AppState.addEventListener("change", (state) => {
+      if (state === "active") watcher.sync();
+    });
+    return () => {
+      app.remove();
+      watcher.stop();
+    };
+  }, [refresh]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refresh(new Date());
+    }, [refresh]),
+  );
+
+  return today;
+}
