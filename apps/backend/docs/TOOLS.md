@@ -67,9 +67,11 @@
 - **Parámetros (tool real, espejan `EventCreate`)**:
   - `title: str` (no vacío)
   - `start_at: datetime` (ISO 8601 con timezone; rechaza epoch numérico)
-  - `duration_min: int` (entero positivo; el fin del bloque es derivado; opcional:
-    si no viene, 60, así el modelo no frena el turno para preguntarla)
+  - `duration_min: int | None` (entero positivo, como mucho 43200, un mes; el fin del
+    bloque es derivado; si no viene o viene `null`, 60, o 1440 con `all_day`, así el
+    modelo no frena el turno para preguntarla)
   - `mode: str | None` (uno de los modos; opcional)
+  - `all_day: bool` (día completo; default `false`)
   - `location: str | None`
   - `time_zone: str | None`
   - `recurrence: list[str] | None` (RRULE; si no vacía, exige `time_zone` — ADR-023)

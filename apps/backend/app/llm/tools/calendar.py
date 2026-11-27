@@ -22,8 +22,9 @@ tool tiene efecto, decidido por QUÉ registry se arma (default observado vs
 calendar real), igual que memory.* (stub en default, real en memory_registry).
 
 Args reales que espejan ``EventCreate`` (``app/schemas/calendar_event.py``):
-``title`` / ``start_at`` (+ ``duration_min``, 60 si no viene, y ``mode`` /
-``location`` / ``time_zone`` / ``recurrence`` opcionales). La invariante ADR-023
+``title`` / ``start_at`` (+ ``duration_min``, que si no viene vale 60, o 1440 con
+``all_day``, y ``mode`` / ``all_day`` / ``location`` / ``time_zone`` / ``recurrence``
+opcionales). La invariante ADR-023
 (``recurrence`` ⇒ ``time_zone``) se reusa del schema de dominio (un solo lugar).
 
 El JSON Schema OpenAI de cada tool se deriva del propio modelo Pydantic
@@ -63,8 +64,10 @@ _NAMESPACE = "calendar"
 _DETAIL = "calendar backend pendiente"
 
 # Duración de un evento que el usuario agenda sin decir cuánto dura. Con la duración
-# obligatoria, el modelo frenaba el turno para preguntarla o la inventaba.
+# obligatoria, el modelo frenaba el turno para preguntarla o la inventaba. Un evento de
+# día completo cuenta su duración en días (ADR-023), así que sin duración dura uno.
 DEFAULT_EVENT_DURATION_MIN = 60
+ALL_DAY_EVENT_DURATION_MIN = 1440
 
 
 class _CreateEventArgs(BaseModel):
@@ -155,10 +158,12 @@ class ListEventsTool:
 class _AgentCreateEventArgs(BaseModel):
     """Argumentos REALES de ``calendar.create_event`` — espejan ``EventCreate``.
 
-    Mismo contrato de dominio que ``POST /v1/events`` (``app/schemas/calendar_event.py``):
+    Construyen el ``EventCreate`` de ``POST /v1/events`` (``app/schemas/calendar_event.py``):
     ``title`` no vacío + ``start_at`` (ISO 8601, vía ``IsoDatetime`` que rechaza
-    epoch numérico) + ``duration_min`` entero positivo, con ``mode`` / ``location`` /
-    ``time_zone`` / ``recurrence`` opcionales. ``status`` NO se acepta (lo fija el
+    epoch numérico), con ``duration_min`` / ``mode`` / ``all_day`` / ``location`` /
+    ``time_zone`` / ``recurrence`` opcionales. A diferencia del endpoint, ``duration_min``
+    puede faltar (o venir ``null``): vale ``DEFAULT_EVENT_DURATION_MIN``, o
+    ``ALL_DAY_EVENT_DURATION_MIN`` con ``all_day``. ``status`` NO se acepta (lo fija el
     store en ``confirmed``). La invariante ADR-023 (``recurrence`` ⇒ ``time_zone``)
     se valida con la MISMA función del schema de dominio (un solo lugar).
 
@@ -187,17 +192,14 @@ class _AgentCreateEventArgs(BaseModel):
     start_at: IsoDatetime
     # 43200 = un mes en minutos (30 días * 24h * 60min): cota razonable para un único
     # bloque de evento; sigue ``gt=0`` (entero positivo, mismo piso que ``EventCreate``).
-    duration_min: Annotated[
-        int,
-        Field(
-            gt=0,
-            le=43200,
-            description=(
-                "Duración en minutos. Si el usuario no la dice, no la mandes: "
-                f"vale {DEFAULT_EVENT_DURATION_MIN}."
-            ),
+    # ``None`` (ausente o ``null`` explícito) lo completa ``_fill_default_duration``.
+    duration_min: Annotated[int, Field(gt=0, le=43200)] | None = Field(
+        default=None,
+        description=(
+            "Duración en minutos. Si el usuario no la dice, no la mandes: vale "
+            f"{DEFAULT_EVENT_DURATION_MIN}, o {ALL_DAY_EVENT_DURATION_MIN} si es all_day."
         ),
-    ] = DEFAULT_EVENT_DURATION_MIN
+    )
     mode: Mode | None = None
     # Eventos de día completo (cumpleaños / feriados): el agente puede agendarlos.
     # Default ``False``, mismo piso que ``EventCreate.all_day``.
@@ -231,6 +233,14 @@ class _AgentCreateEventArgs(BaseModel):
                     "time_zone debe ser un identificador IANA válido.",
                 ) from None
         return v
+
+    @model_validator(mode="after")
+    def _fill_default_duration(self) -> _AgentCreateEventArgs:
+        if self.duration_min is None:
+            self.duration_min = (
+                ALL_DAY_EVENT_DURATION_MIN if self.all_day else DEFAULT_EVENT_DURATION_MIN
+            )
+        return self
 
     @model_validator(mode="after")
     def _check_recurrence_time_zone(self) -> _AgentCreateEventArgs:
@@ -286,7 +296,8 @@ class AgentCreateEventTool:
     namespace = _NAMESPACE
     description = (
         "Agenda un evento en el calendario del usuario. Si no dice cuánto dura, "
-        f"dura {DEFAULT_EVENT_DURATION_MIN} minutos: no hace falta preguntarlo."
+        f"dura {DEFAULT_EVENT_DURATION_MIN} minutos, o el día entero si es all_day: "
+        "no hace falta preguntarlo."
     )
 
     def __init__(self, store: CalendarEventStore) -> None:

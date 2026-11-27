@@ -24,6 +24,7 @@ from typing import Any
 
 from app.enums import Mode
 from app.llm.tools.calendar import (
+    ALL_DAY_EVENT_DURATION_MIN,
     DEFAULT_EVENT_DURATION_MIN,
     AgentCreateEventTool,
     AgentListEventsTool,
@@ -100,12 +101,34 @@ class TestAgentCreateEvent:
         assert "error" not in result
         assert store.create_calls[0].duration_min == DEFAULT_EVENT_DURATION_MIN == 60
 
-    def test_schema_leaves_duration_optional_and_says_its_default(self) -> None:
+    async def test_null_duration_defaults_to_an_hour(self) -> None:
+        store = FakeCalendarStore()
+        tool = AgentCreateEventTool(store)  # type: ignore[arg-type]
+
+        result = await tool.execute(
+            {"title": "Clase de yoga", "start_at": _VALID_START, "duration_min": None}
+        )
+
+        assert "error" not in result
+        assert store.create_calls[0].duration_min == 60
+
+    async def test_all_day_without_duration_lasts_a_day(self) -> None:
+        store = FakeCalendarStore()
+        tool = AgentCreateEventTool(store)  # type: ignore[arg-type]
+
+        result = await tool.execute(
+            {"title": "Cumpleaños de Ana", "start_at": _VALID_START, "all_day": True}
+        )
+
+        assert "error" not in result
+        assert store.create_calls[0].duration_min == ALL_DAY_EVENT_DURATION_MIN == 1440
+
+    def test_schema_leaves_duration_optional_and_says_its_defaults(self) -> None:
         schema = AgentCreateEventTool(FakeCalendarStore()).parameters  # type: ignore[arg-type]
         assert schema["required"] == ["title", "start_at"]
         duration = schema["properties"]["duration_min"]  # type: ignore[index]
-        assert duration["default"] == 60
         assert "60" in duration["description"]
+        assert "1440" in duration["description"]
 
     async def test_minimal_args_ok(self) -> None:
         store = FakeCalendarStore()
