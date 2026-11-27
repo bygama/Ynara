@@ -3,7 +3,8 @@
  * de cada prioridad (`formatTaskDay`: «Mañana», «Ayer») se calculan contra un
  * `now`; si la pantalla queda abierta pasada la medianoche, ese `now` tiene que
  * avanzar al día nuevo. Dentro del mismo día no cambia, así los textos no se
- * recalculan ni se mueven sin motivo.
+ * recalculan ni se mueven sin motivo, salvo en las horas de corte que pida quien
+ * lo usa (`cutHours`: el saludo de web cambia a las 12 y a las 20).
  *
  * Todo es hora local y sin `Intl` (Hermes en mobile). Lo de React (estado,
  * eventos de visibilidad, `AppState`, foco de la tab) vive en el `useToday` de
@@ -39,12 +40,35 @@ export function msUntilNextLocalMidnight(now: Date): number {
 }
 
 /**
- * El `now` que corresponde mostrar: `prev` (misma referencia) si `fresh` es del
- * mismo día, `fresh` si el día cambió. Pensado para `setState(prev => ...)`:
- * devolver la misma referencia hace que React no re-renderice.
+ * Milisegundos hasta el próximo corte local: la medianoche o, si llega antes, la
+ * próxima de las `cutHours` (horas enteras de 1 a 23) de hoy. Cada corte se arma
+ * con el constructor local, igual que la medianoche.
  */
-export function pickToday(prev: Date, fresh: Date): Date {
-  return isSameLocalDay(prev, fresh) ? prev : fresh;
+export function msUntilNextLocalCut(now: Date, cutHours: readonly number[] = []): number {
+  let wait = msUntilNextLocalMidnight(now);
+  for (const hour of cutHours) {
+    const cut = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour);
+    const diff = cut.getTime() - now.getTime();
+    if (diff > 0 && diff < wait) wait = diff;
+  }
+  return wait;
+}
+
+/** Cuántas de las `cutHours` ya pasaron en el día de `date`. */
+function cutsPassed(date: Date, cutHours: readonly number[]): number {
+  return cutHours.filter((hour) => date.getHours() >= hour).length;
+}
+
+/**
+ * El `now` que corresponde mostrar: `prev` (misma referencia) si `fresh` es del
+ * mismo día y del mismo tramo entre cortes, `fresh` si cambió alguno. Pensado
+ * para `setState(prev => ...)`: devolver la misma referencia hace que React no
+ * re-renderice.
+ */
+export function pickToday(prev: Date, fresh: Date, cutHours: readonly number[] = []): Date {
+  const sameSpan =
+    isSameLocalDay(prev, fresh) && cutsPassed(prev, cutHours) === cutsPassed(fresh, cutHours);
+  return sameSpan ? prev : fresh;
 }
 
 export interface LocalDayWatcher {
@@ -55,23 +79,25 @@ export interface LocalDayWatcher {
 }
 
 /**
- * Llama a `onTick` con la hora actual en cada medianoche local y, como mucho,
- * cada `MAX_DAY_CHECK_MS`. Quien lo usa decide con `pickToday` si el día cambió.
+ * Llama a `onTick` con la hora actual en cada medianoche local, en cada una de
+ * las `cutHours` y, como mucho, cada `MAX_DAY_CHECK_MS`. Quien lo usa decide con
+ * `pickToday` (con las mismas `cutHours`) si hay que actualizar.
  *
  * Cada chequeo lee la hora una sola vez y reprograma con esa misma lectura antes
- * de avisar. Si el timer dispara unos ms antes de la medianoche, el próximo queda
- * a esos ms y el cambio de día no se pierde; leerla dos veces podía avisar con el
- * día anterior y reprogramar desde el nuevo, a `MAX_DAY_CHECK_MS`.
+ * de avisar. Si el timer dispara unos ms antes del corte, el próximo queda a esos
+ * ms y el cambio no se pierde; leerla dos veces podía avisar con el día anterior
+ * y reprogramar desde el nuevo, a `MAX_DAY_CHECK_MS`.
  */
 export function watchLocalDay(
   onTick: (now: Date) => void,
   getNow: () => Date = () => new Date(),
+  cutHours: readonly number[] = [],
 ): LocalDayWatcher {
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   const arm = (now: Date) => {
     clearTimeout(timer);
-    const wait = Math.min(msUntilNextLocalMidnight(now), MAX_DAY_CHECK_MS);
+    const wait = Math.min(msUntilNextLocalCut(now, cutHours), MAX_DAY_CHECK_MS);
     timer = setTimeout(sync, wait);
   };
 
