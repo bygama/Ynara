@@ -1,5 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { greet } from "./format";
 import { useToday } from "./useToday";
 
 // Fechas con el constructor local y aserciones sobre getDate(): no depende de
@@ -58,6 +59,22 @@ describe("useToday", () => {
       vi.advanceTimersByTime(24 * 60 * 60 * 1000);
     });
     expect(result.current.getDate()).toBe(9);
+  });
+
+  it("refresca el saludo a las 12 y a las 20 sin esperar a la medianoche", () => {
+    vi.setSystemTime(at(7, 11, 59, 30));
+    const { result } = renderHook(() => useToday());
+    expect(greet(result.current)).toBe("Buen día");
+
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(greet(result.current)).toBe("Buenas tardes");
+
+    act(() => {
+      vi.advanceTimersByTime(8 * 60 * 60 * 1000);
+    });
+    expect(greet(result.current)).toBe("Buenas noches");
   });
 
   it("al volver la pestaña visible toma el día nuevo aunque el timer no haya corrido", () => {

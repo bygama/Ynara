@@ -32,14 +32,21 @@ export function formatHoyDate(now: Date): string {
 }
 
 /**
+ * Horas locales en las que cambia el saludo. `useToday` las usa como cortes
+ * para refrescar `now` ahí también, no solo a la medianoche.
+ */
+export const GREETING_HOURS = [12, 20] as const;
+
+/**
  * Saludo según la hora local (wireframe 06 / mockup): "Buen día" hasta el
  * mediodía, "Buenas tardes" hasta las 20h, "Buenas noches" después. El nombre
  * lo agrega el header (`${greet(now)}, ${nombre}.`).
  */
 export function greet(now: Date): string {
   const h = now.getHours();
-  if (h < 12) return "Buen día";
-  if (h < 20) return "Buenas tardes";
+  const [afternoon, night] = GREETING_HOURS;
+  if (h < afternoon) return "Buen día";
+  if (h < night) return "Buenas tardes";
   return "Buenas noches";
 }
 
