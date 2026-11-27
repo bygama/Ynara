@@ -130,11 +130,12 @@ consolidación fallida) los borra el beat diario `purge_stale_turns`
 no se puede reencolar. **En el primer deploy**, eso significa que las
 conversaciones cuya última actividad tiene más de 8 días pierden sus
 turnos crudos sin episodio en la primera corrida. En los logs de
-`worker` queda `purge_stale_turns: deleted=<n>`. Si un backlog grande
-corta la corrida por el soft time limit, el error dice cuántos alcanzó
-a borrar como mínimo (`al menos <n> borrados antes del corte`). Si
-llega al hard limit, el worker la mata sin log. En los dos casos lo
-borrado queda y la corrida del día siguiente sigue desde ahí.
+`worker` queda `purge_stale_turns: deleted=<n>`. Si la corrida falla
+(por ejemplo, un backlog grande que llega al soft time limit), el error
+dice cuántos alcanzó a borrar como mínimo (`al menos <n> borrados
+antes del fallo`). Si llega al hard limit, Celery loguea que lo superó
+pero no queda el conteo. En los dos casos lo borrado queda y la
+corrida del día siguiente sigue desde ahí.
 
 ### Cuota del proveedor agotada (429)
 
