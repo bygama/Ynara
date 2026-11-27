@@ -94,9 +94,11 @@ Ejemplos:
 ## Cambio de modo
 
 - El usuario puede cambiar de modo explícitamente desde la UI.
-- El alias `agente` puede sugerir un cambio de modo si detecta intent
-  fuera del modo actual (ej: en Bienestar el usuario pide agendar
-  algo).
+- Los modos sin la agenda (Estudio, Bienestar, Vida y Memoria) derivan
+  a Productividad por nombre: si el usuario pide agendar o anotar algo,
+  o que le recuerden algo más adelante, le dicen que cambie de modo y lo
+  pida ahí. El pedido no pasa solo al otro modo: el usuario lo repite.
+  En Bienestar, si hay señales de crisis, primero va el protocolo.
 - El cambio se logea: el modo es contexto y queda en memoria
   episódica de la sesión.
 
