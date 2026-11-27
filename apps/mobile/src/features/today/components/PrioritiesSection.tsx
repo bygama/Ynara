@@ -11,7 +11,7 @@ import { PriorityRow } from "./PriorityRow";
  * (con reintento), vacío (hint compacto) y la lista con el check optimista
  * (`useToggleTask`). Espejo de la sección de web.
  */
-export function PrioritiesSection() {
+export function PrioritiesSection({ now }: { now: Date }) {
   const { data, isPending, isError, refetch, isFetching } = useTasks();
   const toggle = useToggleTask();
 
@@ -38,7 +38,13 @@ export function PrioritiesSection() {
       ) : (
         <View>
           {data.map((task, index) => (
-            <PriorityRow key={task.id} task={task} first={index === 0} onToggle={toggle.mutate} />
+            <PriorityRow
+              key={task.id}
+              task={task}
+              now={now}
+              first={index === 0}
+              onToggle={toggle.mutate}
+            />
           ))}
         </View>
       )}
