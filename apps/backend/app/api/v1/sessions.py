@@ -55,7 +55,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.api.v1._http import too_many_requests
 from app.core.config import get_settings
@@ -197,29 +197,42 @@ async def close_session(
 
     # Idempotente: solo se setea ended_at si todavia es None. Un segundo cierre
     # preserva el timestamp original (no es 409; cerrar dos veces es inocuo).
-    is_first_close = cs.ended_at is None
-    if is_first_close:
-        cs.ended_at = datetime.now(UTC)
+    if cs.ended_at is None:
+        closed_at = datetime.now(UTC)
+        # UPDATE condicional (``WHERE ended_at IS NULL``): si el beat
+        # ``close_idle_sessions`` la cerro entre el GET y aca, no se pisa su ended_at
+        # ni se encola la consolidacion por segunda vez.
+        closed_id = (
+            await session.execute(
+                update(ChatSession)
+                .where(ChatSession.id == cs.id, ChatSession.ended_at.is_(None))
+                .values(ended_at=closed_at)
+                .returning(ChatSession.id)
+                .execution_options(synchronize_session=False)
+            )
+        ).scalar_one_or_none()
+        is_first_close = closed_id is not None
         # Snapshot de los primitivos ANTES del commit: el enqueue post-commit cierra
         # sobre str puros, nunca sobre atributos ORM (evita lazy-load post-commit).
         enqueue_user_id = str(cs.user_id)
         enqueue_session_id = str(cs.id)
         enqueue_mode = cs.mode.value
-        enqueue_at = cs.ended_at.isoformat()
+        enqueue_at = closed_at.isoformat()
         await session.commit()
         await session.refresh(cs)
 
         # Enqueue de consolidacion episodica DESPUES del commit (M10 Ola 4), SOLO en
         # la rama del primer cierre real. fail-open: el broker caido NO rompe el
         # close (la consolidacion es eventual). .delay() es no-bloqueante.
-        try:
-            consolidate_session.delay(
-                user_id=enqueue_user_id,
-                session_id=enqueue_session_id,
-                mode=enqueue_mode,
-                enqueued_at=enqueue_at,
-            )
-        except Exception as exc:  # best-effort: el broker caido NO rompe el close.
-            logger.warning("consolidate_session enqueue failed: %s", type(exc).__name__)
+        if is_first_close:
+            try:
+                consolidate_session.delay(
+                    user_id=enqueue_user_id,
+                    session_id=enqueue_session_id,
+                    mode=enqueue_mode,
+                    enqueued_at=enqueue_at,
+                )
+            except Exception as exc:  # best-effort: el broker caido NO rompe el close.
+                logger.warning("consolidate_session enqueue failed: %s", type(exc).__name__)
 
     return SessionOut.model_validate(cs)

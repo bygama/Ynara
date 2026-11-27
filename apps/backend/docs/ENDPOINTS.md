@@ -399,7 +399,9 @@ una inexistente (sin oráculo de existencia ajena). Todas las read surfaces son
     (la sesión todavía no estaba cerrada), tras el commit encola
     `consolidate_session.delay()` (consolidación episódica) best-effort
     fail-open: si el broker está caído el close devuelve 200 igual. Un segundo
-    cierre (idempotente) **no** re-encola.
+    cierre (idempotente) **no** re-encola. El cierre es un `UPDATE ... WHERE ended_at IS
+    NULL`: si el beat la cerró entre la lectura y la escritura, devuelve el `ended_at` del
+    beat y no encola de nuevo.
   - Ningún cliente lo llama hoy: las sesiones se cierran solas por inactividad. El
     beat `close_idle_sessions` corre cada 5 minutos, cierra las que llevan
     `SESSION_IDLE_CLOSE_MINUTES` más un margen de 15 minutos sin turnos (como mucho

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -110,6 +111,38 @@ async def test_second_close_does_not_re_enqueue(db_session: AsyncSession) -> Non
         assert second.status_code == 200
         # El enqueue ocurrio SOLO en el primer cierre real.
         mock_task.delay.assert_called_once()
+    finally:
+        app.dependency_overrides.clear()
+        await _delete_user(db_session, user.id)
+
+
+async def test_close_after_beat_closed_it_keeps_its_ended_at_and_does_not_enqueue(
+    db_session: AsyncSession,
+) -> None:
+    """Carrera con el beat ``close_idle_sessions``: si la cerró entre el GET y el UPDATE,
+    el cierre manual no pisa su ``ended_at`` ni encola la consolidación otra vez.
+
+    La sesión queda en el identity map con ``ended_at`` en null (lo que vio el GET) y el
+    cierre del beat se simula con SQL crudo, que el ORM no ve.
+    """
+    user = await _seed_user(db_session)
+    cs = await _seed_session(db_session, user_id=user.id, mode=Mode.VIDA)
+    beat_ended_at = datetime.now(UTC) - timedelta(minutes=40)
+    await db_session.execute(
+        text("UPDATE sessions SET ended_at = :ended WHERE id = :sid"),
+        {"ended": beat_ended_at, "sid": str(cs.id)},
+    )
+
+    client = await _client(db_session)
+    try:
+        with patch("app.api.v1.sessions.consolidate_session") as mock_task:
+            mock_task.delay = MagicMock()
+            async with client:
+                resp = await client.post(f"/v1/sessions/{cs.id}/close", headers=_bearer(user.id))
+
+        assert resp.status_code == 200
+        assert datetime.fromisoformat(resp.json()["ended_at"]) == beat_ended_at
+        mock_task.delay.assert_not_called()
     finally:
         app.dependency_overrides.clear()
         await _delete_user(db_session, user.id)
