@@ -1,5 +1,6 @@
 "use client";
 
+import { followToday } from "@ynara/core/features/today";
 import { useState } from "react";
 import { ChipGroup } from "@/components/ui/ChipGroup";
 import { EmptyStateCard } from "@/components/ui/EmptyStateCard";
@@ -7,6 +8,7 @@ import { HeroReveal } from "@/components/ui/HeroReveal";
 import { LivingField } from "@/components/ui/LivingField";
 import { MODE_BY_ID } from "@/components/ui/modes";
 import { useActiveMode } from "@/hooks/useActiveMode";
+import { useLocalDay } from "@/hooks/useLocalDay";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { cn } from "@/lib/cn";
 import { type AgendaEvent, useEvents } from "../api";
@@ -42,13 +44,25 @@ const NAV_BUTTON =
  * screen-reminders). Fondo vivo `LivingField variant="paper"` (calmo, casi
  * quieto, sin cursor). FAB redondo "+" para crear eventos. Conecta a
  * `GET /v1/events` (mock) vía `useEvents` y resuelve los 4 estados.
+ *
+ * `now` sale de `useLocalDay`: fijo dentro del día y al día nuevo si la pestaña
+ * queda abierta pasada la medianoche. Si el foco (`anchor`) estaba en «hoy»
+ * cuando cambia el día, lo sigue (`followToday`).
  */
 export function AgendaView() {
   const activeMode = useActiveMode();
   const isDesktop = useMediaQuery(DESKTOP_QUERY);
-  const [now] = useState(() => new Date());
+  const now = useLocalDay();
   const [view, setView] = useState<ViewMode>("lista");
-  const [anchor, setAnchor] = useState<Date>(() => new Date());
+  const [anchor, setAnchor] = useState<Date>(now);
+  // Cambio de día con la pestaña abierta: se ajusta el foco en el mismo render,
+  // sin un efecto que pinte primero el día viejo. `useLocalDay` solo cambia de
+  // referencia cuando cambia el día.
+  const [prevNow, setPrevNow] = useState(now);
+  if (prevNow !== now) {
+    setPrevNow(now);
+    setAnchor(followToday(anchor, prevNow, now));
+  }
   // Evento en edición (tap-para-editar); `null` = sheet cerrado.
   const [editing, setEditing] = useState<AgendaEvent | null>(null);
 
