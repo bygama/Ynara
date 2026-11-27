@@ -17,12 +17,13 @@ NUNCA se descifra ``content``/``summary`` (las métricas son COUNT/metadata, reg
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.enums import Mode
+from app.enums import Mode, TurnRole
+from app.models.conversation_turn import ConversationTurn
 from app.models.memory import EpisodicMemory, ProceduralMemory, SemanticMemory
 from app.models.session import ChatSession
 from app.models.user import User
@@ -73,17 +74,30 @@ async def _seed_user(session: AsyncSession) -> User:
 
 
 async def _seed_session(
-    session: AsyncSession, *, user_id: uuid.UUID, ended: bool = False
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    ended: bool = False,
+    ended_at: datetime | None = None,
 ) -> ChatSession:
     cs = ChatSession(
         user_id=user_id,
         mode=Mode.VIDA,
-        ended_at=datetime.now(UTC) if ended else None,
+        ended_at=ended_at or (datetime.now(UTC) if ended else None),
     )
     session.add(cs)
     await session.flush()
     await session.refresh(cs)
     return cs
+
+
+async def _seed_turn(session: AsyncSession, *, user_id: uuid.UUID, cs: ChatSession) -> None:
+    session.add(
+        ConversationTurn(
+            user_id=user_id, session_id=cs.id, role=TurnRole.USER, content=b"\x00" * 16, seq=0
+        )
+    )
+    await session.flush()
 
 
 async def _seed_semantic(session: AsyncSession, *, user_id: uuid.UUID) -> None:
@@ -138,8 +152,17 @@ async def test_moat_counts_health_backlog_increment(db_session: AsyncSession) ->
     await _seed_procedural(db_session, user_id=user.id, key="a", stale=False, confidence=0.9)
     await _seed_procedural(db_session, user_id=user.id, key="b", stale=False, confidence=0.5)
     await _seed_procedural(db_session, user_id=user.id, key="c", stale=True, confidence=0.1)
-    # 1 sesión cerrada SIN episodic -> backlog (las sesiones de los episodios SÍ tienen).
+    # 1 sesión cerrada SIN episodic y con turnos por resumir -> backlog (las sesiones de
+    # los episodios SÍ tienen episodio).
+    pending = await _seed_session(db_session, user_id=user.id, ended=True)
+    await _seed_turn(db_session, user_id=user.id, cs=pending)
+    # Cerrada sin turnos (vacía): nunca va a tener episodio, NO es backlog.
     await _seed_session(db_session, user_id=user.id, ended=True)
+    # Cerrada hace más de 7 días con turnos: no se consolida ni se reencola, NO es backlog.
+    old = await _seed_session(
+        db_session, user_id=user.id, ended_at=datetime.now(UTC) - timedelta(days=8)
+    )
+    await _seed_turn(db_session, user_id=user.id, cs=old)
 
     after = await svc.moat("7d")
 

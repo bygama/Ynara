@@ -64,6 +64,7 @@ from app.schemas.admin import (
     UsersActivity,
 )
 from app.schemas.admin_api import AdminAuditPage, AdminAuditRow
+from app.services.session_idle import CONSOLIDATION_MAX_AGE, has_turns_expr
 
 # Rango temporal soportado por el dashboard (default 7d). /system NO toma rango.
 _RANGE_DELTAS: dict[str, timedelta] = {
@@ -487,12 +488,21 @@ class AdminMetricsService:
             for idx, label in enumerate(bucket_labels)
         ]
 
-        # Consolidación: backlog (sesiones cerradas sin episodic) + episodios recientes.
+        # Consolidación: backlog (sesiones cerradas sin episodic que todavía tienen turnos
+        # por resumir) + episodios recientes. Una cerrada sin turnos (vacía, o solo con
+        # turnos degradados, que no se guardan) nunca va a tener episodio: no es backlog.
+        # Tampoco una que terminó hace más de CONSOLIDATION_MAX_AGE: no se consolida (se
+        # fecharía hoy) y no hay que reencolarla.
         backlog = await self._count(
             select(func.count())
             .select_from(ChatSession)
             .outerjoin(EpisodicMemory, EpisodicMemory.session_id == ChatSession.id)
-            .where(ChatSession.ended_at.isnot(None), EpisodicMemory.id.is_(None)),
+            .where(
+                ChatSession.ended_at.isnot(None),
+                EpisodicMemory.id.is_(None),
+                ChatSession.ended_at >= now - CONSOLIDATION_MAX_AGE,
+                has_turns_expr(),
+            ),
         )
         recent_rows = (
             await self._session.execute(
