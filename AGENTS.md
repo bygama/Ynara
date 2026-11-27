@@ -184,7 +184,7 @@ Para tareas con un solo archivo, va inline. Para tareas con múltiples pasos, ca
 | `apps/backend/app/llm/router.py` | Único punto de entrada al LLM. Decide el alias de modelo según modo |
 | `apps/backend/app/llm/clients/providers/` | Único lugar del backend que habla HTTP con proveedores de IA (regla #4b, ADR-028) |
 | `apps/backend/app/llm/tools/` | Tools que solo llama el alias `agente` (catálogo en `docs/TOOLS.md`) |
-| `apps/backend/app/memory/` | Wrappers de las 3 capas. **Tablas sagradas** (regla #3). Incluye `conversation_turns` (tabla **operativa**, no sagrada: buffer append-only cifrado, purgado al consolidar, o 8 días después de su `ended_at` si no se consolida) |
+| `apps/backend/app/memory/` | Wrappers de las 3 capas. **Tablas sagradas** (regla #3). Incluye `conversation_turns` (tabla **operativa**, no sagrada: buffer append-only cifrado, purgado al consolidar, o 8 días después del `ended_at` de su sesión si no se consolida) |
 | `apps/backend/app/services/` | Lógica de negocio — no importa de FastAPI ni de ORM directo |
 | `apps/backend/app/workers/` | Instancia Celery + autodiscovery de workflows |
 | `apps/backend/app/workflows/` | Tasks Celery (consolidación de memoria, resúmenes episódicos) |
@@ -208,7 +208,7 @@ Para tareas con un solo archivo, va inline. Para tareas con múltiples pasos, ca
 
 2. **Nunca tocar secrets.** Prohibido leer, copiar, mover o commitear `.env`, claves API, tokens, certificados. Si detectás un secret expuesto, alertá inmediatamente y no toques nada. **Severidad: bloqueante.**
 
-3. **Tablas sagradas.** Las tablas de memoria (`semantic_memory`, `episodic_memory`, `procedural_memory`) y el audit trail inmutable (`audit_log`) no se modifican sin tests pasando y **1 aprobación humana explícita** (review formal aprobada en el PR, no solo el OK del operador que abrió el PR). Cubre sus modelos (`app/models/{memory,audit}.py`), schemas (`app/schemas/{memory,audit}.py`), wrappers (`app/memory/`) y las migraciones Alembic que las afecten. La tabla `conversation_turns` **no** es sagrada: es **operativa** (buffer append-only cifrado AES-256-GCM per-user que el worker episódico lee al cerrar sesión y luego purga), aunque viva bajo `app/memory/`. **Severidad: bloqueante.**
+3. **Tablas sagradas.** Las tablas de memoria (`semantic_memory`, `episodic_memory`, `procedural_memory`) y el audit trail inmutable (`audit_log`) no se modifican sin tests pasando y **1 aprobación humana explícita** (review formal aprobada en el PR, no solo el OK del operador que abrió el PR). Cubre sus modelos (`app/models/{memory,audit}.py`), schemas (`app/schemas/{memory,audit}.py`), wrappers (`app/memory/`) y las migraciones Alembic que las afecten. La tabla `conversation_turns` **no** es sagrada: es **operativa** (buffer append-only cifrado AES-256-GCM per-user que el worker episódico lee al cerrar sesión y luego purga; si la sesión no se consolida, sus turnos los borra `purge_stale_turns` 8 días después del `ended_at` de la sesión), aunque viva bajo `app/memory/`. **Severidad: bloqueante.**
 
 4. **Privacidad de datos y proveedores de IA.** La regla tiene dos partes:
 
