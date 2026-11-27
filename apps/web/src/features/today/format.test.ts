@@ -7,6 +7,7 @@ import { formatClock, formatHoyDate, formatTaskDay, formatTaskMeta } from "./for
 // runner.
 const at = (h: number, m: number) => new Date(2026, 4, 7, h, m).toISOString();
 // Jueves 7 de mayo de 2026, a media mañana: el día de las tareas de `at`.
+// Los casos de `formatTaskDay` son espejo de los de mobile: los dos tienen que dar el mismo texto.
 const NOW = new Date(2026, 4, 7, 10, 0);
 const onDay = (d: number, h: number, m: number) => new Date(2026, 4, d, h, m).toISOString();
 
@@ -74,6 +75,13 @@ describe("formatTaskDay", () => {
   it("otro día del mes → día de la semana y número; otro mes suma el mes", () => {
     expect(formatTaskDay(new Date(2026, 4, 9, 9, 0), NOW)).toBe("Sábado 9");
     expect(formatTaskDay(new Date(2026, 5, 2, 9, 0), NOW)).toBe("Martes 2 de junio");
+  });
+
+  it("cruza el año: el 1/1 desde el 31/12 es mañana; otro año suma el año", () => {
+    expect(formatTaskDay(new Date(2027, 0, 1, 9, 0), new Date(2026, 11, 31, 22, 0))).toBe("Mañana");
+    expect(formatTaskDay(new Date(2027, 11, 31, 9, 0), NOW)).toBe(
+      "Viernes 31 de diciembre de 2027",
+    );
   });
 });
 
