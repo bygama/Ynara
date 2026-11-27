@@ -35,6 +35,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.enums import AuditOperation, MemoryLayer
@@ -45,6 +46,7 @@ from app.memory.episodic import EpisodicMemoryStore
 from app.memory.hashing import compute_record_hash, procedural_hash_payload
 from app.memory.procedural import ProceduralMemoryStore
 from app.memory.semantic import SemanticMemoryStore
+from app.models.conversation_turn import ConversationTurn
 from app.schemas.memory import (
     EpisodicMemoryOut,
     ProceduralMemoryOut,
@@ -225,6 +227,7 @@ class MemoryService:
         reranker: Reranker,
     ) -> None:
         self._session = session
+        self._user_id = user_id
         self._semantic = SemanticMemoryStore(session, user_id, embedder, reranker)
         self._episodic = EpisodicMemoryStore(session, user_id, embedder, reranker)
         self._procedural = ProceduralMemoryStore(session, user_id)
@@ -501,9 +504,11 @@ class MemoryService:
         Flujo (atómico bajo el commit del endpoint): recuenta el estado ACTUAL; si el
         confirm per-layer no matchea → ``WipeCountMismatchError`` (409, nada se borra);
         si matchea → ``wipe()`` de las 3 capas (capturando el rowcount REAL) + una fila
-        de audit por capa con borrado efectivo (rowcount > 0). El confirm es una guarda
-        de INTENCIÓN, no cirugía exacta: el ``DELETE WHERE user_id`` barre el estado
-        presente completo, así el receipt reporta el rowcount REAL.
+        de audit por capa con borrado efectivo (rowcount > 0). También borra los turnos
+        crudos sin consolidar del usuario (``conversation_turns``, ver ``_wipe_turns``).
+        El confirm es una guarda de INTENCIÓN, no cirugía exacta: el ``DELETE WHERE
+        user_id`` barre el estado presente completo, así el receipt reporta el rowcount
+        REAL.
 
         Raises:
             WipeConfirmRequiredError: execute sin ``body`` (router → 422).
@@ -532,6 +537,7 @@ class MemoryService:
         sem_wiped = await self._semantic.wipe()
         epi_wiped = await self._episodic.wipe()
         proc_wiped = await self._procedural.wipe()
+        await self._wipe_turns()
 
         # Una fila de audit por CADA capa con borrado EFECTIVO (rowcount > 0). El wipe es
         # DELETE-by-user masivo: target_id=None y el record_hash ata la fila a "el wipe de
@@ -567,4 +573,17 @@ class MemoryService:
             episodic=epi_wiped,
             procedural=proc_wiped,
             total=sem_wiped + epi_wiped + proc_wiped,
+        )
+
+    async def _wipe_turns(self) -> None:
+        """Borra los turnos crudos del usuario que todavía no se consolidaron.
+
+        ``conversation_turns`` es el buffer operativo del que sale el resumen episódico de
+        cada sesión (se purga al crear el episodio). Si quedara después del borrado total,
+        el cierre de la sesión resumiría también lo dicho antes de borrar, y esos turnos
+        volverían como un episodio nuevo. No es una capa de memoria: no suma al receipt ni
+        al audit, que cuentan las tres capas.
+        """
+        await self._session.execute(
+            delete(ConversationTurn).where(ConversationTurn.user_id == self._user_id)
         )

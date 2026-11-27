@@ -39,19 +39,21 @@ from collections.abc import AsyncIterator
 import httpx
 import pytest
 from httpx import ASGITransport
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.core.deps import get_db, get_embedder, get_reranker, get_token_store
 from app.core.security import create_access_token
 from app.core.token_store import InMemoryTokenStore, RedisTokenStore, TokenStore
-from app.enums import Mode
+from app.enums import Mode, TurnRole
 from app.llm.clients.embedding import FakeEmbeddingClient
 from app.llm.clients.reranker import FakeReranker
 from app.main import app
 from app.memory.episodic import EpisodicMemoryStore
 from app.memory.procedural import ProceduralMemoryStore
 from app.memory.semantic import SemanticMemoryStore
+from app.models.conversation_turn import ConversationTurn
 from app.models.session import ChatSession
 from app.models.user import User
 from app.schemas.memory import (
@@ -1372,6 +1374,60 @@ async def test_wipe_idempotent_empty_user(db_session: AsyncSession) -> None:
         # Confirm {0,0,0} matchea → 200 receipt {0,0,0,0} (nada que borrar).
         assert wipe.status_code == 200
         assert wipe.json() == {"semantic": 0, "episodic": 0, "procedural": 0, "total": 0}
+    finally:
+        app.dependency_overrides.clear()
+
+
+async def _seed_turns(session: AsyncSession, user_id: uuid.UUID) -> uuid.UUID:
+    """Siembra 2 turnos crudos (sin consolidar) en una sesión abierta del user."""
+    cs = await _seed_chat_session(session, user_id)
+    for seq, role in enumerate((TurnRole.USER, TurnRole.MODEL)):
+        session.add(
+            ConversationTurn(
+                user_id=user_id, session_id=cs.id, role=role, content=b"sintetico", seq=seq
+            )
+        )
+    await session.flush()
+    return cs.id
+
+
+async def _count_turns(session: AsyncSession, user_id: uuid.UUID) -> int:
+    stmt = (
+        select(func.count())
+        .select_from(ConversationTurn)
+        .where(ConversationTurn.user_id == user_id)
+    )
+    return (await session.execute(stmt)).scalar_one()
+
+
+async def test_wipe_also_deletes_raw_turns_of_the_user_only(db_session: AsyncSession) -> None:
+    """El wipe total borra los turnos crudos del user (no los de otro) sin tocar el receipt.
+
+    Si quedaran, el cierre de la sesión abierta resumiría lo dicho antes del borrado en un
+    episodio nuevo. Los turnos no son una capa de memoria: el receipt sigue en {0,0,0,0}.
+    """
+    user_a = await _seed_user(db_session)
+    user_b = await _seed_user(db_session)
+    await _seed_turns(db_session, user_a.id)
+    await _seed_turns(db_session, user_b.id)
+
+    client = await _client(db_session)
+    try:
+        async with client:
+            wipe = await client.post(
+                "/v1/memory/wipe",
+                json={
+                    "expected_semantic": 0,
+                    "expected_episodic": 0,
+                    "expected_procedural": 0,
+                },
+                headers=_bearer(user_a.id),
+            )
+
+        assert wipe.status_code == 200
+        assert wipe.json() == {"semantic": 0, "episodic": 0, "procedural": 0, "total": 0}
+        assert await _count_turns(db_session, user_a.id) == 0
+        assert await _count_turns(db_session, user_b.id) == 2
     finally:
         app.dependency_overrides.clear()
 

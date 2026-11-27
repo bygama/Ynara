@@ -238,7 +238,9 @@ Al cerrar la sesión, un worker Celery genera la entrada episódica.
 persistir en `episodic_memory` (sagrada), y que luego **purga**
 (`ConversationTurnStore.purge_session`): retención **efímera**, no almacenamiento
 de largo plazo. El resumen consolidado vive en `episodic_memory`; los turnos
-crudos se borran tras consolidar.
+crudos se borran tras consolidar, y también con el borrado total de memoria
+(`POST /v1/memory/wipe`), para que el cierre de una sesión abierta no resuma lo
+dicho antes de borrar.
 
 Aun siendo operativa, el `content` viaja **cifrado AES-256-GCM per-user** (regla
 #4: cero PII en claro en la DB) — exactamente como `semantic_memory.content` /

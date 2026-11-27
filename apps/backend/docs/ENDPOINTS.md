@@ -327,6 +327,10 @@ Invariantes (regla #3 / ADR-007 / ADR-010):
       (`operation=DELETE`, `target_id=None`, `record_hash` = SHA-256 de `wipe:<capa>`;
       episodic `sensitive=true` conservador, semantic/procedural `sensitive=false`), en
       la misma transacción que el wipe.
+      También borra los turnos crudos sin consolidar del usuario
+      (`conversation_turns`), en la misma transacción. Si no, el cierre de una sesión
+      abierta resumiría lo dicho antes del borrado en un episodio nuevo. No cuentan en
+      el receipt ni en el audit: no son una capa de memoria.
     - **No coinciden** → Response **409** Conflict con los **conteos ACTUALES** en el
       `detail` (para re-confirmar con un preview fresco); **nada** se borra ni
       commitea. `detail = { "message": str, "semantic": N, "episodic": N,
