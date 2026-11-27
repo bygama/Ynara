@@ -19,7 +19,7 @@ import { SuggestionsSection } from "./components/SuggestionsSection";
  * El modo activo tinta el header y sale del store de modo global
  * (`useActiveMode`): el override del selector, o el primer modo del onboarding.
  * Tocar el chip de modo abre el selector. `now` se fija una vez por montaje
- * para anclar la fecha del header sin drift.
+ * para anclar sin drift la fecha del header y el día de cada prioridad.
  */
 export function HoyScreen() {
   const displayName = useUserStore((s) => s.displayName);
