@@ -143,8 +143,9 @@ celery_app.conf.beat_schedule = {
         "schedule": timedelta(minutes=5),
     },
     # Retención de turnos crudos: una vez por día borra los turnos de las sesiones
-    # cerradas con ended_at (su última actividad) de hace más de 8 días, que ya no se
-    # van a consolidar (las consolidadas los purgan solas). Sin este job quedaban para
+    # cerradas con ended_at de hace más de 8 días (la última actividad si las cerró el
+    # beat de inactividad, la hora del cierre si fue manual), que ya no se van a
+    # consolidar (las consolidadas los purgan solas). Sin este job quedaban para
     # siempre.
     "purge-stale-turns-daily": {
         "task": "workflows.purge_stale_turns",

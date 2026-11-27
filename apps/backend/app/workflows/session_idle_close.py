@@ -33,7 +33,8 @@ Reglas:
    terminó hace menos de ``CONSOLIDATION_MAX_AGE``. El episodio nace con fecha de hoy y
    su retención se cuenta desde que se crea: consolidar una conversación de hace meses
    la haría volver como reciente y vivir otra ventana de retención entera. Las más
-   viejas se cierran sin episodio y sus turnos quedan como estaban.
+   viejas se cierran sin episodio; sus turnos los borra ``purge_stale_turns``
+   (``turn_retention.py``) 8 días después de su ``ended_at``.
 
 CADENCIA (beat): cada 5 minutos (ver ``celery_app.py``). Con el umbral por default, una
 sesión se cierra entre 45 y 50 minutos después de su último turno.
