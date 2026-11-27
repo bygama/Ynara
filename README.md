@@ -195,7 +195,9 @@ requiere tests + 1 aprobación humana explícita (regla #3 de
 [`AGENTS.md`](./AGENTS.md)). Aparte existe `conversation_turns`, una tabla
 **operativa** (no sagrada): buffer append-only de los turnos crudos de una
 sesión, cifrado AES-256-GCM per-user, que el worker episódico lee al cerrar la
-sesión y luego purga. Derechos del usuario (export, borrado, pausa, audit log) en
+sesión y luego purga. Si la sesión no se consolida, sus turnos se borran 8 días
+después del `ended_at` de la sesión. Derechos del usuario (export, borrado,
+pausa, audit log) en
 [`docs/product/MEMORY.md`](./docs/product/MEMORY.md).
 
 ## Flujo de un mensaje
