@@ -13,6 +13,9 @@ clave, no el texto entero palabra por palabra (snapshot liviano):
 - Los modos del alias ``conversacional`` (estudio, bienestar, vida) NO mencionan
   tools ni escritura de memoria; los del alias ``agente`` (productividad,
   memoria) si habilitan tools.
+- Los modos sin agenda (estudio, bienestar, vida y memoria) derivan a
+  Productividad por nombre y no afirman haber agendado; en Bienestar, el
+  protocolo de crisis va primero.
 - ``load_prompt`` con un modo invalido levanta ``ValueError``.
 - Coherencia: todos los miembros de ``Mode`` tienen prompt.
 """
@@ -190,6 +193,11 @@ def test_modes_without_agenda_send_the_user_to_productividad(mode: Mode) -> None
     normalized = " ".join(_MODE_ONLY_PROMPTS[mode].lower().split())
     assert "modo productividad" in normalized
     assert "nunca decís que lo agendaste" in normalized
+
+
+def test_bienestar_puts_crisis_before_the_redirect() -> None:
+    normalized = " ".join(_MODE_ONLY_PROMPTS[Mode.BIENESTAR].lower().split())
+    assert "primero va el protocolo de crisis" in normalized
 
 
 def test_productividad_mentions_memory_write() -> None:
