@@ -184,7 +184,7 @@ Para tareas con un solo archivo, va inline. Para tareas con múltiples pasos, ca
 | `apps/backend/app/llm/router.py` | Único punto de entrada al LLM. Decide el alias de modelo según modo |
 | `apps/backend/app/llm/clients/providers/` | Único lugar del backend que habla HTTP con proveedores de IA (regla #4b, ADR-028) |
 | `apps/backend/app/llm/tools/` | Tools que solo llama el alias `agente` (catálogo en `docs/TOOLS.md`) |
-| `apps/backend/app/memory/` | Wrappers de las 3 capas. **Tablas sagradas** (regla #3). Incluye `conversation_turns` (tabla **operativa**, no sagrada: buffer append-only cifrado, purgado al consolidar) |
+| `apps/backend/app/memory/` | Wrappers de las 3 capas. **Tablas sagradas** (regla #3). Incluye `conversation_turns` (tabla **operativa**, no sagrada: buffer append-only cifrado, purgado al consolidar, o 8 días después de su `ended_at` si no se consolida) |
 | `apps/backend/app/services/` | Lógica de negocio — no importa de FastAPI ni de ORM directo |
 | `apps/backend/app/workers/` | Instancia Celery + autodiscovery de workflows |
 | `apps/backend/app/workflows/` | Tasks Celery (consolidación de memoria, resúmenes episódicos) |
