@@ -16,7 +16,7 @@ import { PriorityRow } from "./PriorityRow";
  * (`HoyEmptyState`, wireframe 07 / build-plan E5), sin el encabezado
  * "Prioridades" (no hay prioridades que titular).
  */
-export function PrioritiesSection() {
+export function PrioritiesSection({ now }: { now: Date }) {
   const { data, isPending, isError, refetch, isFetching } = useTasks();
   const toggle = useToggleTask();
 
@@ -48,7 +48,13 @@ export function PrioritiesSection() {
       ) : (
         <ul className="flex flex-col divide-y divide-[var(--color-border)]">
           {data.map((task, index) => (
-            <PriorityRow key={task.id} task={task} index={index} onToggle={toggle.mutate} />
+            <PriorityRow
+              key={task.id}
+              task={task}
+              now={now}
+              index={index}
+              onToggle={toggle.mutate}
+            />
           ))}
         </ul>
       )}

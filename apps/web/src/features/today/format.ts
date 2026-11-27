@@ -48,19 +48,43 @@ export function formatClock(now: Date): string {
   return CLOCK_FMT.format(now);
 }
 
+const WEEKDAY_FMT = new Intl.DateTimeFormat(LOCALE, { weekday: "long" });
+const MONTH_FMT = new Intl.DateTimeFormat(LOCALE, { month: "long" });
+const DAY_MS = 86_400_000;
+
+function startOfDay(date: Date): number {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
+
+/** "Mañana", "Ayer", "Viernes 27" o "Viernes 4 de diciembre"; `null` si es el día de `now`. */
+export function formatTaskDay(date: Date, now: Date): string | null {
+  // `round`: un día con cambio de horario no mide 24 h exactas.
+  const diff = Math.round((startOfDay(date) - startOfDay(now)) / DAY_MS);
+  if (diff === 0) return null;
+  if (diff === 1) return "Mañana";
+  if (diff === -1) return "Ayer";
+  const day = `${capitalize(WEEKDAY_FMT.format(date))} ${date.getDate()}`;
+  const sameMonth = date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+  return sameMonth ? day : `${day} de ${MONTH_FMT.format(date)}`;
+}
+
 /**
  * Meta de una prioridad bajo el título:
  *  - hecha → "09:15 · completada" (o sólo "completada" si no tiene horario).
  *  - pendiente → "14:00 · 45 min" (horario y/o duración, lo que haya).
+ *  - con horario en otro día → el día adelante: "Mañana · 09:00", "Viernes 27 ·
+ *    09:00". Hoy lista todas las tareas, no solo las de hoy, y sin el día una
+ *    tarea del viernes parecía de hoy.
  *
  * Devuelve `""` si no hay nada que mostrar (tarea pendiente sin horario ni
  * duración): el caller decide no renderizar la meta.
  */
-export function formatTaskMeta(task: Task): string {
-  const clock = task.scheduled_at ? CLOCK_FMT.format(new Date(task.scheduled_at)) : null;
+export function formatTaskMeta(task: Task, now: Date): string {
+  const at = task.scheduled_at ? new Date(task.scheduled_at) : null;
+  const when = at ? [formatTaskDay(at, now), CLOCK_FMT.format(at)] : [];
   if (task.status === "done") {
-    return clock ? `${clock} · completada` : "completada";
+    return [...when, "completada"].filter(Boolean).join(" · ");
   }
   const duration = task.duration_min !== null ? `${task.duration_min} min` : null;
-  return [clock, duration].filter(Boolean).join(" · ");
+  return [...when, duration].filter(Boolean).join(" · ");
 }

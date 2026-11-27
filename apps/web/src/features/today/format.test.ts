@@ -1,11 +1,14 @@
 import type { Task } from "@ynara/shared-schemas";
 import { describe, expect, it } from "vitest";
-import { formatClock, formatHoyDate, formatTaskMeta } from "./format";
+import { formatClock, formatHoyDate, formatTaskDay, formatTaskMeta } from "./format";
 
 // Construimos las fechas en hora local (new Date(y,m,d,h,m)) para que el
 // round-trip ISO → formatClock devuelva la misma hora sin importar la TZ del
 // runner.
 const at = (h: number, m: number) => new Date(2026, 4, 7, h, m).toISOString();
+// Jueves 7 de mayo de 2026, a media mañana: el día de las tareas de `at`.
+const NOW = new Date(2026, 4, 7, 10, 0);
+const onDay = (d: number, h: number, m: number) => new Date(2026, 4, d, h, m).toISOString();
 
 const baseTask: Task = {
   id: "0193c001-0000-4000-8000-000000000002",
@@ -33,28 +36,60 @@ describe("formatClock", () => {
 
 describe("formatTaskMeta", () => {
   it("pendiente con horario + duración → 'HH:MM · N min'", () => {
-    expect(formatTaskMeta(baseTask)).toBe("14:00 · 45 min");
+    expect(formatTaskMeta(baseTask, NOW)).toBe("14:00 · 45 min");
   });
 
   it("pendiente sólo con horario", () => {
-    expect(formatTaskMeta({ ...baseTask, duration_min: null })).toBe("14:00");
+    expect(formatTaskMeta({ ...baseTask, duration_min: null }, NOW)).toBe("14:00");
   });
 
   it("pendiente sólo con duración", () => {
-    expect(formatTaskMeta({ ...baseTask, scheduled_at: null })).toBe("45 min");
+    expect(formatTaskMeta({ ...baseTask, scheduled_at: null }, NOW)).toBe("45 min");
   });
 
   it("pendiente sin horario ni duración → vacío", () => {
-    expect(formatTaskMeta({ ...baseTask, scheduled_at: null, duration_min: null })).toBe("");
+    expect(formatTaskMeta({ ...baseTask, scheduled_at: null, duration_min: null }, NOW)).toBe("");
   });
 
   it("hecha con horario → 'HH:MM · completada'", () => {
-    expect(formatTaskMeta({ ...baseTask, status: "done", scheduled_at: at(9, 15) })).toBe(
+    expect(formatTaskMeta({ ...baseTask, status: "done", scheduled_at: at(9, 15) }, NOW)).toBe(
       "09:15 · completada",
     );
   });
 
   it("hecha sin horario → 'completada'", () => {
-    expect(formatTaskMeta({ ...baseTask, status: "done", scheduled_at: null })).toBe("completada");
+    expect(formatTaskMeta({ ...baseTask, status: "done", scheduled_at: null }, NOW)).toBe(
+      "completada",
+    );
+  });
+});
+
+describe("formatTaskDay", () => {
+  it("el mismo día → null; el siguiente y el anterior por nombre", () => {
+    expect(formatTaskDay(new Date(2026, 4, 7, 23, 59), NOW)).toBeNull();
+    expect(formatTaskDay(new Date(2026, 4, 8, 0, 0), NOW)).toBe("Mañana");
+    expect(formatTaskDay(new Date(2026, 4, 6, 23, 0), NOW)).toBe("Ayer");
+  });
+
+  it("otro día del mes → día de la semana y número; otro mes suma el mes", () => {
+    expect(formatTaskDay(new Date(2026, 4, 9, 9, 0), NOW)).toBe("Sábado 9");
+    expect(formatTaskDay(new Date(2026, 5, 2, 9, 0), NOW)).toBe("Martes 2 de junio");
+  });
+});
+
+describe("formatTaskMeta en otro día", () => {
+  it("antepone el día al horario", () => {
+    expect(formatTaskMeta({ ...baseTask, scheduled_at: onDay(8, 9, 0) }, NOW)).toBe(
+      "Mañana · 09:00 · 45 min",
+    );
+    expect(
+      formatTaskMeta({ ...baseTask, scheduled_at: onDay(9, 9, 0), duration_min: null }, NOW),
+    ).toBe("Sábado 9 · 09:00");
+  });
+
+  it("una hecha de ayer dice el día", () => {
+    expect(
+      formatTaskMeta({ ...baseTask, status: "done", scheduled_at: onDay(6, 9, 15) }, NOW),
+    ).toBe("Ayer · 09:15 · completada");
   });
 });

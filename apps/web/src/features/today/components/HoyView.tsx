@@ -86,7 +86,7 @@ export function HoyView() {
           <AnticipationsSection />
         </div>
         <div data-hero-reveal>
-          <PrioritiesSection />
+          <PrioritiesSection now={now} />
         </div>
         <div data-hero-reveal>
           <SuggestionsSection />
