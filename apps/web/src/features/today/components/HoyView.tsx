@@ -6,6 +6,7 @@ import { LivingField } from "@/components/ui/LivingField";
 import { Toast } from "@/components/ui/Toast";
 import { useActiveMode } from "@/hooks/useActiveMode";
 import { useUserStore } from "@/stores/user";
+import { useToday } from "../useToday";
 import { AnticipationsSection } from "./AnticipationsSection";
 import { CheckinSection } from "./CheckinSection";
 import { HoyHeader } from "./HoyHeader";
@@ -32,14 +33,15 @@ const getWelcomeServerSnapshot = () => false;
  * (`LivingField`, variante `aurora`: ondas que fluyen + atmósfera, DESIGN.md
  * §2.2), teñido por el modo activo del usuario.
  *
- * El modo y el nombre salen del onboarding (`useUserStore`); `now` se fija una
- * vez por montaje para anclar sin drift la fecha del header y el día de cada
- * prioridad.
+ * El modo y el nombre salen del onboarding (`useUserStore`); `now` sale de
+ * `useToday`: fijo dentro del día (sin drift en la fecha del header ni en el
+ * día de cada prioridad) y al día siguiente si la vista queda abierta pasada
+ * la medianoche.
  */
 export function HoyView() {
   const displayName = useUserStore((s) => s.displayName);
   const activeMode = useActiveMode();
-  const [now] = useState(() => new Date());
+  const now = useToday();
 
   // Toast de bienvenida tras el onboarding (`CelebrationOutro` navega a
   // `/hoy?welcome=true`): una sola vez, leyendo el query param SSR-safe (sin
