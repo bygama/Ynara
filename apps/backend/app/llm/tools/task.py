@@ -168,20 +168,23 @@ class _AgentCreateTaskArgs(BaseModel):
     title: Annotated[str, Field(min_length=1, max_length=200)]
     # Sin descripción, el modelo dejaba el día en el título («Entregar el TP (viernes
     # 27/11)») y la tarea quedaba sin fecha. La tarea no tiene un modo de día completo,
-    # así que sin hora va a las 09:00, lo que el modelo ya elegía casi siempre.
+    # así que sin hora va a las 09:00, lo que el modelo ya elegía casi siempre. Si es
+    # para hoy y las 09:00 ya pasaron, a la próxima hora en punto: un horario pasado
+    # deja la tarea fuera de las sugerencias, que solo miran lo que viene.
     scheduled_at: IsoDatetime | None = Field(
         default=None,
         description=(
             "Cuándo es la tarea, en ISO 8601 con offset. Si el usuario dice un día "
             "(«el viernes», «mañana»), va acá y no en el título. Si dice el día sin la "
-            "hora, a las 09:00 de ese día. Si no dice cuándo, no la mandes."
+            "hora: a las 09:00 de ese día, o a la próxima hora en punto si es hoy y ya "
+            "pasaron las 09:00. Si no dice cuándo, omití este campo."
         ),
     )
     # 43200 = un mes en minutos (30 días * 24h * 60min): cota razonable para un único
     # bloque de tarea; sigue ``gt=0`` (entero positivo, mismo piso que ``TaskCreate``).
     duration_min: Annotated[int, Field(gt=0, le=43200)] | None = Field(
         default=None,
-        description="Cuánto lleva, en minutos. Si el usuario no lo dice, no la mandes.",
+        description="Cuánto lleva, en minutos. Si el usuario no lo dice, omití este campo.",
     )
 
 
