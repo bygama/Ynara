@@ -22,8 +22,8 @@ tool tiene efecto, decidido por QUÉ registry se arma (default observado vs
 calendar real), igual que memory.* (stub en default, real en memory_registry).
 
 Args reales que espejan ``EventCreate`` (``app/schemas/calendar_event.py``):
-``title`` / ``start_at`` / ``duration_min`` (+ ``mode`` / ``location`` /
-``time_zone`` / ``recurrence`` opcionales). La invariante ADR-023
+``title`` / ``start_at`` (+ ``duration_min``, 60 si no viene, y ``mode`` /
+``location`` / ``time_zone`` / ``recurrence`` opcionales). La invariante ADR-023
 (``recurrence`` ⇒ ``time_zone``) se reusa del schema de dominio (un solo lugar).
 
 El JSON Schema OpenAI de cada tool se deriva del propio modelo Pydantic
@@ -61,6 +61,10 @@ if TYPE_CHECKING:
 
 _NAMESPACE = "calendar"
 _DETAIL = "calendar backend pendiente"
+
+# Duración de un evento que el usuario agenda sin decir cuánto dura. Con la duración
+# obligatoria, el modelo frenaba el turno para preguntarla o la inventaba.
+DEFAULT_EVENT_DURATION_MIN = 60
 
 
 class _CreateEventArgs(BaseModel):
@@ -183,7 +187,17 @@ class _AgentCreateEventArgs(BaseModel):
     start_at: IsoDatetime
     # 43200 = un mes en minutos (30 días * 24h * 60min): cota razonable para un único
     # bloque de evento; sigue ``gt=0`` (entero positivo, mismo piso que ``EventCreate``).
-    duration_min: Annotated[int, Field(gt=0, le=43200)]
+    duration_min: Annotated[
+        int,
+        Field(
+            gt=0,
+            le=43200,
+            description=(
+                "Duración en minutos. Si el usuario no la dice, no la mandes: "
+                f"vale {DEFAULT_EVENT_DURATION_MIN}."
+            ),
+        ),
+    ] = DEFAULT_EVENT_DURATION_MIN
     mode: Mode | None = None
     # Eventos de día completo (cumpleaños / feriados): el agente puede agendarlos.
     # Default ``False``, mismo piso que ``EventCreate.all_day``.
@@ -270,7 +284,10 @@ class AgentCreateEventTool:
 
     name = f"{_NAMESPACE}.create_event"
     namespace = _NAMESPACE
-    description = "Agenda un evento en el calendario del usuario."
+    description = (
+        "Agenda un evento en el calendario del usuario. Si no dice cuánto dura, "
+        f"dura {DEFAULT_EVENT_DURATION_MIN} minutos: no hace falta preguntarlo."
+    )
 
     def __init__(self, store: CalendarEventStore) -> None:
         self._store = store
