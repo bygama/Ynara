@@ -63,9 +63,8 @@ Decisiones de diseno documentadas (M8 Ola 1 + Ola 2):
     ``finish_reason="degraded"``) ante los transitorios (``LlmTimeoutError``/
     ``LlmUnavailableError``/``LlmOverloadedError``), permanentes
     (``LlmBadRequestError``/``LlmContextOverflowError``/``LlmAuthError``/
-    ``LlmProviderRejectedError``) y semanticos (``ToolParsingError``/
-    ``ToolExecutionError``), logueando SOLO
-    ``type(exc).__name__`` (regla #4) para no degradar a ciegas. La recuperacion de
+    ``LlmProviderRejectedError``) y semanticos (``ToolParsingError``), logueando
+    SOLO ``type(exc).__name__`` (regla #4) para no degradar a ciegas. La recuperacion de
     memoria va envuelta igual: las busquedas semantica y episodica embeddean el mensaje
     con el proveedor de embeddings ANTES de llamar al modelo, y un error de ese
     proveedor (429, timeout, 5xx, credencial, ``EmbeddingDimensionError``) degrada el

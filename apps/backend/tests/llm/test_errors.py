@@ -21,9 +21,7 @@ from app.llm.errors import (
     LlmTimeoutError,
     LlmTransientError,
     LlmUnavailableError,
-    MemoryRetrievalError,
     ModelNotServedError,
-    ToolExecutionError,
     ToolParsingError,
     degraded_response,
 )
@@ -41,8 +39,6 @@ _ALL_ERRORS = [
     LlmProviderRejectedError,
     EmbeddingDimensionError,
     ToolParsingError,
-    ToolExecutionError,
-    MemoryRetrievalError,
 ]
 
 
@@ -96,8 +92,6 @@ _NON_TRANSIENT_ERRORS = [
     LlmProviderRejectedError,
     EmbeddingDimensionError,
     ToolParsingError,
-    ToolExecutionError,
-    MemoryRetrievalError,
 ]
 
 
