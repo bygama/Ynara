@@ -31,7 +31,7 @@ proveedores aprobados y solo para la inferencia (regla #4).
 app/
 ├── main.py          # entrypoint FastAPI (lifespan, CORS, 14 routers v1)
 ├── enums.py         # StrEnums cross-domain (Mode, MemoryLayer, LlmModel, AuditOperation, TurnRole, EventStatus, TaskStatus, DevicePlatform, ReminderStatus)
-├── core/            # config (Settings lazy), constants (EMBEDDING_DIM, alias de modelo), crypto, deps (engine async lazy), security (JWT PyJWT+bcrypt — ADR-015), db_guard, ratelimit, token_store, observability, paths, urls (URL base de un proveedor)
+├── core/            # config (Settings lazy), constants (EMBEDDING_DIM, alias de modelo), crypto, deps (engine async lazy), security (JWT PyJWT+bcrypt — ADR-015), db_guard, ratelimit, request_id (X-Request-ID), logging_setup (logs en JSON), token_store, observability, paths, urls (URL base de un proveedor)
 ├── api/v1/          # routers, un archivo por dominio (auth, chat, sessions, events, tasks, reminders, devices, today, memory, modes, onboarding, users, health) + subpaquete admin/ (metrics, playground)
 ├── models/          # SQLAlchemy 2 (user, session, conversation_turn operativa, calendar_event, task, reminder, device_token, admin_audit, memory 🔴, audit 🔴)
 ├── schemas/         # Pydantic v2 (mirror de models + payloads de API; *_api.py: envelopes)
