@@ -36,10 +36,17 @@ from app.api.v1 import (
 from app.core.config import get_settings
 from app.core.db_guard import guard_against_prod_db_in_dev
 from app.core.deps import get_engine
+from app.core.logging_setup import configure_logging
 from app.core.observability import init_sentry
+from app.core.request_id import REQUEST_ID_HEADER, RequestIdMiddleware
 from app.core.token_store import RedisTokenStore
 from app.llm.clients.factory import build_llm_clients
 from app.llm.config import load_llm_config
+
+# Logs en JSON de una línea con request_id, nivel por LOG_LEVEL. Import-time y antes
+# de Sentry, para que los errores de arranque ya salgan con este formato. Idempotente:
+# un reimport o ``uvicorn --reload`` no duplica el handler.
+configure_logging(get_settings().log_level)
 
 # Error tracking: no-op si no hay SENTRY_DSN. Antes de crear la app para
 # capturar errores de startup. El before_send limpia PII (regla #4).
@@ -207,6 +214,9 @@ app.add_middleware(
     # falta listarlos); Authorization y Content-Type (application/json) sí.
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
+    # Sin esto el navegador oculta X-Request-ID al JS de la web (no es un header
+    # CORS-safelisted) y no se puede citar el id de un pedido que falló.
+    expose_headers=[REQUEST_ID_HEADER],
 )
 
 # Security headers en cada respuesta normal (ver gap de 500-crudo en el docstring
@@ -214,6 +224,11 @@ app.add_middleware(
 # middlewares en orden inverso al de registro, así que este queda "por dentro" del
 # de CORS y ninguno pisa los headers del otro.
 app.add_middleware(SecurityHeadersMiddleware)
+
+# Id del pedido (X-Request-ID): se registra último para quedar por fuera de CORS y de
+# los headers de seguridad, así sus logs también llevan el id y el header sale en toda
+# respuesta normal (mismo gap de 500-crudo que el middleware de arriba).
+app.add_middleware(RequestIdMiddleware)
 
 # Campos cuyo valor (``input``) JAMÁS debe ecoarse en un 422 (regla #4). El
 # RequestValidationError de Pydantic adjunta el ``input`` que falló; para un
