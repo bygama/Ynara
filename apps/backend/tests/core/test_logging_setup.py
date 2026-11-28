@@ -12,6 +12,7 @@ import io
 import json
 import logging
 import sys
+import threading
 from collections.abc import Callable, Iterator
 
 import pytest
@@ -172,8 +173,21 @@ def test_formatter_stops_on_a_cycle_in_the_chain() -> None:
         "fallo", level=logging.ERROR, exc_info=(ValueError, first, first.__traceback__)
     )
 
-    trace = json.loads(JsonFormatter().format(record))["traceback"]
+    # Sin el corte, el formatter no termina: se lo corre en un hilo para que
+    # la regresión dé rojo en vez de colgar la suite.
+    output: list[str] = []
+    worker = threading.Thread(
+        target=lambda: output.append(JsonFormatter().format(record)), daemon=True
+    )
+    worker.start()
+    worker.join(timeout=2)
+    hung = worker.is_alive()
+    # Romper el ciclo deja terminar al hilo aunque el corte falle.
+    first.__cause__ = second.__cause__ = None
+    worker.join()
 
+    assert not hung, "la cadena con ciclo no terminó"
+    trace = json.loads(output[0])["traceback"]
     assert trace.count("[ValueError]") == 1
     assert trace.count("[KeyError]") == 1
 
