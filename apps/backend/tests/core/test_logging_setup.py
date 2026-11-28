@@ -154,6 +154,35 @@ def test_access_filter_strips_query_string() -> None:
     assert "?" not in message
 
 
+@pytest.mark.parametrize(
+    ("msg", "args"),
+    [
+        # Handshake de WebSocket en uvicorn.error: el path es el segundo arg.
+        ('%s - "WebSocket %s" 403', ("10.0.0.1:5000", "/v1/health?q=texto-sintetico")),
+        ('%s - "WebSocket %s" %d', ("10.0.0.1:5000", "/v1/x?q=texto-sintetico", 404)),
+        # Si uvicorn cambiara el orden de los args, el filtro sigue andando.
+        ("%s %s %s", ("/v1/memory/search?q=texto-sintetico", "GET", "10.0.0.1:5000")),
+    ],
+)
+def test_filter_strips_query_string_in_any_position(msg: str, args: tuple[object, ...]) -> None:
+    record = _record(msg, args=args, name="uvicorn.error")
+
+    StripQueryStringFilter().filter(record)
+
+    message = record.getMessage()
+    assert "texto-sintetico" not in message
+    assert "?" not in message
+    assert "10.0.0.1:5000" in message
+
+
+def test_filter_only_touches_args_that_look_like_paths() -> None:
+    record = _record("%s %s", args=("texto?no-es-path", "/v1/x?q=texto-sintetico"))
+
+    StripQueryStringFilter().filter(record)
+
+    assert record.args == ("texto?no-es-path", "/v1/x")
+
+
 def test_access_filter_leaves_path_without_query_untouched() -> None:
     args = ("10.0.0.1:5000", "GET", "/v1/health", "1.1", 200)
     record = _record('%s - "%s %s HTTP/%s" %d', args=args, name="uvicorn.access")
@@ -229,6 +258,16 @@ def test_under_uvicorn_worker_each_record_is_emitted_once_as_json(
     assert "?q=" not in json.loads(access_lines[0])["message"]
     # Los loggers del servidor no propagan: nada llega al handler del raíz (stderr).
     assert capsys.readouterr().err == ""
+
+
+@pytest.mark.usefixtures("restore_logging")
+def test_configure_logging_filters_access_and_error_loggers() -> None:
+    configure_logging("INFO")
+    configure_logging("INFO")
+
+    for name in ("uvicorn.access", "uvicorn.error"):
+        filters = logging.getLogger(name).filters
+        assert sum(isinstance(f, StripQueryStringFilter) for f in filters) == 1, name
 
 
 @pytest.mark.usefixtures("restore_logging")
