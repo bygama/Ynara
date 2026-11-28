@@ -5,10 +5,10 @@ Contrato wire de auth: separado de los schemas de dominio de usuario
 extra=forbid). La respuesta de ``register`` es ``UserOut`` (reusa el schema de
 usuario, que NUNCA expone ``password_hash``); ``token`` devuelve ``TokenOut``.
 
-NO se reusa ``UserCreate`` como request de register a proposito: su ``password``
-es opcional y ademas trae ``is_ephemeral`` / ``retention_sensitive_days`` /
-``onboarding_completed``, lo que abriria un mass-assignment desde el wire. El
-request de register es un schema acotado a (email, password, display_name).
+El request de register es un schema acotado a (email, password, display_name) a
+proposito: no hereda de ``UserBase``, que trae ``is_ephemeral`` /
+``retention_sensitive_days`` / ``onboarding_completed`` y abriria un
+mass-assignment desde el wire.
 
 Nota de strict mode + el body de FastAPI (mismo caso que ``ChatHttpRequest``):
     ``YnaraBaseModel`` hereda ``strict=True``. FastAPI parsea el body JSON a un
@@ -58,7 +58,7 @@ _COMMON_PASSWORDS: frozenset[str] = frozenset(
 class RegisterRequest(YnaraBaseModel):
     """Payload de ``POST /v1/auth/register``.
 
-    Acotado a propósito (no reusa ``UserCreate``): el wire no puede setear
+    Acotado a propósito (no hereda de ``UserBase``): el wire no puede setear
     ``is_ephemeral`` / ``retention_sensitive_days`` / ``onboarding_completed``.
     """
 
