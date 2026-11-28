@@ -48,7 +48,7 @@ app/
 │   ├── crypto.py      # AES-256-GCM per-user (HKDF-SHA256); encrypt_for_user / decrypt_for_user
 │   ├── db_guard.py    # guard anti-prod en lifespan: aborta el boot si DATABASE_URL apunta a Supabase prod sin opt-in
 │   ├── deps.py        # engine async LAZY (get_engine/get_sessionmaker cacheados, no module-level) + get_db (AsyncSession por request); dispose en el shutdown del lifespan
-│   ├── logging_setup.py  # configure_logging(): logs en JSON de una línea con request_id, nivel del logger `app` por LOG_LEVEL, idempotente bajo gunicorn/uvicorn; saca el query string del access log — regla #4
+│   ├── logging_setup.py  # configure_logging(): logs en JSON de una línea con request_id, nivel del logger `app` por LOG_LEVEL, idempotente bajo gunicorn/uvicorn; saca el query string del access log y del handshake de WebSocket — regla #4
 │   ├── observability.py  # init_sentry() con before_send que scrubea PII (cuerpo, headers auth, user, extras) — regla #4
 │   ├── paths.py       # resolución de rutas del repo (raíz, ynara.config.json) sin hardcodear cwd
 │   ├── ratelimit.py   # rate-limit fail-open para login/register/refresh/chat/export, memory-wipe (`memory:ratelimit:wipe:`, solo el execute) y sessions (`sessions:ratelimit:read:`, bucket único list/get/close) (contadores Redis vía TokenStore)
