@@ -29,7 +29,7 @@ proveedores aprobados y solo para la inferencia (regla #4).
 
 ```
 app/
-├── main.py          # entrypoint FastAPI (lifespan, CORS, 13 routers v1)
+├── main.py          # entrypoint FastAPI (lifespan, CORS, 14 routers v1)
 ├── enums.py         # StrEnums cross-domain (Mode, MemoryLayer, LlmModel, AuditOperation, TurnRole, EventStatus, TaskStatus, DevicePlatform, ReminderStatus)
 ├── core/            # config (Settings lazy), constants (EMBEDDING_DIM, alias de modelo), crypto, deps (engine async lazy), security (JWT PyJWT+bcrypt — ADR-015), db_guard, ratelimit, token_store, observability, paths, urls (URL base de un proveedor)
 ├── api/v1/          # routers, un archivo por dominio (auth, chat, sessions, events, tasks, reminders, devices, memory, modes, users, health) + subpaquete admin/ (metrics, playground)
