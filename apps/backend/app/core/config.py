@@ -208,6 +208,12 @@ class Settings(BaseSettings):
     # Observabilidad
     sentry_dsn: str = Field("", alias="SENTRY_DSN")
     sentry_traces_sample_rate: float = Field(0.0, ge=0.0, le=1.0, alias="SENTRY_TRACES_SAMPLE_RATE")
+    # Nivel de los logs del backend (logger ``app``, ver ``app/core/logging_setup.py``).
+    # Se acepta en minúsculas y vacío es el default (``_normalize_log_level``); un valor
+    # fuera del set rompe el arranque, igual que ``jwt_algorithm``.
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
+        "INFO", alias="LOG_LEVEL"
+    )
 
     # CORS — origins permitidos por el navegador. Se setea por entorno via
     # ``CORS_ORIGINS`` (CSV human-friendly, p.ej.
@@ -273,6 +279,17 @@ class Settings(BaseSettings):
         """
         if isinstance(v, str):
             return [part.strip() for part in v.split(",") if part.strip()]
+        return v
+
+    @field_validator("log_level", mode="before")
+    @classmethod
+    def _normalize_log_level(cls, v: object) -> object:
+        """``LOG_LEVEL=info`` vale lo mismo que ``INFO``; vacío (``LOG_LEVEL=``) es el default.
+
+        Sin esto los dos casos abortarían el boot. Un nivel que no existe sí lo aborta.
+        """
+        if isinstance(v, str):
+            return v.strip().upper() or "INFO"
         return v
 
     @field_validator("llm_providers", mode="before")
