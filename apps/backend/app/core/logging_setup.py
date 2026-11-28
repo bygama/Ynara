@@ -118,8 +118,10 @@ class StripQueryStringFilter(logging.Filter):
     Uvicorn loguea ``get_path_with_query_string(scope)``; el query string puede
     traer texto del usuario (``/v1/memory/search?q=...``). Se queda el path solo.
     Corta en el ``?`` todo arg ``str`` del registro, en cualquier posición. No
-    exige que empiece con ``/``: uvicorn loguea el request-target tal como llegó
-    (``http%3A//host/ruta?q=...`` en forma absoluta, o sin barra inicial). El
+    exige que empiece con ``/``: con h11, wsproto o websockets, uvicorn loguea el
+    request-target tal como llegó (``http%3A//host/ruta?q=...`` en forma
+    absoluta, o sin barra inicial). Corta en el primer ``?``: uvicorn codifica
+    un ``?`` del path como ``%3F``, así que el primero abre el query string. El
     cliente (``ip:puerto``), el método, la versión y el status no llevan ``?``.
     """
 

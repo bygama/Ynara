@@ -253,7 +253,8 @@ def test_filter_strips_query_string_in_any_position(msg: str, args: tuple[object
 
 
 def test_filter_cuts_every_str_arg_and_keeps_the_rest() -> None:
-    record = _record("%s %s %s %d", args=("10.0.0.1:5000", "ruta?q=texto-sintetico", "GET", 200))
+    # Con un segundo ``?`` dentro del query: se corta en el primero.
+    record = _record("%s %s %s %d", args=("10.0.0.1:5000", "ruta?q=texto-sintetico?b", "GET", 200))
 
     StripQueryStringFilter().filter(record)
 
@@ -286,7 +287,7 @@ def test_filter_strips_what_uvicorn_really_logs(
 ) -> None:
     """Con la salida real de ``get_path_with_query_string``, no un string armado a mano."""
     logged = get_path_with_query_string(
-        {"path": path, "query_string": b"q=texto-sintetico"}  # type: ignore[typeddict-item]
+        {"path": path, "query_string": b"q=texto-sintetico?b"}  # type: ignore[typeddict-item]
     )
     record = _record(msg, args=build_args(logged), name=name)
 
