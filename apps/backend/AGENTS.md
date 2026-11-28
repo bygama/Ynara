@@ -40,7 +40,7 @@
 
 ```
 app/
-├── main.py            # entrypoint FastAPI (logging, lifespan, CORS, headers de seguridad, X-Request-ID, 13 routers v1, scrubbing de validación)
+├── main.py            # entrypoint FastAPI (logging, lifespan, CORS, headers de seguridad, X-Request-ID, 14 routers v1, scrubbing de validación)
 ├── enums.py           # StrEnums cross-domain (Mode, MemoryLayer, LlmModel, AuditOperation, TurnRole, EventStatus, TaskStatus, DevicePlatform, ReminderStatus)
 ├── core/
 │   ├── config.py      # Settings (pydantic-settings); get_settings() cacheado y lazy. LLM_BACKEND (fake|api), LLM_PROVIDERS y las credenciales LLM_API_KEY_<NAME> (SecretStr); EMBEDDING_BACKEND (fake|api) con EMBEDDING_BASE_URL, EMBEDDING_API_KEY (SecretStr), EMBEDDING_MODEL, EMBEDDING_BATCH_SIZE y EMBEDDING_TIMEOUT_S; production no arranca con el LLM o el embedder fake, sin proveedores o sin una credencial
@@ -49,10 +49,10 @@ app/
 │   ├── db_guard.py    # guard anti-prod en lifespan: aborta el boot si DATABASE_URL apunta a Supabase prod sin opt-in
 │   ├── deps.py        # engine async LAZY (get_engine/get_sessionmaker cacheados, no module-level) + get_db (AsyncSession por request); dispose en el shutdown del lifespan
 │   ├── logging_setup.py  # configure_logging(): logs en JSON de una línea con request_id, nivel del logger `app` por LOG_LEVEL, idempotente bajo gunicorn/uvicorn; saca el query string del access log — regla #4
-│   ├── request_id.py  # RequestIdMiddleware (ASGI puro): X-Request-ID entrante validado o generado, en un contextvar y en la respuesta
 │   ├── observability.py  # init_sentry() con before_send que scrubea PII (cuerpo, headers auth, user, extras) — regla #4
 │   ├── paths.py       # resolución de rutas del repo (raíz, ynara.config.json) sin hardcodear cwd
 │   ├── ratelimit.py   # rate-limit fail-open para login/register/refresh/chat/export, memory-wipe (`memory:ratelimit:wipe:`, solo el execute) y sessions (`sessions:ratelimit:read:`, bucket único list/get/close) (contadores Redis vía TokenStore)
+│   ├── request_id.py  # RequestIdMiddleware (ASGI puro): X-Request-ID entrante validado o generado, en un contextvar y en la respuesta
 │   ├── security.py    # JWT/hashing — implementado con PyJWT + bcrypt directo (ADR-015, no python-jose/passlib): create_access_token, verify_access_token, hash_password, verify_password
 │   ├── token_store.py # blocklist de jti + revocación por familia (sid) + contadores genéricos; Protocol + RedisTokenStore + InMemoryTokenStore (tests)
 │   └── urls.py        # validated_base_url(): URL base de un proveedor de IA (https; http solo contra la propia máquina), la usan Settings y los clientes de providers/
