@@ -90,9 +90,9 @@ def _format_chain(exc: BaseException, tb: TracebackType | None) -> str:
     la excepción logueada. Cada bloque arranca con ``[Tipo]``. Sigue ``__cause__``
     (``raise X from Y``) y, si no se suprimió, ``__context__`` (una excepción
     lanzada mientras se manejaba otra). Una cadena con ciclo se corta en la
-    primera excepción repetida. Los frames de la logueada salen del ``tb`` de
-    ``exc_info``, como en el ``logging`` de stdlib, y si no viene, de su
-    ``__traceback__``; los de cada causa, solo de su ``__traceback__``.
+    primera excepción repetida. Como en el ``logging`` de stdlib, los frames de
+    la logueada salen del ``tb`` de ``exc_info`` (sin ``tb``, no hay frames) y
+    los de cada causa, de su ``__traceback__``.
     """
     chain: list[BaseException] = []
     seen: set[int] = set()
@@ -108,9 +108,7 @@ def _format_chain(exc: BaseException, tb: TracebackType | None) -> str:
             current = None
     return "\n".join(
         f"[{type(item).__name__}]\n"
-        + "".join(
-            traceback.format_tb((tb or exc.__traceback__) if item is exc else item.__traceback__)
-        )
+        + "".join(traceback.format_tb(tb if item is exc else item.__traceback__))
         for item in reversed(chain)
     )
 

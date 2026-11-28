@@ -13,6 +13,7 @@ import json
 import logging
 import sys
 from collections.abc import Callable, Iterator
+from types import TracebackType
 
 import pytest
 from pydantic import ValidationError
@@ -211,7 +212,7 @@ def test_formatter_prefers_exc_info_traceback_like_stdlib() -> None:
         except ValueError as exc:
             return exc
 
-    def _tb_from_here() -> object:
+    def _tb_from_here() -> TracebackType | None:
         try:
             raise KeyError("y")
         except KeyError as exc:
@@ -224,6 +225,18 @@ def test_formatter_prefers_exc_info_traceback_like_stdlib() -> None:
 
     assert "_tb_from_here" in trace
     assert "_raised_here" not in trace
+
+
+def test_formatter_logs_no_frames_without_exc_info_traceback_like_stdlib() -> None:
+    try:
+        raise ValueError("x")
+    except ValueError as exc:
+        record = _record("fallo", level=logging.ERROR, exc_info=(ValueError, exc, None))
+
+    trace = json.loads(JsonFormatter().format(record))["traceback"]
+
+    # La excepción sí trae ``__traceback__``, pero ``exc_info`` dice que no hay.
+    assert trace.strip() == "[ValueError]"
 
 
 def test_formatter_does_not_reuse_the_traceback_for_a_cause_without_one() -> None:
