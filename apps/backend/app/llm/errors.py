@@ -14,8 +14,7 @@ Tres familias:
   del request: no se reintenta contra el mismo, pero el respaldo de la lista
   puede aceptarlo (ver ``ResilientClient``). Tambien un embedding con otra
   dimension que la de la memoria (``EmbeddingDimensionError``).
-- **Semanticos**: fallas de parseo / ejecucion de tools y de recuperacion
-  de memoria.
+- **Semanticos**: fallas de parseo de tool calls (``ToolParsingError``).
 
 Regla #4a (datos del usuario nunca en logs ni errores): **ninguna
 excepcion expone contenido del usuario ni la respuesta del modelo en su
@@ -202,32 +201,6 @@ class ToolParsingError(LlmError):
     """
 
     message = "error parseando tool call"
-
-
-class ToolExecutionError(LlmError):
-    """La ejecucion de una tool fallo.
-
-    Entrada RESERVADA de la taxonomia, todavia NO cableada. El path previsto
-    es que ``tool_loop.py`` envuelva los fallos de ejecucion de tool en esta
-    excepcion. No es dead-code sino taxonomia forward-looking: ya queda
-    cubierta por el ``except LlmError`` de familia que envuelve ``route()``,
-    asi que cuando se cablee no requiere tocar el manejo de errores.
-    """
-
-    message = "error ejecutando tool"
-
-
-class MemoryRetrievalError(LlmError):
-    """Fallo la recuperacion de contexto de memoria.
-
-    Entrada RESERVADA de la taxonomia, todavia NO cableada. El path previsto
-    es que ``memory_engine.py`` envuelva los fallos de retrieval en esta
-    excepcion. No es dead-code sino taxonomia forward-looking: ya queda
-    cubierta por el ``except LlmError`` de familia que envuelve ``route()``,
-    asi que cuando se cablee no requiere tocar el manejo de errores.
-    """
-
-    message = "error recuperando memoria"
 
 
 # ---------- Degradacion (no es excepcion) ----------

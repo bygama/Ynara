@@ -18,7 +18,11 @@ from app.schemas.base import YnaraBaseModel
 
 
 class UserBase(YnaraBaseModel):
-    """Campos compartidos entre create/update/out."""
+    """Campos públicos del usuario; la base de ``UserOut``.
+
+    El alta no tiene schema de dominio: el wire usa ``RegisterRequest``
+    (``app/schemas/auth.py``), acotado a propósito.
+    """
 
     email: EmailStr | None = None
     display_name: str | None = Field(default=None, max_length=40)
@@ -35,14 +39,6 @@ class UserBase(YnaraBaseModel):
     # server_default de la columna).
     preferences: dict = Field(default_factory=dict)
     retention_sensitive_days: int = Field(default=180, ge=30, le=365)
-
-
-class UserCreate(UserBase):
-    """Payload para crear un usuario. ``password`` solo si no es
-    ephemeral; se hashea en el service antes de persistir.
-    """
-
-    password: str | None = Field(default=None, min_length=8, max_length=128)
 
 
 class UserUpdate(YnaraBaseModel):

@@ -30,7 +30,7 @@ from app.schemas.memory_api import (
 )
 from app.schemas.session import SessionClose, SessionCreate, SessionOut
 from app.schemas.session_api import SessionListPage
-from app.schemas.user import UserBase, UserCreate, UserOut, UserUpdate
+from app.schemas.user import UserOut, UserUpdate
 
 __all__ = [
     "Action",
@@ -62,8 +62,6 @@ __all__ = [
     "SessionListPage",
     "SessionOut",
     "TokenOut",
-    "UserBase",
-    "UserCreate",
     "UserOut",
     "UserUpdate",
     "YnaraBaseModel",
