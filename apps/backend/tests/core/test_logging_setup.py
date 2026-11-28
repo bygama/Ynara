@@ -205,6 +205,42 @@ def test_formatter_uses_exc_info_traceback_when_the_exception_has_none() -> None
     assert "test_formatter_uses_exc_info_traceback_when_the_exception_has_none" in trace
 
 
+def test_formatter_prefers_exc_info_traceback_like_stdlib() -> None:
+    def _raised_here() -> ValueError:
+        try:
+            raise ValueError("x")
+        except ValueError as exc:
+            return exc
+
+    def _tb_from_here() -> object:
+        try:
+            raise KeyError("y")
+        except KeyError as exc:
+            return exc.__traceback__
+
+    exc = _raised_here()
+    record = _record("fallo", level=logging.ERROR, exc_info=(ValueError, exc, _tb_from_here()))
+
+    trace = json.loads(JsonFormatter().format(record))["traceback"]
+
+    assert "_tb_from_here" in trace
+    assert "_raised_here" not in trace
+
+
+def test_formatter_does_not_reuse_the_traceback_for_a_cause_without_one() -> None:
+    try:
+        raise ValueError("x") from KeyError("nunca-lanzada")
+    except ValueError as exc:
+        record = _record(
+            "fallo", level=logging.ERROR, exc_info=(ValueError, exc, exc.__traceback__)
+        )
+
+    trace = json.loads(JsonFormatter().format(record))["traceback"]
+
+    # La causa nunca se lanzó: su bloque sale sin frames.
+    assert trace.split("[ValueError]")[0].strip() == "[KeyError]"
+
+
 def test_formatter_follows_implicit_context_unless_suppressed() -> None:
     def _raise(suppress: bool) -> None:
         try:
