@@ -136,6 +136,55 @@ def test_formatter_logs_exception_type_and_frames_but_not_its_message() -> None:
     assert secret not in line
 
 
+def test_formatter_logs_the_cause_chain_without_messages() -> None:
+    cause_secret = "causa-sintetica-del-usuario"
+    top_secret = "error-sintetico-del-usuario"
+
+    def _inner() -> None:
+        raise ValueError(cause_secret)
+
+    try:
+        try:
+            _inner()
+        except ValueError as exc:
+            raise RuntimeError(top_secret) from exc
+    except RuntimeError:
+        exc_info = sys.exc_info()
+
+    line = JsonFormatter().format(_record("fallo", level=logging.ERROR, exc_info=exc_info))
+
+    payload = json.loads(line)
+    assert payload["exc_type"] == "RuntimeError"
+    trace = payload["traceback"]
+    # La causa primero, como en el traceback de Python, y cada bloque con su tipo.
+    assert trace.index("[ValueError]") < trace.index("[RuntimeError]")
+    assert "_inner" in trace
+    assert cause_secret not in line
+    assert top_secret not in line
+
+
+def test_formatter_follows_implicit_context_unless_suppressed() -> None:
+    def _raise(suppress: bool) -> None:
+        try:
+            raise KeyError("clave-sintetica")
+        except KeyError:
+            if suppress:
+                raise TypeError("x") from None
+            raise TypeError("x")  # noqa: B904 - el contexto implícito es el caso
+
+    traces = {}
+    for suppress in (False, True):
+        try:
+            _raise(suppress)
+        except TypeError:
+            record = _record("fallo", level=logging.ERROR, exc_info=sys.exc_info())
+            traces[suppress] = json.loads(JsonFormatter().format(record))["traceback"]
+
+    assert "[KeyError]" in traces[False]
+    assert "[KeyError]" not in traces[True]
+    assert "[TypeError]" in traces[True]
+
+
 # ---------- StripQueryStringFilter ----------
 
 
@@ -213,6 +262,16 @@ def test_configure_logging_sets_app_level_and_leaves_root_level() -> None:
 
 
 @pytest.mark.usefixtures("restore_logging")
+def test_configure_logging_filters_access_and_error_loggers() -> None:
+    configure_logging("INFO")
+    configure_logging("INFO")
+
+    for name in ("uvicorn.access", "uvicorn.error"):
+        filters = logging.getLogger(name).filters
+        assert sum(isinstance(f, StripQueryStringFilter) for f in filters) == 1, name
+
+
+@pytest.mark.usefixtures("restore_logging")
 def test_configure_logging_is_idempotent() -> None:
     configure_logging("INFO")
     configure_logging("INFO")
@@ -258,16 +317,6 @@ def test_under_uvicorn_worker_each_record_is_emitted_once_as_json(
     assert "?q=" not in json.loads(access_lines[0])["message"]
     # Los loggers del servidor no propagan: nada llega al handler del raíz (stderr).
     assert capsys.readouterr().err == ""
-
-
-@pytest.mark.usefixtures("restore_logging")
-def test_configure_logging_filters_access_and_error_loggers() -> None:
-    configure_logging("INFO")
-    configure_logging("INFO")
-
-    for name in ("uvicorn.access", "uvicorn.error"):
-        filters = logging.getLogger(name).filters
-        assert sum(isinstance(f, StripQueryStringFilter) for f in filters) == 1, name
 
 
 @pytest.mark.usefixtures("restore_logging")
