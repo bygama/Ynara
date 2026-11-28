@@ -40,8 +40,10 @@ docker compose logs --since 30m api worker | grep -E 'llm:|route degrado|memory 
 Los workers de gunicorn de `api` escriben cada línea como un JSON con
 `ts` (UTC), `level`, `logger`, `message` y `request_id`; si hubo una
 excepción, también `exc_type` y `traceback` (solo los frames, nunca el
-mensaje de la excepción, regla #4a). El access log sale con el mismo
-formato y sin query string. Siguen en texto el proceso maestro de
+mensaje de la excepción, regla #4a); con `raise ... from`, también los
+frames de cada causa. El access log y las líneas de handshake de
+WebSocket salen con el mismo formato y sin query string. Siguen en
+texto el proceso maestro de
 gunicorn, las primeras líneas de cada worker (antes de cargar la app) y
 el `worker` de Celery.
 
