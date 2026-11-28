@@ -228,3 +228,24 @@ async def test_real_app_exposes_request_id_to_the_browser() -> None:
     exposed = resp.headers["Access-Control-Expose-Headers"]
     assert REQUEST_ID_HEADER.lower() in exposed.lower()
     assert _GENERATED.fullmatch(resp.headers[REQUEST_ID_HEADER])
+
+
+async def test_real_app_lets_the_browser_send_a_request_id() -> None:
+    """El preflight acepta X-Request-ID: si no, el navegador corta el pedido."""
+    from app.main import app
+
+    origin = get_settings().cors_origins[0]
+    transport = ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.options(
+            "/v1/health",
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "x-request-id",
+            },
+        )
+
+    assert resp.status_code == 200
+    allowed = resp.headers["Access-Control-Allow-Headers"]
+    assert REQUEST_ID_HEADER.lower() in allowed.lower()

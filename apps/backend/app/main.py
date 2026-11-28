@@ -213,9 +213,10 @@ app.add_middleware(
     # superficie de preflight. Accept/Content-Language son CORS-safelisted (no hace
     # falta listarlos); Authorization y Content-Type (application/json) sí.
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
-    # Sin esto el navegador oculta X-Request-ID al JS de la web (no es un header
-    # CORS-safelisted) y no se puede citar el id de un pedido que falló.
+    # X-Request-ID va y vuelve: la web puede mandar el suyo (sin listarlo, el
+    # preflight falla y se cae el pedido entero) y leer el de la respuesta (no es
+    # CORS-safelisted, el navegador se lo ocultaría al JS).
+    allow_headers=["Authorization", "Content-Type", REQUEST_ID_HEADER],
     expose_headers=[REQUEST_ID_HEADER],
 )
 
