@@ -37,6 +37,7 @@ import logging
 import sys
 import traceback
 from datetime import UTC, datetime
+from types import TracebackType
 from typing import Any
 
 from app.core.request_id import request_id_var
@@ -77,18 +78,20 @@ class JsonFormatter(logging.Formatter):
             exc_type, exc, tb = record.exc_info
             payload["exc_type"] = exc_type.__name__
             payload["traceback"] = (
-                _format_chain(exc) if exc is not None else "".join(traceback.format_tb(tb))
+                _format_chain(exc, tb) if exc is not None else "".join(traceback.format_tb(tb))
             )
         return json.dumps(payload, ensure_ascii=False)
 
 
-def _format_chain(exc: BaseException) -> str:
+def _format_chain(exc: BaseException, tb: TracebackType | None) -> str:
     """Frames de la excepción y de sus causas, sin ningún mensaje.
 
     Mismo orden que el traceback de Python: primero la causa más interna, al final
     la excepción logueada. Cada bloque arranca con ``[Tipo]``. Sigue ``__cause__``
     (``raise X from Y``) y, si no se suprimió, ``__context__`` (una excepción
-    lanzada mientras se manejaba otra).
+    lanzada mientras se manejaba otra). Una cadena con ciclo se corta en la
+    primera excepción repetida. Si la logueada no trae ``__traceback__`` (un
+    ``exc_info`` armado a mano), sus frames salen del ``tb`` de ``exc_info``.
     """
     chain: list[BaseException] = []
     seen: set[int] = set()
@@ -103,7 +106,8 @@ def _format_chain(exc: BaseException) -> str:
         else:
             current = None
     return "\n".join(
-        f"[{type(item).__name__}]\n" + "".join(traceback.format_tb(item.__traceback__))
+        f"[{type(item).__name__}]\n"
+        + "".join(traceback.format_tb(item.__traceback__ or (tb if item is exc else None)))
         for item in reversed(chain)
     )
 
