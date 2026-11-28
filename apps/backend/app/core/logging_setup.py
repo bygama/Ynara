@@ -24,7 +24,8 @@ Qué hace, sin dependencias nuevas (stdlib):
 
 Qué emite: ``ts`` (ISO 8601 UTC), ``level``, ``logger``, ``message``,
 ``request_id`` (``null`` fuera de un request) y, si hay excepción, ``exc_type`` y
-``traceback`` (solo los frames). El mensaje de la excepción NO sale: un
+``traceback`` (solo los frames, también los de la cadena de causas, cada bloque
+con el tipo de su excepción). El mensaje de ninguna excepción sale: un
 ``str(exc)`` puede traer contenido del usuario, el mismo motivo por el que el
 scrubber de Sentry lo ofusca (``app/core/observability.py``).
 """
@@ -73,11 +74,38 @@ class JsonFormatter(logging.Formatter):
             "request_id": request_id_var.get(),
         }
         if record.exc_info and record.exc_info[0] is not None:
-            exc_type, _exc, tb = record.exc_info
+            exc_type, exc, tb = record.exc_info
             payload["exc_type"] = exc_type.__name__
-            payload["traceback"] = "".join(traceback.format_tb(tb)) if tb else ""
-        # ``default=str``: un arg no serializable no tumba el log.
-        return json.dumps(payload, ensure_ascii=False, default=str)
+            payload["traceback"] = (
+                _format_chain(exc) if exc is not None else "".join(traceback.format_tb(tb))
+            )
+        return json.dumps(payload, ensure_ascii=False)
+
+
+def _format_chain(exc: BaseException) -> str:
+    """Frames de la excepción y de sus causas, sin ningún mensaje.
+
+    Mismo orden que el traceback de Python: primero la causa más interna, al final
+    la excepción logueada. Cada bloque arranca con ``[Tipo]``. Sigue ``__cause__``
+    (``raise X from Y``) y, si no se suprimió, ``__context__`` (una excepción
+    lanzada mientras se manejaba otra).
+    """
+    chain: list[BaseException] = []
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        chain.append(current)
+        if current.__cause__ is not None:
+            current = current.__cause__
+        elif not current.__suppress_context__:
+            current = current.__context__
+        else:
+            current = None
+    return "\n".join(
+        f"[{type(item).__name__}]\n" + "".join(traceback.format_tb(item.__traceback__))
+        for item in reversed(chain)
+    )
 
 
 class StripQueryStringFilter(logging.Filter):
