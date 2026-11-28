@@ -35,6 +35,33 @@ de usuario: solo nombres de proveedor, clases de error e ids, regla #4a):
 docker compose logs --since 30m api worker | grep -E 'llm:|route degrado|memory (search|update):|consolidate_|memory_engine:'
 ```
 
+### Formato de los logs de `api`
+
+Los workers de gunicorn de `api` escriben cada línea como un JSON con
+`ts` (UTC), `level`, `logger`, `message` y `request_id`; si hubo una
+excepción, también `exc_type` y `traceback` (solo los frames, nunca el
+mensaje de la excepción, regla #4a). El access log sale con el mismo
+formato y sin query string. Siguen en texto el proceso maestro de
+gunicorn, las primeras líneas de cada worker (antes de cargar la app) y
+el `worker` de Celery.
+
+- **Nivel**: `LOG_LEVEL` en `apps/backend/.env` (`DEBUG`, `INFO`,
+  `WARNING`, `ERROR` o `CRITICAL`; default `INFO`). Gobierna los logs del
+  backend (logger `app`); las librerías de terceros quedan en `WARNING`.
+  Para subirlo durante un incidente: cambiar la variable y
+  `docker compose up -d api`.
+- **Id del pedido**: toda respuesta trae `X-Request-ID`. Si el cliente
+  manda uno válido (hasta 64 caracteres de `A-Z a-z 0-9 . _ -`), se
+  respeta; si no, se genera. Con ese id se filtran las líneas de un
+  pedido:
+
+```sh
+docker compose logs --since 30m api | grep '"request_id": "<id>"'
+```
+
+Un 500 no manejado no lleva el header y su línea sale con `request_id`
+nulo: para esos casos, el evento de Sentry.
+
 ## Escenarios comunes
 
 ### Backend no responde
