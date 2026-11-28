@@ -12,7 +12,6 @@ import io
 import json
 import logging
 import sys
-import threading
 from collections.abc import Callable, Iterator
 
 import pytest
@@ -166,30 +165,30 @@ def test_formatter_logs_the_cause_chain_without_messages() -> None:
 
 
 def test_formatter_stops_on_a_cycle_in_the_chain() -> None:
-    first, second = ValueError("a"), KeyError("b")
-    first.__cause__ = second
-    second.__cause__ = first
-    record = _record(
-        "fallo", level=logging.ERROR, exc_info=(ValueError, first, first.__traceback__)
-    )
+    class _Cyclic(ValueError):
+        """Ciclo cuyo ``__cause__`` lanza tras muchas lecturas.
 
-    # Sin el corte, el formatter no termina: se lo corre en un hilo para que
-    # la regresión dé rojo en vez de colgar la suite.
-    output: list[str] = []
-    worker = threading.Thread(
-        target=lambda: output.append(JsonFormatter().format(record)), daemon=True
-    )
-    worker.start()
-    worker.join(timeout=2)
-    hung = worker.is_alive()
-    # Romper el ciclo deja terminar al hilo aunque el corte falle.
-    first.__cause__ = second.__cause__ = None
-    worker.join()
+        Sin el corte, el formatter da vueltas para siempre: así la regresión da
+        rojo al instante en vez de colgar la suite.
+        """
 
-    assert not hung, "la cadena con ciclo no terminó"
-    trace = json.loads(output[0])["traceback"]
-    assert trace.count("[ValueError]") == 1
-    assert trace.count("[KeyError]") == 1
+        reads = 0
+        partner: BaseException
+
+        @property  # type: ignore[override]
+        def __cause__(self) -> BaseException:
+            _Cyclic.reads += 1
+            if _Cyclic.reads > 100:
+                raise AssertionError("la cadena con ciclo no terminó")
+            return self.partner
+
+    first, second = _Cyclic("a"), _Cyclic("b")
+    first.partner, second.partner = second, first
+    record = _record("fallo", level=logging.ERROR, exc_info=(_Cyclic, first, None))
+
+    trace = json.loads(JsonFormatter().format(record))["traceback"]
+
+    assert trace.count("[_Cyclic]") == 2
 
 
 def test_formatter_uses_exc_info_traceback_when_the_exception_has_none() -> None:
