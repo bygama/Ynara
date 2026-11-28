@@ -17,8 +17,10 @@ Qué hace, sin dependencias nuevas (stdlib):
   ``INFO``/``DEBUG``, que en las de HTTP incluye URLs y detalles del request.
 - A los handlers que uvicorn y gunicorn ya tienen les cambia solo el formatter por
   el JSON: no se suman handlers ni se toca ``propagate``, así nada sale dos veces.
-- Le agrega a ``uvicorn.access`` un filtro que saca el query string del path:
-  ``GET /v1/memory/search?q=...`` lleva texto del usuario (regla #4).
+- Le agrega a ``uvicorn.access`` y a ``uvicorn.error`` un filtro que saca el
+  query string de los paths: ``GET /v1/memory/search?q=...`` lleva texto del
+  usuario (regla #4), y uvicorn loguea el handshake de WebSocket con su query
+  string en ``uvicorn.error``.
 
 Qué emite: ``ts`` (ISO 8601 UTC), ``level``, ``logger``, ``message``,
 ``request_id`` (``null`` fuera de un request) y, si hay excepción, ``exc_type`` y
@@ -50,11 +52,9 @@ _SERVER_LOGGERS = (
     "gunicorn.error",
     "gunicorn.access",
 )
-_ACCESS_LOGGER = "uvicorn.access"
-
-# Posición del path en los args del access log de uvicorn
-# (``'%s - "%s %s HTTP/%s" %d'``: cliente, método, path, versión, status).
-_ACCESS_PATH_ARG = 2
+# Loggers donde uvicorn escribe paths con su query string: el access log de HTTP
+# y el handshake de WebSocket (``'%s - "WebSocket %s" 403'``, en ``uvicorn.error``).
+_QUERY_STRING_LOGGERS = ("uvicorn.access", "uvicorn.error")
 
 
 class JsonFormatter(logging.Formatter):
@@ -81,21 +81,26 @@ class JsonFormatter(logging.Formatter):
 
 
 class StripQueryStringFilter(logging.Filter):
-    """Saca el query string del path en el access log de uvicorn (regla #4).
+    """Saca el query string de los paths que loguea uvicorn (regla #4).
 
     Uvicorn loguea ``get_path_with_query_string(scope)``; el query string puede
     traer texto del usuario (``/v1/memory/search?q=...``). Se queda el path solo.
+    No depende de en qué posición de los args venga: recorta todo arg que sea un
+    path (empieza con ``/``) y traiga ``?``. El cliente (``ip:puerto``), el método
+    y el status nunca empiezan con ``/``.
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
         args = record.args
-        if isinstance(args, tuple) and len(args) > _ACCESS_PATH_ARG:
-            path = args[_ACCESS_PATH_ARG]
-            if isinstance(path, str) and "?" in path:
-                new_args = list(args)
-                new_args[_ACCESS_PATH_ARG] = path.split("?", 1)[0]
-                record.args = tuple(new_args)
+        if isinstance(args, tuple) and any(_is_path_with_query(arg) for arg in args):
+            record.args = tuple(
+                arg.split("?", 1)[0] if _is_path_with_query(arg) else arg for arg in args
+            )
         return True
+
+
+def _is_path_with_query(value: object) -> bool:
+    return isinstance(value, str) and value.startswith("/") and "?" in value
 
 
 class _StderrHandler(logging.StreamHandler):
@@ -151,6 +156,7 @@ def configure_logging(level: str) -> None:
         for server_handler in logging.getLogger(name).handlers:
             server_handler.setFormatter(formatter)
 
-    access = logging.getLogger(_ACCESS_LOGGER)
-    if not any(isinstance(f, StripQueryStringFilter) for f in access.filters):
-        access.addFilter(StripQueryStringFilter())
+    for name in _QUERY_STRING_LOGGERS:
+        logger = logging.getLogger(name)
+        if not any(isinstance(f, StripQueryStringFilter) for f in logger.filters):
+            logger.addFilter(StripQueryStringFilter())
