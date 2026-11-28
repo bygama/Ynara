@@ -164,6 +164,20 @@ def test_formatter_logs_the_cause_chain_without_messages() -> None:
     assert top_secret not in line
 
 
+def test_formatter_stops_on_a_cycle_in_the_chain() -> None:
+    first, second = ValueError("a"), KeyError("b")
+    first.__cause__ = second
+    second.__cause__ = first
+    record = _record(
+        "fallo", level=logging.ERROR, exc_info=(ValueError, first, first.__traceback__)
+    )
+
+    trace = json.loads(JsonFormatter().format(record))["traceback"]
+
+    assert trace.count("[ValueError]") == 1
+    assert trace.count("[KeyError]") == 1
+
+
 def test_formatter_uses_exc_info_traceback_when_the_exception_has_none() -> None:
     try:
         raise ValueError("x")
