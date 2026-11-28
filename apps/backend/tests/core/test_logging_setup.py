@@ -12,10 +12,11 @@ import io
 import json
 import logging
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import pytest
 from pydantic import ValidationError
+from uvicorn.protocols.utils import get_path_with_query_string
 
 from app.core.config import Settings
 from app.core.logging_setup import (
@@ -224,12 +225,47 @@ def test_filter_strips_query_string_in_any_position(msg: str, args: tuple[object
     assert "10.0.0.1:5000" in message
 
 
-def test_filter_only_touches_args_that_look_like_paths() -> None:
-    record = _record("%s %s", args=("texto?no-es-path", "/v1/x?q=texto-sintetico"))
+def test_filter_cuts_every_str_arg_and_keeps_the_rest() -> None:
+    record = _record("%s %s %s %d", args=("10.0.0.1:5000", "ruta?q=texto-sintetico", "GET", 200))
 
     StripQueryStringFilter().filter(record)
 
-    assert record.args == ("texto?no-es-path", "/v1/x")
+    assert record.args == ("10.0.0.1:5000", "ruta", "GET", 200)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/v1/memory/search",
+        # Request-target en forma absoluta: uvicorn lo loguea tal como llegó.
+        "http://host-sintetico/ws",
+        # Sin barra inicial.
+        "v1/health",
+    ],
+)
+@pytest.mark.parametrize(
+    ("name", "msg", "build_args"),
+    [
+        (
+            "uvicorn.access",
+            '%s - "%s %s HTTP/%s" %d',
+            lambda p: ("10.0.0.1:5000", "GET", p, "1.1", 200),
+        ),
+        ("uvicorn.error", '%s - "WebSocket %s" 403', lambda p: ("10.0.0.1:5000", p)),
+    ],
+)
+def test_filter_strips_what_uvicorn_really_logs(
+    path: str, name: str, msg: str, build_args: Callable[[str], tuple[object, ...]]
+) -> None:
+    """Con la salida real de ``get_path_with_query_string``, no un string armado a mano."""
+    logged = get_path_with_query_string(
+        {"path": path, "query_string": b"q=texto-sintetico"}  # type: ignore[typeddict-item]
+    )
+    record = _record(msg, args=build_args(logged), name=name)
+
+    StripQueryStringFilter().filter(record)
+
+    assert "texto-sintetico" not in record.getMessage()
 
 
 def test_access_filter_leaves_path_without_query_untouched() -> None:

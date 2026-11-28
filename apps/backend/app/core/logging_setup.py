@@ -17,10 +17,10 @@ Qué hace, sin dependencias nuevas (stdlib):
   ``INFO``/``DEBUG``, que en las de HTTP incluye URLs y detalles del request.
 - A los handlers que uvicorn y gunicorn ya tienen les cambia solo el formatter por
   el JSON: no se suman handlers ni se toca ``propagate``, así nada sale dos veces.
-- Le agrega a ``uvicorn.access`` y a ``uvicorn.error`` un filtro que saca el
-  query string de los paths: ``GET /v1/memory/search?q=...`` lleva texto del
-  usuario (regla #4), y uvicorn loguea el handshake de WebSocket con su query
-  string en ``uvicorn.error``.
+- Le agrega a ``uvicorn.access`` y a ``uvicorn.error`` un filtro que corta en el
+  ``?`` los args de cada registro: ``GET /v1/memory/search?q=...`` lleva texto
+  del usuario (regla #4), y uvicorn loguea el handshake de WebSocket con su
+  query string en ``uvicorn.error``.
 
 Qué emite: ``ts`` (ISO 8601 UTC), ``level``, ``logger``, ``message``,
 ``request_id`` (``null`` fuera de un request) y, si hay excepción, ``exc_type`` y
@@ -113,22 +113,21 @@ class StripQueryStringFilter(logging.Filter):
 
     Uvicorn loguea ``get_path_with_query_string(scope)``; el query string puede
     traer texto del usuario (``/v1/memory/search?q=...``). Se queda el path solo.
-    No depende de en qué posición de los args venga: recorta todo arg que sea un
-    path (empieza con ``/``) y traiga ``?``. El cliente (``ip:puerto``), el método
-    y el status nunca empiezan con ``/``.
+    Corta en el ``?`` todo arg ``str`` del registro, en cualquier posición. No
+    exige que empiece con ``/``: uvicorn loguea el request-target tal como llegó
+    (``http%3A//host/ruta?q=...`` en forma absoluta, o sin barra inicial). El
+    cliente (``ip:puerto``), el método, la versión y el status no llevan ``?``.
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
         args = record.args
-        if isinstance(args, tuple) and any(_is_path_with_query(arg) for arg in args):
-            record.args = tuple(
-                arg.split("?", 1)[0] if _is_path_with_query(arg) else arg for arg in args
-            )
+        if isinstance(args, tuple) and any(_has_query(arg) for arg in args):
+            record.args = tuple(arg.split("?", 1)[0] if _has_query(arg) else arg for arg in args)
         return True
 
 
-def _is_path_with_query(value: object) -> bool:
-    return isinstance(value, str) and value.startswith("/") and "?" in value
+def _has_query(value: object) -> bool:
+    return isinstance(value, str) and "?" in value
 
 
 class _StderrHandler(logging.StreamHandler):
